@@ -1,7 +1,11 @@
 import re
 import xml.etree.ElementTree as ET
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
+
+from app.analyzer.secrets_scanner import scan_directory
+from app.analyzer.version_checker import compare_versions
 
 _COMPILE_SDK_RE = re.compile(r'compileSdk(?:Version)?\s*[= ]\s*(\d+)')
 _TARGET_SDK_RE = re.compile(r'targetSdk(?:Version)?\s*[= ]\s*(\d+)')
@@ -113,3 +117,38 @@ def detect_test_coverage(project_dir: Path, gradle_info: dict) -> Optional[float
             if coverage is not None:
                 return coverage
     return None
+
+
+@dataclass
+class AnalysisResult:
+    gradle_info: dict
+    structure_warnings: list
+    fatal_error: Optional[str]
+    source_stats: dict
+    test_coverage: Optional[float]
+    version_warnings: list
+    secrets_found: list
+
+
+def analyze_project(project_dir: Path) -> AnalysisResult:
+    project_dir = Path(project_dir)
+    structure = validate_project_structure(project_dir)
+
+    gradle_path = find_gradle_file(project_dir)
+    gradle_content = gradle_path.read_text(encoding="utf-8", errors="ignore") if gradle_path else ""
+    gradle_info = parse_gradle(gradle_content)
+
+    source_stats = count_source_files(project_dir)
+    test_coverage = detect_test_coverage(project_dir, gradle_info)
+    version_warnings = compare_versions(gradle_info)
+    secrets_found = scan_directory(project_dir)
+
+    return AnalysisResult(
+        gradle_info=gradle_info,
+        structure_warnings=structure["warnings"],
+        fatal_error=structure["fatal_error"],
+        source_stats=source_stats,
+        test_coverage=test_coverage,
+        version_warnings=version_warnings,
+        secrets_found=secrets_found,
+    )
