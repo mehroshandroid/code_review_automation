@@ -31,14 +31,29 @@ def _build_zip_bytes() -> bytes:
 
 
 def _build_xlsx_bytes() -> bytes:
+    """Mirrors the real production template's layout (samplefiles/SampleCodeReview.xlsx):
+    a title row, a 'Clause' header row, category rows carrying pre-existing rollup
+    formulas, and the first sub-row under each category left with a blank id cell.
+    Includes categories 1 (6 sub-criteria) and 2 (4 sub-criteria) in full, matching
+    CATEGORIES' real counts, since populate_scores consumes rows positionally.
+    """
     buffer = io.BytesIO()
     wb = Workbook()
     ws = wb.active
-    ws.append(["Category", "Description", "Score", "Avg Points", "Final Points", "% Points", "Remarks"])
-    ws.append(["1", "Code naming conventions / Code Structure", None, None, None, None, None])
-    ws.append(["1.1", "Clear and consistent naming", None, None, None, None, None])
-    ws.append(["2", "Reliability, Security & Observability", None, None, None, None, None])
-    ws.append(["2.1", "Proper exception handling", None, None, None, None, None])
+    ws.append(["<Project Name>", None, None, None, None, None, None])
+    ws.append(["Clause", None, "Weight", "Avg Points", "Final Points", "% Points", "Remarks"])
+    ws.append([1, "Code naming conventions / Code Structure", 1, "=AVERAGE(D4:D9)", "=D3*C3", "=E3/C3", None])
+    ws.append([None, "Clear and consistent naming conventions", None, None, None, None, None])
+    ws.append([1.2, "Clean structure, formatting, and file organization", None, None, None, None, None])
+    ws.append([1.3, "No unused, dead, or commented code", None, None, None, None, None])
+    ws.append([1.4, "No compile-time warnings", None, None, None, None, None])
+    ws.append([1.5, "No unused dependencies", None, None, None, None, None])
+    ws.append([1.6, "Latest compile, target sdk and gradle versions", None, None, None, None, None])
+    ws.append([2, "Reliability, Security & Observability", 1, "=AVERAGE(D11:D14)", "=D10*C10", "=E10/C10", None])
+    ws.append([2.1, "Proper exception handling", None, None, None, None, None])
+    ws.append([2.2, "Centralized logging with correct levels", None, None, None, None, None])
+    ws.append([2.3, "No sensitive data stored or logged", None, None, None, None, None])
+    ws.append([2.4, "Keystore information stored in env or gradle", None, None, None, None, None])
     wb.save(buffer)
     return buffer.getvalue()
 
@@ -104,8 +119,14 @@ def test_full_review_pipeline_in_stub_mode(monkeypatch, tmp_path: Path):
 
         workbook = load_workbook(io.BytesIO(download_response.content))
         ws = workbook.active
-        category_1_row = ws[2]
-        assert category_1_row[3].value == 1
-        sub_1_1_row = ws[3]
-        assert sub_1_1_row[2].value == 1
+
+        # Category row's rollup formula is untouched -- populate_scores never
+        # writes to it, since the real template computes it via formula.
+        category_1_row = ws[3]
+        assert category_1_row[3].value == "=AVERAGE(D4:D9)"
+
+        # First sub-row under category 1 (blank id cell in the fixture, matched
+        # positionally as 1.1) gets its stub score and remark written.
+        sub_1_1_row = ws[4]
+        assert sub_1_1_row[3].value == 1
         assert sub_1_1_row[6].value.startswith("[STUB]")

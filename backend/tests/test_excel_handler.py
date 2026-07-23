@@ -5,18 +5,26 @@ from openpyxl.styles import Font
 
 from app.analyzer.excel_handler import aggregate_category_scores, populate_scores
 
+FIXTURES_DIR = Path(__file__).parent / "fixtures"
+
 
 def _build_template(path: Path) -> None:
+    """Mirrors the real template's actual layout (samplefiles/SampleCodeReview.xlsx):
+    a merged title row, a real header row with 'Clause' (not 'Category'), no
+    separate Score column (sub-row scores live in 'Avg Points'), category rows
+    carrying pre-existing rollup formulas, and the first sub-row under a
+    category left with a blank id cell.
+    """
     wb = Workbook()
     ws = wb.active
-    headers = ["Category", "Description", "Score", "Avg Points", "Final Points", "% Points", "Remarks"]
-    ws.append(headers)
-    for cell in ws[1]:
+    ws.append(["<Project Name>", None, None, None, None, None, None])
+    ws.append(["Clause", None, "Weight", "Avg Points", "Final Points", "% Points", "Remarks"])
+    for cell in ws[2]:
         cell.font = Font(bold=True)
 
-    ws.append(["1", "Code naming conventions / Code Structure", None, None, None, None, None])
-    ws.append(["1.1", "Clear and consistent naming", None, None, None, None, None])
-    ws.append(["1.2", "Clean structure and formatting", None, None, None, None, None])
+    ws.append([1, "Code naming conventions / Code Structure", 1, "=AVERAGE(D3:D4)", "=D3*C3", "=E3/C3", None])
+    ws.append([None, "Clear and consistent naming", None, None, None, None, None])
+    ws.append([1.2, "Clean structure and formatting", None, None, None, None, None])
     wb.save(path)
 
 
@@ -40,7 +48,7 @@ def test_aggregate_category_scores_all_none_stays_none():
     assert result["percent_points"] is None
 
 
-def test_populate_scores_writes_values_and_preserves_formatting(tmp_path: Path):
+def test_populate_scores_writes_sub_row_scores_positionally(tmp_path: Path):
     template_path = tmp_path / "template.xlsx"
     output_path = tmp_path / "output.xlsx"
     _build_template(template_path)
@@ -58,21 +66,25 @@ def test_populate_scores_writes_values_and_preserves_formatting(tmp_path: Path):
     wb = load_workbook(output_path)
     ws = wb.active
 
-    header_row = [c.value for c in ws[1]]
-    assert header_row == ["Category", "Description", "Score", "Avg Points", "Final Points", "% Points", "Remarks"]
-    assert ws["A1"].font.bold is True
+    header_row = [c.value for c in ws[2]]
+    assert header_row == ["Clause", None, "Weight", "Avg Points", "Final Points", "% Points", "Remarks"]
+    assert ws["A2"].font.bold is True
 
-    category_row = ws[2]
-    assert category_row[3].value == 0.75
-    assert category_row[4].value == 0.75
-    assert category_row[5].value == 75.0
+    # Category row's own rollup formulas are untouched (never written to).
+    category_row = ws[3]
+    assert category_row[3].value == "=AVERAGE(D3:D4)"
+    assert category_row[4].value == "=D3*C3"
+    assert category_row[5].value == "=E3/C3"
 
-    sub_row_1_1 = ws[3]
-    assert sub_row_1_1[2].value == 1
+    # First sub-row (blank id cell) still gets matched positionally as "1.1".
+    sub_row_1_1 = ws[4]
+    assert sub_row_1_1[0].value is None  # id cell stays blank, untouched
+    assert sub_row_1_1[3].value == 1  # score written into "Avg Points"
     assert sub_row_1_1[6].value == "Good naming"
 
-    sub_row_1_2 = ws[4]
-    assert sub_row_1_2[2].value == 0.5
+    # Second sub-row (labeled 1.2) matched positionally as the category's 2nd sub-criterion.
+    sub_row_1_2 = ws[5]
+    assert sub_row_1_2[3].value == 0.5
     assert sub_row_1_2[6].value == "Some issues"
 
 
@@ -91,24 +103,25 @@ def test_populate_scores_raises_on_missing_columns(tmp_path: Path):
         assert "missing" in str(exc).lower()
 
 
-def test_populate_scores_preserves_formula_cells(tmp_path: Path):
-    template_path = tmp_path / "formula_template.xlsx"
-    output_path = tmp_path / "output.xlsx"
-
+def test_populate_scores_raises_when_no_header_row_found(tmp_path: Path):
+    template_path = tmp_path / "no_header_template.xlsx"
     wb = Workbook()
     ws = wb.active
-    headers = ["Category", "Description", "Score", "Avg Points", "Final Points", "% Points", "Remarks"]
-    ws.append(headers)
-    for cell in ws[1]:
-        cell.font = Font(bold=True)
-
-    ws.append(["1", "Code naming conventions / Code Structure", None, None, None, None, None])
-    ws.append(["1.1", "Clear and consistent naming", None, None, None, None, None])
-    ws.append(["1.2", "Clean structure and formatting", None, None, None, None, None])
-
-    # Avg Points on the category row is formula-driven in this template.
-    ws.cell(row=2, column=4, value="=1+1")
+    ws.append(["Nothing", "Relevant", "Here"])
     wb.save(template_path)
+
+    output_path = tmp_path / "output.xlsx"
+    try:
+        populate_scores(template_path, output_path, {})
+        assert False, "expected ValueError"
+    except ValueError as exc:
+        assert "header row" in str(exc).lower()
+
+
+def test_populate_scores_never_touches_category_rollup_formulas(tmp_path: Path):
+    template_path = tmp_path / "formula_template.xlsx"
+    output_path = tmp_path / "output.xlsx"
+    _build_template(template_path)
 
     category_results = {
         "1": aggregate_category_scores(
@@ -123,35 +136,20 @@ def test_populate_scores_preserves_formula_cells(tmp_path: Path):
     wb2 = load_workbook(output_path)
     ws2 = wb2.active
 
-    category_row = ws2[2]
-    # Formula cell must be left untouched.
-    assert category_row[3].value == "=1+1"
-    # Other cells in the same row are still populated normally.
-    assert category_row[4].value == 0.75
-    assert category_row[5].value == 75.0
-
-    sub_row_1_1 = ws2[3]
-    assert sub_row_1_1[2].value == 1
-    assert sub_row_1_1[6].value == "Good naming"
+    # All three rollup formulas on the category row survive untouched.
+    category_row = ws2[3]
+    assert category_row[3].value == "=AVERAGE(D3:D4)"
+    assert category_row[4].value == "=D3*C3"
+    assert category_row[5].value == "=E3/C3"
 
 
-def test_populate_scores_matches_excel_native_numeric_ids(tmp_path: Path):
+def test_populate_scores_matches_excel_native_numeric_category_id(tmp_path: Path):
     template_path = tmp_path / "numeric_ids_template.xlsx"
     output_path = tmp_path / "output.xlsx"
+    _build_template(template_path)
 
-    wb = Workbook()
-    ws = wb.active
-    headers = ["Category", "Description", "Score", "Avg Points", "Final Points", "% Points", "Remarks"]
-    ws.append(headers)
-    for cell in ws[1]:
-        cell.font = Font(bold=True)
-
-    ws.append([None, "Code naming conventions / Code Structure", None, None, None, None, None])
-    ws.cell(row=2, column=1, value=1)
-    ws.append([None, "Clear and consistent naming", None, None, None, None, None])
-    ws.cell(row=3, column=1, value=1.1)
-    wb.save(template_path)
-
+    # Category id cell (A3) is already an Excel-native int (1), not a string,
+    # per _build_template -- this test exercises that _normalize_id handles it.
     category_results = {
         "1": aggregate_category_scores(
             {
@@ -163,12 +161,53 @@ def test_populate_scores_matches_excel_native_numeric_ids(tmp_path: Path):
 
     wb2 = load_workbook(output_path)
     ws2 = wb2.active
-
-    category_row = ws2[2]
-    assert category_row[3].value == 1.0
-    assert category_row[4].value == 1.0
-    assert category_row[5].value == 100.0
-
-    sub_row_1_1 = ws2[3]
-    assert sub_row_1_1[2].value == 1
+    sub_row_1_1 = ws2[4]
+    assert sub_row_1_1[3].value == 1
     assert sub_row_1_1[6].value == "Good naming"
+
+
+def test_populate_scores_against_the_real_sample_template(tmp_path: Path):
+    """End-to-end against the actual production template (not a synthetic mimic),
+    covering all 5 categories including the ones with typo'd/duplicate/missing
+    id labels in column A (e.g. category 4's rows are labeled 4.2, 4.3, 4.3
+    instead of 4.1, 4.2, 4.3) -- positional matching must handle this correctly
+    since the category's own AVERAGE(...) formula range is 3 rows regardless
+    of what the id column says.
+    """
+    template_path = FIXTURES_DIR / "SampleCodeReview.xlsx"
+    output_path = tmp_path / "output.xlsx"
+
+    category_results = {
+        "1": aggregate_category_scores({sub_id: {"score": 1, "remark": f"r{sub_id}"} for sub_id in ["1.1", "1.2", "1.3", "1.4", "1.5", "1.6"]}),
+        "2": aggregate_category_scores({sub_id: {"score": 0.5, "remark": f"r{sub_id}"} for sub_id in ["2.1", "2.2", "2.3", "2.4"]}),
+        "3": aggregate_category_scores({sub_id: {"score": 1, "remark": f"r{sub_id}"} for sub_id in ["3.1", "3.2", "3.3", "3.4"]}),
+        "4": aggregate_category_scores({sub_id: {"score": 0, "remark": f"r{sub_id}"} for sub_id in ["4.1", "4.2", "4.3"]}),
+        "6": aggregate_category_scores({sub_id: {"score": 1, "remark": f"r{sub_id}"} for sub_id in ["6.1", "6.2", "6.3"]}),
+    }
+    populate_scores(template_path, output_path, category_results)
+
+    wb = load_workbook(output_path)
+    ws = wb.active
+
+    # Category 1 rollup formulas untouched; its 6 sub-rows (4-9) populated in order.
+    assert ws["D3"].value == "=AVERAGE(D4:D9)"
+    for row, expected_remark in zip(range(4, 10), ["r1.1", "r1.2", "r1.3", "r1.4", "r1.5", "r1.6"]):
+        assert ws.cell(row=row, column=4).value == 1
+        assert ws.cell(row=row, column=7).value == expected_remark
+
+    # Category 4 (rows 24-26) is labeled 4.2/4.3/4.3 in the real file -- positional
+    # matching must still place 4.1/4.2/4.3's scores into rows 24/25/26 in order.
+    assert ws["D23"].value == "=AVERAGE(D24:D26)"
+    for row, expected_remark in zip(range(24, 27), ["r4.1", "r4.2", "r4.3"]):
+        assert ws.cell(row=row, column=4).value == 0
+        assert ws.cell(row=row, column=7).value == expected_remark
+
+    # Category 6 (rows 29-31), last category before the "Total" row.
+    assert ws["D28"].value == "=AVERAGE(D29:D31)"
+    for row, expected_remark in zip(range(29, 32), ["r6.1", "r6.2", "r6.3"]):
+        assert ws.cell(row=row, column=4).value == 1
+        assert ws.cell(row=row, column=7).value == expected_remark
+
+    # "Total" row and other trailing rows are untouched, not mistaken for a category.
+    assert ws["A32"].value == "Total"
+    assert ws["C32"].value == "=SUM(C3:C30)"
