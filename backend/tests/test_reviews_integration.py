@@ -1,6 +1,7 @@
 import io
 import time
 import zipfile
+from pathlib import Path
 
 from fastapi.testclient import TestClient
 from openpyxl import Workbook, load_workbook
@@ -41,8 +42,14 @@ def _build_xlsx_bytes() -> bytes:
     return buffer.getvalue()
 
 
-def test_full_review_pipeline_in_stub_mode(monkeypatch):
+def test_full_review_pipeline_in_stub_mode(monkeypatch, tmp_path: Path):
     monkeypatch.delenv("AZURE_OPENAI_KEY", raising=False)
+
+    import zipfile as zipfile_module
+    with zipfile_module.ZipFile(io.BytesIO(_build_zip_bytes())) as zf:
+        zf.extractall(tmp_path)
+    from app.analyzer.android_analyzer import gather_code_context
+    assert "class MainActivity {}" in gather_code_context(tmp_path)
 
     with TestClient(app) as client:
         create_response = client.post(

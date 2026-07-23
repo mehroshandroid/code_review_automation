@@ -155,3 +155,27 @@ def analyze_project(project_dir: Path) -> AnalysisResult:
         version_warnings=version_warnings,
         secrets_found=secrets_found,
     )
+
+
+def gather_code_context(project_dir: Path, max_chars: int = 32000) -> str:
+    project_dir = Path(project_dir)
+    source_files = sorted(
+        list(project_dir.rglob("*.java")) + list(project_dir.rglob("*.kt")),
+        key=lambda f: str(f.relative_to(project_dir)),
+    )
+    parts = []
+    remaining = max_chars
+    for f in source_files:
+        if remaining <= 0:
+            break
+        try:
+            content = f.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        header = f"--- {f.relative_to(project_dir)} ---\n"
+        chunk = header + content + "\n"
+        if len(chunk) > remaining:
+            chunk = chunk[:remaining]
+        parts.append(chunk)
+        remaining -= len(chunk)
+    return "".join(parts)

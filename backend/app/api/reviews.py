@@ -10,7 +10,7 @@ from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from starlette.background import BackgroundTask
 
-from app.analyzer.android_analyzer import analyze_project
+from app.analyzer.android_analyzer import analyze_project, gather_code_context
 from app.analyzer.excel_handler import aggregate_category_scores, populate_scores
 from app.analyzer.openai_client import score_category
 from app.utils.logger import get_logger
@@ -109,6 +109,7 @@ async def _run_review(
         state["warnings"] = analysis.structure_warnings + [w["issue"] for w in analysis.version_warnings]
         state["test_coverage"] = analysis.test_coverage
         state["secrets_found"] = analysis.secrets_found
+        code_context = gather_code_context(extract_dir)
         stats["analysis_time_ms"] = int((time.monotonic() - t1) * 1000)
         state["progress"] = 50
 
@@ -116,7 +117,7 @@ async def _run_review(
         state["phase"] = "scoring"
         scores_by_category = {}
         for category_id, category in CATEGORIES.items():
-            sub_results = await score_category(category["name"], category["sub_criteria"], "")
+            sub_results = await score_category(category["name"], category["sub_criteria"], code_context)
             scores_by_category[category_id] = aggregate_category_scores(sub_results)
         stats["scoring_time_ms"] = int((time.monotonic() - t2) * 1000)
         state["progress"] = 80
