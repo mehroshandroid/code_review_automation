@@ -33,3 +33,27 @@ def test_analyze_project_fatal_error_when_no_source(tmp_path: Path):
     (tmp_path / "build.gradle").write_text("android {}")
     result = analyze_project(tmp_path)
     assert result.fatal_error == "No source files found (.java/.kt)"
+
+
+def test_analyze_project_handles_directory_named_build_gradle(tmp_path: Path):
+    """Test that a directory literally named build.gradle doesn't crash analyze_project."""
+    # Create a directory named build.gradle (will be found by rglob but can't be read as a file)
+    (tmp_path / "build.gradle").mkdir()
+    # Add required files
+    (tmp_path / "AndroidManifest.xml").write_text("<manifest />")
+    src = tmp_path / "src" / "main" / "java"
+    src.mkdir(parents=True)
+    (src / "Main.java").write_text("class Main {}")
+
+    # This should not raise IsADirectoryError; should degrade gracefully
+    result = analyze_project(tmp_path)
+
+    # Should complete without error
+    assert result is not None
+    assert result.fatal_error is None
+    # gradle_info should have empty values since the gradle_content was empty
+    assert result.gradle_info["compile_sdk"] is None
+    assert result.gradle_info["target_sdk"] is None
+    assert result.gradle_info["gradle_version"] is None
+    assert result.gradle_info["kotlin_version"] is None
+    assert result.gradle_info["dependencies"] == []

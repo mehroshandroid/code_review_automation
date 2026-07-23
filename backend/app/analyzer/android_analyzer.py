@@ -135,7 +135,10 @@ def analyze_project(project_dir: Path) -> AnalysisResult:
     structure = validate_project_structure(project_dir)
 
     gradle_path = find_gradle_file(project_dir)
-    gradle_content = gradle_path.read_text(encoding="utf-8", errors="ignore") if gradle_path else ""
+    try:
+        gradle_content = gradle_path.read_text(encoding="utf-8", errors="ignore") if gradle_path else ""
+    except OSError:
+        gradle_content = ""
     gradle_info = parse_gradle(gradle_content)
 
     source_stats = count_source_files(project_dir)
