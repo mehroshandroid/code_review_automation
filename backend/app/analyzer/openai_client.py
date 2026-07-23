@@ -58,8 +58,8 @@ async def _live_score(category_name: str, sub_criteria: list, code_snippets: str
             return fallback
         response.raise_for_status()
 
-    content = response.json()["choices"][0]["message"]["content"]
     try:
+        content = response.json()["choices"][0]["message"]["content"]
         return json.loads(content)
-    except ValueError:
+    except (ValueError, KeyError, IndexError, TypeError):
         return fallback
