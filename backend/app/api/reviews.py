@@ -6,7 +6,7 @@ import uuid
 import zipfile
 from pathlib import Path
 
-from fastapi import APIRouter, File, UploadFile
+from fastapi import APIRouter, File, HTTPException, UploadFile
 
 from app.analyzer.android_analyzer import analyze_project
 from app.analyzer.excel_handler import aggregate_category_scores, populate_scores
@@ -141,3 +141,22 @@ async def _run_review(
         shutil.rmtree(extract_dir, ignore_errors=True)
         zip_path.unlink(missing_ok=True)
         template_path.unlink(missing_ok=True)
+
+
+@router.get("/api/reviews/{review_id}/progress")
+async def get_progress(review_id: str):
+    state = _reviews.get(review_id)
+    if state is None:
+        raise HTTPException(status_code=404, detail="Unknown review_id")
+    return {
+        "status": state["status"],
+        "phase": state["phase"],
+        "progress": state["progress"],
+        "message": state["message"],
+        "stats": state["stats"],
+        "download_url": f"/api/reviews/{review_id}/download" if state["status"] == "completed" else None,
+        "error": state["error"],
+        "warnings": state.get("warnings", []),
+        "test_coverage": state.get("test_coverage"),
+        "secrets_found": state.get("secrets_found", []),
+    }
