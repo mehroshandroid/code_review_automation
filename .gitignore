@@ -1,0 +1,21 @@
+# Python
+backend/venv/
+backend/__pycache__/
+backend/**/__pycache__/
+*.pyc
+
+# Node
+frontend/node_modules/
+frontend/build/
+
+# Env / secrets
+.env
+backend/.env
+frontend/.env
+
+# Temp review data
+/tmp/reviews/
+backend/tmp/
+
+# OS
+.DS_Store
