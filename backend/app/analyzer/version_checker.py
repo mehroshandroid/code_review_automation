@@ -11,6 +11,9 @@ LATEST_VERSIONS = {
 def _parse_version_tuple(version_str: Optional[str]):
     if not version_str:
         return None
+    # Guard against non-string types (e.g., float, int)
+    if not isinstance(version_str, str):
+        return None
     nums = []
     for part in version_str.split("."):
         digits = "".join(c for c in part if c.isdigit())
@@ -24,13 +27,13 @@ def compare_versions(gradle_info: dict) -> list:
     warnings = []
 
     compile_sdk = gradle_info.get("compile_sdk")
-    if compile_sdk is not None and compile_sdk < LATEST_VERSIONS["compile_sdk"]:
+    if compile_sdk is not None and isinstance(compile_sdk, int) and compile_sdk < LATEST_VERSIONS["compile_sdk"]:
         warnings.append(
             {"issue": f"compileSdkVersion {compile_sdk} is outdated, latest is {LATEST_VERSIONS['compile_sdk']}"}
         )
 
     target_sdk = gradle_info.get("target_sdk")
-    if target_sdk is not None and target_sdk < LATEST_VERSIONS["target_sdk"]:
+    if target_sdk is not None and isinstance(target_sdk, int) and target_sdk < LATEST_VERSIONS["target_sdk"]:
         warnings.append(
             {"issue": f"targetSdkVersion {target_sdk} is outdated, latest is {LATEST_VERSIONS['target_sdk']}"}
         )
