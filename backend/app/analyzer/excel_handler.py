@@ -43,6 +43,31 @@ def _resolve_columns(ws) -> dict:
     return columns
 
 
+def _normalize_id(value) -> str:
+    """Normalize an id cell's value to the string form used as category_results keys.
+
+    Excel-native numeric cells come back from openpyxl as int/float rather than
+    str. Whole-number floats (e.g. 1.0) are formatted without the trailing
+    ".0" so they match string keys like "1".
+    """
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value).strip()
+
+
+def _is_formula_cell(cell) -> bool:
+    if cell.data_type == "f":
+        return True
+    return isinstance(cell.value, str) and cell.value.startswith("=")
+
+
+def _set_cell(ws, row_idx: int, column: int, value) -> None:
+    cell = ws.cell(row=row_idx, column=column)
+    if _is_formula_cell(cell):
+        return
+    cell.value = value
+
+
 def populate_scores(template_path: Path, output_path: Path, category_results: dict) -> None:
     wb = load_workbook(template_path)
     ws = wb.active
@@ -52,21 +77,21 @@ def populate_scores(template_path: Path, output_path: Path, category_results: di
         id_cell = row[columns["id"] - 1]
         if id_cell.value is None:
             continue
-        row_id = str(id_cell.value).strip()
+        row_id = _normalize_id(id_cell.value)
         row_idx = id_cell.row
 
         if row_id in category_results:
             cat = category_results[row_id]
-            ws.cell(row=row_idx, column=columns["avg_points"]).value = cat["avg_points"]
-            ws.cell(row=row_idx, column=columns["final_points"]).value = cat["final_points"]
-            ws.cell(row=row_idx, column=columns["percent_points"]).value = cat["percent_points"]
+            _set_cell(ws, row_idx, columns["avg_points"], cat["avg_points"])
+            _set_cell(ws, row_idx, columns["final_points"], cat["final_points"])
+            _set_cell(ws, row_idx, columns["percent_points"], cat["percent_points"])
             continue
 
         for cat in category_results.values():
             sub = cat["sub_scores"].get(row_id)
             if sub is not None:
-                ws.cell(row=row_idx, column=columns["score"]).value = sub.get("score")
-                ws.cell(row=row_idx, column=columns["remarks"]).value = sub.get("remark")
+                _set_cell(ws, row_idx, columns["score"], sub.get("score"))
+                _set_cell(ws, row_idx, columns["remarks"], sub.get("remark"))
                 break
 
     wb.save(output_path)
