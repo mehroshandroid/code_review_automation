@@ -1,4 +1,7 @@
+import os
 from pathlib import Path
+
+import pytest
 
 from app.analyzer.secrets_scanner import scan_directory
 
@@ -34,3 +37,23 @@ def test_ignores_non_source_extensions(tmp_path: Path):
     binary_like = tmp_path / "notes.txt"
     binary_like.write_text('api_key = "ab12cd34ef56gh78ij90kl12mn34op56"\n')
     assert scan_directory(tmp_path) == []
+
+
+@pytest.mark.skipif(
+    os.geteuid() == 0, reason="chmod-based test unreliable when running as root"
+)
+def test_unreadable_file_returns_empty(tmp_path: Path):
+    """Test the non-fatal contract: unreadable files do not raise and return []."""
+    unreadable_file = tmp_path / "Secrets.java"
+    # Write a file with a secret-like pattern
+    unreadable_file.write_text('public class Secrets {\n    static final String API_KEY = "ab12cd34ef56gh78ij90kl12mn34op56";\n}\n')
+
+    try:
+        # Make the file unreadable
+        os.chmod(unreadable_file, 0o000)
+        # scan_directory should not raise and should return []
+        findings = scan_directory(tmp_path)
+        assert findings == []
+    finally:
+        # Restore permissions so pytest can clean up
+        os.chmod(unreadable_file, 0o644)
