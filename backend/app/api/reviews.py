@@ -143,6 +143,8 @@ async def _run_review(
         shutil.rmtree(extract_dir, ignore_errors=True)
         zip_path.unlink(missing_ok=True)
         template_path.unlink(missing_ok=True)
+        if state["download_path"] is None:
+            shutil.rmtree(work_dir, ignore_errors=True)
 
 
 @router.get("/api/reviews/{review_id}/progress")
@@ -176,5 +178,5 @@ async def download_review(review_id: str):
         path,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         filename="review_result.xlsx",
-        background=BackgroundTask(path.unlink, missing_ok=True),
+        background=BackgroundTask(shutil.rmtree, path.parent, ignore_errors=True),
     )

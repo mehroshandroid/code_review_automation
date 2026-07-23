@@ -1,4 +1,5 @@
 import io
+import tempfile
 import zipfile
 from pathlib import Path
 
@@ -6,7 +7,7 @@ from fastapi.testclient import TestClient
 from openpyxl import Workbook
 
 import app.api.reviews as reviews_module
-from app.api.reviews import _reviews
+from app.api.reviews import _new_review_state, _reviews, _run_review
 from main import app
 
 client = TestClient(app)
@@ -87,3 +88,47 @@ def test_create_review_write_failure_returns_200_with_error_state(monkeypatch):
 
         # _run_review must never have been scheduled for this review.
         assert created_tasks == []
+
+
+async def test_run_review_removes_work_dir_when_no_output_produced():
+    review_id = "leak-check-invalid-inputs"
+    work_dir = Path(tempfile.mkdtemp(prefix=f"review_{review_id}_"))
+    zip_path = work_dir / "android.zip"
+    template_path = work_dir / "template.xlsx"
+    zip_path.write_bytes(b"not really a zip")
+    template_path.write_bytes(b"not really an xlsx")
+
+    _reviews[review_id] = _new_review_state()
+
+    # zip_valid=False takes the early-return error branch inside the try block,
+    # so no output.xlsx is ever written and download_path stays None.
+    await _run_review(review_id, work_dir, zip_path, template_path, zip_valid=False, template_valid=True)
+
+    state = _reviews[review_id]
+    assert state["status"] == "error"
+    assert state["download_path"] is None
+    assert not work_dir.exists()
+
+
+async def test_run_review_removes_work_dir_on_unexpected_exception(monkeypatch):
+    review_id = "leak-check-exception"
+    work_dir = Path(tempfile.mkdtemp(prefix=f"review_{review_id}_"))
+    zip_path = work_dir / "android.zip"
+    template_path = work_dir / "template.xlsx"
+    zip_path.write_bytes(_build_zip_bytes())
+    template_path.write_bytes(_build_xlsx_bytes())
+
+    _reviews[review_id] = _new_review_state()
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("simulated analysis crash")
+
+    monkeypatch.setattr(reviews_module, "analyze_project", _boom)
+
+    await _run_review(review_id, work_dir, zip_path, template_path, zip_valid=True, template_valid=True)
+
+    state = _reviews[review_id]
+    assert state["status"] == "error"
+    assert state["error"] == "simulated analysis crash"
+    assert state["download_path"] is None
+    assert not work_dir.exists()

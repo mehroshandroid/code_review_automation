@@ -30,3 +30,4 @@ def test_download_returns_file_and_deletes_it_after(tmp_path: Path):
     assert response.status_code == 200
     assert response.content == b"fake xlsx bytes"
     assert not output_file.exists()
+    assert not output_file.parent.exists()
