@@ -1,4 +1,5 @@
 import re
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Optional
 
@@ -67,3 +68,48 @@ def validate_project_structure(project_dir: Path) -> dict:
     fatal_error = None if has_source else "No source files found (.java/.kt)"
 
     return {"warnings": warnings, "fatal_error": fatal_error}
+
+
+def count_source_files(project_dir: Path) -> dict:
+    project_dir = Path(project_dir)
+    java_files = list(project_dir.rglob("*.java"))
+    kotlin_files = list(project_dir.rglob("*.kt"))
+    all_files = java_files + kotlin_files
+    test_files = [
+        f for f in all_files
+        if any("test" in part.lower() for part in f.relative_to(project_dir).parts) or f.stem.endswith("Test")
+    ]
+    return {
+        "java_count": len(java_files),
+        "kotlin_count": len(kotlin_files),
+        "test_file_count": len(test_files),
+    }
+
+
+def _parse_jacoco_xml(report_path: Path) -> Optional[float]:
+    try:
+        tree = ET.parse(report_path)
+        root = tree.getroot()
+        for counter in root.findall("counter"):
+            if counter.get("type") == "INSTRUCTION":
+                missed = int(counter.get("missed", "0"))
+                covered = int(counter.get("covered", "0"))
+                total = missed + covered
+                if total == 0:
+                    return None
+                return round(covered / total * 100, 1)
+    except (ET.ParseError, ValueError, AttributeError, TypeError, OSError):
+        return None
+    return None
+
+
+def detect_test_coverage(project_dir: Path, gradle_info: dict) -> Optional[float]:
+    if not (gradle_info.get("has_jacoco") or gradle_info.get("has_kover")):
+        return None
+    project_dir = Path(project_dir)
+    for report_path in project_dir.rglob("*.xml"):
+        if "jacoco" in report_path.name.lower():
+            coverage = _parse_jacoco_xml(report_path)
+            if coverage is not None:
+                return coverage
+    return None
