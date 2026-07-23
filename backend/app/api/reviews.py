@@ -7,6 +7,8 @@ import zipfile
 from pathlib import Path
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi.responses import FileResponse
+from starlette.background import BackgroundTask
 
 from app.analyzer.android_analyzer import analyze_project
 from app.analyzer.excel_handler import aggregate_category_scores, populate_scores
@@ -160,3 +162,19 @@ async def get_progress(review_id: str):
         "test_coverage": state.get("test_coverage"),
         "secrets_found": state.get("secrets_found", []),
     }
+
+
+@router.get("/api/reviews/{review_id}/download")
+async def download_review(review_id: str):
+    state = _reviews.get(review_id)
+    if state is None or state["download_path"] is None:
+        raise HTTPException(status_code=404, detail="Result not available")
+    path = Path(state["download_path"])
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Result already downloaded or expired")
+    return FileResponse(
+        path,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        filename="review_result.xlsx",
+        background=BackgroundTask(path.unlink, missing_ok=True),
+    )
