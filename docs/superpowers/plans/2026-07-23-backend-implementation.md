@@ -1858,3 +1858,134 @@ Expected: Build completes successfully (exit code 0). If Docker is not installed
 git add backend/Dockerfile backend/.dockerignore
 git commit -m "chore: add backend Dockerfile"
 ```
+
+---
+
+### Task 14: Gather source code context for scoring (post-final-review addition)
+
+**Why:** The final whole-branch review found that `_run_review` calls `score_category(category["name"], category["sub_criteria"], "")` for every category — the empty string means no analyzed source code ever reaches the Azure OpenAI scoring call. Invisible in stub mode (the stub ignores the argument), but live-mode scoring would have zero code context. This closes that gap.
+
+**Files:**
+- Modify: `backend/app/analyzer/android_analyzer.py` (append)
+- Modify: `backend/app/api/reviews.py` (`_run_review`)
+- Test: `backend/tests/test_android_analyzer_context.py`
+- Test: modify `backend/tests/test_reviews_integration.py`
+
+**Interfaces:**
+- Consumes: nothing new.
+- Produces: `gather_code_context(project_dir: Path, max_chars: int = 32000) -> str` — consumed by `_run_review`.
+
+**Design:** One shared code-context string per review, reused across all 5 categories (not per-category tailored). Walk `project_dir` for `.java`/`.kt` files (sorted for determinism), concatenate each file's content prefixed with a `--- relative/path ---\n` header, stop once the running total would exceed `max_chars` (truncate the last file's content to fit exactly, don't skip it silently). Return `""` if no source files are found (matches existing "degrade gracefully" philosophy — `score_category` already handles empty content fine, since that's what it received before this fix).
+
+- [ ] **Step 1: Write the failing tests**
+
+`backend/tests/test_android_analyzer_context.py`:
+```python
+from pathlib import Path
+
+from app.analyzer.android_analyzer import gather_code_context
+
+
+def test_gather_code_context_includes_file_headers_and_content(tmp_path: Path):
+    src = tmp_path / "src" / "main" / "java" / "com" / "example"
+    src.mkdir(parents=True)
+    (src / "MainActivity.java").write_text("class MainActivity {}")
+    context = gather_code_context(tmp_path)
+    assert "MainActivity.java" in context
+    assert "class MainActivity {}" in context
+
+
+def test_gather_code_context_returns_empty_string_when_no_source(tmp_path: Path):
+    assert gather_code_context(tmp_path) == ""
+
+
+def test_gather_code_context_respects_max_chars_budget(tmp_path: Path):
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "Big.java").write_text("x" * 1000)
+    (src / "AlsoBig.java").write_text("y" * 1000)
+    context = gather_code_context(tmp_path, max_chars=500)
+    assert len(context) <= 500 + 200  # headers add some overhead; budget is approximate, not exceeded by a full extra file
+    assert "y" * 1000 not in context  # second file never fully included once budget is exhausted
+
+
+def test_gather_code_context_is_deterministic(tmp_path: Path):
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "Zebra.java").write_text("// zebra")
+    (src / "Apple.java").write_text("// apple")
+    context1 = gather_code_context(tmp_path)
+    context2 = gather_code_context(tmp_path)
+    assert context1 == context2
+    assert context1.index("Apple.java") < context1.index("Zebra.java")
+```
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `cd backend && venv/bin/python -m pytest tests/test_android_analyzer_context.py -v`
+Expected: FAIL with `ImportError: cannot import name 'gather_code_context'`
+
+- [ ] **Step 3: Append gather_code_context to android_analyzer.py**
+
+Add to `backend/app/analyzer/android_analyzer.py` (below `analyze_project`):
+```python
+def gather_code_context(project_dir: Path, max_chars: int = 32000) -> str:
+    project_dir = Path(project_dir)
+    source_files = sorted(
+        list(project_dir.rglob("*.java")) + list(project_dir.rglob("*.kt")),
+        key=lambda f: str(f.relative_to(project_dir)),
+    )
+    parts = []
+    remaining = max_chars
+    for f in source_files:
+        if remaining <= 0:
+            break
+        try:
+            content = f.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        header = f"--- {f.relative_to(project_dir)} ---\n"
+        chunk = header + content + "\n"
+        if len(chunk) > remaining:
+            chunk = chunk[:remaining]
+        parts.append(chunk)
+        remaining -= len(chunk)
+    return "".join(parts)
+```
+
+- [ ] **Step 4: Run tests to verify they pass**
+
+Run: `cd backend && venv/bin/python -m pytest tests/test_android_analyzer_context.py -v`
+Expected: PASS (4 passed)
+
+- [ ] **Step 5: Wire gather_code_context into _run_review**
+
+In `backend/app/api/reviews.py`, add `gather_code_context` to the existing import line from `app.analyzer.android_analyzer` (`from app.analyzer.android_analyzer import analyze_project, gather_code_context`). In `_run_review`, after the fatal-error check and the `state["warnings"] = ...` block (still within the `"analyzing"` phase, before the `"scoring"` phase begins), add:
+```python
+code_context = gather_code_context(extract_dir)
+```
+Then change the scoring loop's call from `score_category(category["name"], category["sub_criteria"], "")` to `score_category(category["name"], category["sub_criteria"], code_context)`.
+
+- [ ] **Step 6: Update the integration test to assert code context reaches scoring**
+
+In `backend/tests/test_reviews_integration.py`, the existing fixture already writes `src/main/java/com/example/MainActivity.java` with content `"class MainActivity {}"`. Add an assertion after the existing ones that confirms the live/stub scoring call actually received this content — since stub mode ignores its `code_snippets` argument (by design, per Task 8), the cleanest verification is a focused unit-style check in the SAME test: after building `_build_zip_bytes()`'s extracted-equivalent content, call `gather_code_context` directly against a freshly-extracted copy and assert `"class MainActivity {}"` appears in the returned string — proving the plumbing between extraction and context-gathering works, independent of stub mode's opacity. Add this near the top of the test function, before the HTTP calls:
+```python
+    import zipfile as zipfile_module
+    with zipfile_module.ZipFile(io.BytesIO(_build_zip_bytes())) as zf:
+        zf.extractall(tmp_path)
+    from app.analyzer.android_analyzer import gather_code_context
+    assert "class MainActivity {}" in gather_code_context(tmp_path)
+```
+(This requires the test function to accept a `tmp_path: Path` fixture parameter if it doesn't already — check the existing signature and add it if needed, along with `from pathlib import Path` if not already imported.)
+
+- [ ] **Step 7: Run the full suite**
+
+Run: `cd backend && venv/bin/python -m pytest -v`
+Expected: All tests PASS (52 tests: 48 prior + 4 new context tests)
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add backend/app/analyzer/android_analyzer.py backend/app/api/reviews.py backend/tests/test_android_analyzer_context.py backend/tests/test_reviews_integration.py
+git commit -m "feat: gather source code context and wire it into scoring calls"
+```
