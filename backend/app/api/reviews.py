@@ -48,8 +48,19 @@ async def create_review(androidZip: UploadFile = File(...), excelTemplate: Uploa
     work_dir = Path(tempfile.mkdtemp(prefix=f"review_{review_id}_"))
     zip_path = work_dir / "android.zip"
     template_path = work_dir / "template.xlsx"
-    zip_path.write_bytes(await androidZip.read())
-    template_path.write_bytes(await excelTemplate.read())
+
+    try:
+        zip_path.write_bytes(await androidZip.read())
+        template_path.write_bytes(await excelTemplate.read())
+    except Exception as exc:
+        logger.exception("Review %s failed while saving uploads", review_id)
+        shutil.rmtree(work_dir, ignore_errors=True)
+        state = _new_review_state()
+        state["status"] = "error"
+        state["phase"] = "error"
+        state["error"] = f"Failed to save uploaded files: {exc}"
+        _reviews[review_id] = state
+        return {"review_id": review_id, "status": "error"}
 
     zip_valid = (androidZip.filename or "").endswith(".zip")
     template_valid = (excelTemplate.filename or "").endswith(".xlsx")
