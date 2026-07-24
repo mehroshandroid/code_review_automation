@@ -9,10 +9,15 @@ from pathlib import Path
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
+from openpyxl import load_workbook
 from starlette.background import BackgroundTask
 
 from app.analyzer.android_analyzer import analyze_project, gather_code_context
-from app.analyzer.excel_handler import aggregate_category_scores, generate_review_excel
+from app.analyzer.excel_handler import (
+    aggregate_category_scores,
+    extract_sub_criteria_descriptions,
+    generate_review_excel,
+)
 from app.analyzer.openai_client import generate_general_remarks, score_category
 from app.utils.logger import get_logger
 
@@ -115,6 +120,8 @@ async def _run_review(
         state["test_coverage"] = analysis.test_coverage
         state["secrets_found"] = analysis.secrets_found
         code_context = gather_code_context(extract_dir)
+        template_ws = load_workbook(template_path).active
+        sub_criteria_descriptions = extract_sub_criteria_descriptions(template_ws, CATEGORIES)
         stats["analysis_time_ms"] = int((time.monotonic() - t1) * 1000)
         state["progress"] = 50
 
@@ -122,7 +129,9 @@ async def _run_review(
         state["phase"] = "scoring"
         scores_by_category = {}
         for category_id, category in CATEGORIES.items():
-            sub_results = await score_category(category["name"], category["sub_criteria"], code_context)
+            sub_results = await score_category(
+                category["name"], category["sub_criteria"], sub_criteria_descriptions, code_context
+            )
             scores_by_category[category_id] = aggregate_category_scores(sub_results)
         stats["scoring_time_ms"] = int((time.monotonic() - t2) * 1000)
         state["progress"] = 80

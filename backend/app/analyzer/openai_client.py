@@ -12,10 +12,10 @@ def is_stub_mode() -> bool:
     return not os.environ.get("AZURE_OPENAI_KEY")
 
 
-async def score_category(category_name: str, sub_criteria: list, code_snippets: str) -> dict:
+async def score_category(category_name: str, sub_criteria: list, descriptions: dict, code_snippets: str) -> dict:
     if is_stub_mode():
         return _stub_score(sub_criteria)
-    return await _live_score(category_name, sub_criteria, code_snippets)
+    return await _live_score(category_name, sub_criteria, descriptions, code_snippets)
 
 
 async def generate_general_remarks(category_results: dict) -> str:
@@ -52,10 +52,18 @@ async def _post_with_retry(payload: dict):
         return response
 
 
-async def _live_score(category_name: str, sub_criteria: list, code_snippets: str) -> dict:
+async def _live_score(category_name: str, sub_criteria: list, descriptions: dict, code_snippets: str) -> dict:
+    criteria_lines = "\n".join(f"{sub_id}: {descriptions.get(sub_id, '')}" for sub_id in sub_criteria)
     system_prompt = (
-        f"You are an expert Android code reviewer. Score {category_name} sub-criteria "
-        f"{', '.join(sub_criteria)} on a scale of 0, 0.5, 1, or null if you cannot evaluate. "
+        f"You are an expert Android code reviewer. Score the following {category_name} "
+        "sub-criteria based ONLY on the provided code snippet:\n"
+        f"{criteria_lines}\n\n"
+        "For each sub-criterion, score 0 (fails), 0.5 (partial), 1 (meets it), or null if the "
+        "code snippet does not contain enough information to judge that specific sub-criterion "
+        "(e.g. it asks about PR comments, commit history, or other context not present in "
+        "source code -- do not guess or assume in that case, use null). "
+        "Each remark must be specific to its own sub-criterion's exact wording above, not a "
+        "general comment about the code as a whole or about a different sub-criterion.\n"
         'Respond as JSON: {"<id>": {"score": <num or null>, "remark": "<1-2 sentences>"}, ...}'
     )
     payload = {
