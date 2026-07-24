@@ -126,7 +126,15 @@ def test_full_review_pipeline_in_stub_mode(monkeypatch, tmp_path: Path):
         assert category_1_row[3].value == "=AVERAGE(D4:D9)"
 
         # First sub-row under category 1 (blank id cell in the fixture, matched
-        # positionally as 1.1) gets its stub score and remark written.
+        # positionally as 1.1) gets its stub score written. Stub mode always
+        # scores 1 (perfect), so the remark is correctly left blank -- remarks
+        # are reserved for imperfect scores.
         sub_1_1_row = ws[4]
         assert sub_1_1_row[3].value == 1
-        assert sub_1_1_row[6].value.startswith("[STUB]")
+        assert sub_1_1_row[6].value is None
+
+        # Metadata: project name derived from the uploaded zip's filename
+        # (this fixture only has the title placeholder, not the General
+        # Remarks/Reviewers/Dated cells -- those are covered end-to-end
+        # against the real template in test_excel_handler.py).
+        assert ws["A1"].value == "project"

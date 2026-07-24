@@ -118,7 +118,13 @@ def populate_scores(ws, category_results: dict) -> None:
                 if sub_row > max_row:
                     break
                 _set_cell(ws, sub_row, score_col, sub.get("score"))
-                _set_cell(ws, sub_row, remarks_col, sub.get("remark"))
+                # Perfect scores are self-explanatory; only justify < 1 (or
+                # not-evaluated) so the sheet reads as "here's what's wrong",
+                # not a remark on every single row regardless of outcome.
+                # Explicitly clear (not just skip) so a stale remark from a
+                # prior run against the same template doesn't linger.
+                remark = sub.get("remark") if sub.get("score") != 1 else None
+                _set_cell(ws, sub_row, remarks_col, remark)
                 offset += 1
             row += offset
         else:

@@ -47,6 +47,89 @@ async def test_live_mode_calls_azure_endpoint_and_parses_response(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_live_mode_reorders_result_to_match_requested_sub_criteria(monkeypatch):
+    # The model's JSON key order is not guaranteed to match the requested
+    # sub_criteria order -- callers rely on dict order to align each score to
+    # the correct Excel row positionally, so this must be enforced here.
+    monkeypatch.setenv("AZURE_OPENAI_KEY", "test-key")
+    monkeypatch.setenv("OPENAI_API_BASE", "https://example.cognitive.microsoft.com/")
+    monkeypatch.setenv("OPENAI_DEPLOYMENT_NAME", "gpt-4o-mini")
+    monkeypatch.setenv("OPENAI_API_VERSION", "2025-01-01-preview")
+
+    async def fake_post(self, url, headers=None, json=None):
+        # Model returns keys out of order.
+        content = '{"1.3": {"score": 0, "remark": "c"}, "1.1": {"score": 1, "remark": "a"}, "1.2": {"score": 0.5, "remark": "b"}}'
+        request = httpx.Request("POST", url)
+        return httpx.Response(
+            status_code=200,
+            json={"choices": [{"message": {"content": content}}]},
+            request=request,
+        )
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", fake_post)
+
+    result = await openai_client.score_category("Code Structure", ["1.1", "1.2", "1.3"], "code here")
+
+    assert list(result.keys()) == ["1.1", "1.2", "1.3"]
+    assert result == {
+        "1.1": {"score": 1, "remark": "a"},
+        "1.2": {"score": 0.5, "remark": "b"},
+        "1.3": {"score": 0, "remark": "c"},
+    }
+
+
+@pytest.mark.asyncio
+async def test_live_mode_fills_in_a_key_the_model_omitted(monkeypatch):
+    monkeypatch.setenv("AZURE_OPENAI_KEY", "test-key")
+    monkeypatch.setenv("OPENAI_API_BASE", "https://example.cognitive.microsoft.com/")
+    monkeypatch.setenv("OPENAI_DEPLOYMENT_NAME", "gpt-4o-mini")
+    monkeypatch.setenv("OPENAI_API_VERSION", "2025-01-01-preview")
+
+    async def fake_post(self, url, headers=None, json=None):
+        # Model only returned 1.1 and 1.3, silently dropping 1.2.
+        content = '{"1.1": {"score": 1, "remark": "a"}, "1.3": {"score": 0, "remark": "c"}}'
+        request = httpx.Request("POST", url)
+        return httpx.Response(
+            status_code=200,
+            json={"choices": [{"message": {"content": content}}]},
+            request=request,
+        )
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", fake_post)
+
+    result = await openai_client.score_category("Code Structure", ["1.1", "1.2", "1.3"], "code here")
+
+    assert list(result.keys()) == ["1.1", "1.2", "1.3"]
+    assert result["1.2"] == {"score": None, "remark": ""}
+
+
+@pytest.mark.asyncio
+async def test_live_mode_drops_an_unexpected_extra_key(monkeypatch):
+    monkeypatch.setenv("AZURE_OPENAI_KEY", "test-key")
+    monkeypatch.setenv("OPENAI_API_BASE", "https://example.cognitive.microsoft.com/")
+    monkeypatch.setenv("OPENAI_DEPLOYMENT_NAME", "gpt-4o-mini")
+    monkeypatch.setenv("OPENAI_API_VERSION", "2025-01-01-preview")
+
+    async def fake_post(self, url, headers=None, json=None):
+        # Model hallucinated an extra "1.4" key that was never requested.
+        content = '{"1.1": {"score": 1, "remark": "a"}, "1.4": {"score": 0, "remark": "hallucinated"}}'
+        request = httpx.Request("POST", url)
+        return httpx.Response(
+            status_code=200,
+            json={"choices": [{"message": {"content": content}}]},
+            request=request,
+        )
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", fake_post)
+
+    result = await openai_client.score_category("Code Structure", ["1.1"], "code here")
+
+    # Only the requested key is present -- the extra one is dropped, not
+    # written anywhere (it would otherwise misalign a later category's rows).
+    assert list(result.keys()) == ["1.1"]
+
+
+@pytest.mark.asyncio
 async def test_live_mode_strips_markdown_fences_if_model_adds_them_anyway(monkeypatch):
     # Verified against the real Azure deployment: with 6 sub-criteria the model
     # sometimes wraps its JSON in ```json ... ``` even with response_format set.

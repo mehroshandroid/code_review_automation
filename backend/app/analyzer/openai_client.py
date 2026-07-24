@@ -75,9 +75,28 @@ async def _live_score(category_name: str, sub_criteria: list, code_snippets: str
 
     try:
         content = response.json()["choices"][0]["message"]["content"]
-        return json.loads(_strip_markdown_fences(content))
+        parsed = json.loads(_strip_markdown_fences(content))
+        return _normalize_score_result(parsed, sub_criteria)
     except (ValueError, KeyError, IndexError, TypeError):
         return fallback
+
+
+def _normalize_score_result(parsed: dict, sub_criteria: list) -> dict:
+    """Guarantees the returned dict has exactly sub_criteria's keys, in that
+    exact order -- regardless of what order (or completeness) the model's
+    JSON used. Callers rely on this order to align each sub-criterion's
+    score/remark to the correct row when writing the Excel output
+    positionally; a model that reorders, skips, or hallucinates an extra key
+    would otherwise silently misalign every row after the discrepancy.
+    """
+    result = {}
+    for sub_id in sub_criteria:
+        entry = parsed.get(sub_id) if isinstance(parsed, dict) else None
+        if isinstance(entry, dict):
+            result[sub_id] = {"score": entry.get("score"), "remark": entry.get("remark", "")}
+        else:
+            result[sub_id] = {"score": None, "remark": ""}
+    return result
 
 
 def _build_findings_summary(category_results: dict) -> str:
