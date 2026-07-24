@@ -29,17 +29,20 @@ export default function ProgressTracker({ reviewId, onUpdate }) {
     };
   }, [reviewId, onUpdate]);
 
-  if (!progressData) {
-    return <p className="text-gray-500">Starting review...</p>;
-  }
+  const phase = progressData?.phase ?? "starting";
+  const progress = progressData?.progress ?? 0;
+  const message = progressData?.message;
 
   return (
     <div className="space-y-2">
-      <p className="text-sm font-medium capitalize">{progressData.phase}</p>
+      <p className="text-sm font-medium capitalize">{phase}</p>
       <div className="w-full bg-gray-200 rounded h-2">
-        <div className="bg-blue-600 h-2 rounded" style={{ width: `${progressData.progress}%` }} />
+        <div
+          className="bg-blue-600 h-2 rounded transition-all duration-500 ease-out"
+          style={{ width: `${progress}%` }}
+        />
       </div>
-      {progressData.message && <p className="text-sm text-gray-500">{progressData.message}</p>}
+      {message && <p className="text-sm text-gray-500">{message}</p>}
     </div>
   );
 }

@@ -13,6 +13,22 @@ afterEach(() => {
   jest.resetAllMocks();
 });
 
+test("shows a 0% bar immediately on mount, before the first poll resolves", () => {
+  // Never-resolving promise so we can inspect the pre-poll render state --
+  // this is what's visible while the network round-trip for the first poll
+  // is still in flight, which is what made the bar look like it "started at
+  // 50%": there used to be no bar at all here, just text, so the first real
+  // progress value (often already >=50% since extraction/analysis are near-
+  // instant local work) appeared to snap in from nothing.
+  getProgress.mockReturnValue(new Promise(() => {}));
+
+  render(<ProgressTracker reviewId="abc-123" onUpdate={jest.fn()} />);
+
+  expect(screen.getByText("starting")).toBeInTheDocument();
+  const bar = document.querySelector(".bg-blue-600");
+  expect(bar).toHaveStyle({ width: "0%" });
+});
+
 test("polls immediately on mount and shows the returned phase", async () => {
   getProgress.mockResolvedValue({
     status: "processing", phase: "extracting", progress: 20, message: "Extracting...",
