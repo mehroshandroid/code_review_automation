@@ -27,6 +27,7 @@ test("polls immediately on mount and shows the returned phase", async () => {
 
   expect(getProgress).toHaveBeenCalledWith("abc-123");
   expect(screen.getByText("extracting")).toBeInTheDocument();
+  expect(screen.getByText("Extracting...")).toBeInTheDocument();
   expect(onUpdate).toHaveBeenCalledWith(expect.objectContaining({ phase: "extracting" }));
 });
 

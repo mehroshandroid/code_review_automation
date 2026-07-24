@@ -112,6 +112,63 @@ async def test_run_review_removes_work_dir_when_no_output_produced():
     assert not work_dir.exists()
 
 
+async def test_run_review_updates_message_per_category_during_scoring(monkeypatch):
+    review_id = "progress-message-check"
+    work_dir = Path(tempfile.mkdtemp(prefix=f"review_{review_id}_"))
+    zip_path = work_dir / "android.zip"
+    template_path = work_dir / "template.xlsx"
+    zip_path.write_bytes(_build_zip_bytes())
+    template_path.write_bytes(_build_xlsx_bytes())
+
+    _reviews[review_id] = _new_review_state()
+
+    seen_messages = []
+
+    async def _recording_score_category(category_name, sub_criteria, descriptions, code_snippets):
+        seen_messages.append(_reviews[review_id]["message"])
+        return {sub_id: {"score": 1, "remark": ""} for sub_id in sub_criteria}
+
+    monkeypatch.setattr(reviews_module, "score_category", _recording_score_category)
+
+    await _run_review(
+        review_id, work_dir, zip_path, template_path, zip_valid=True, template_valid=True, project_name="Test"
+    )
+
+    assert seen_messages == [
+        "Evaluating Code naming conventions / Code Structure...",
+        "Evaluating Reliability, Security & Observability...",
+        "Evaluating Delivery Discipline & Architecture...",
+        "Evaluating AI Usage & Code Ownership...",
+        "Evaluating Safe & Integrated AI Code...",
+    ]
+
+    state = _reviews[review_id]
+    assert state["status"] == "completed"
+    assert state["message"] == "Review complete"
+
+
+async def test_run_review_updates_message_on_error_paths(monkeypatch):
+    review_id = "progress-message-error-check"
+    work_dir = Path(tempfile.mkdtemp(prefix=f"review_{review_id}_"))
+    zip_path = work_dir / "android.zip"
+    template_path = work_dir / "template.xlsx"
+    zip_path.write_bytes(_build_zip_bytes())
+    template_path.write_bytes(_build_xlsx_bytes())
+
+    _reviews[review_id] = _new_review_state()
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("simulated crash")
+
+    monkeypatch.setattr(reviews_module, "analyze_project", _boom)
+
+    await _run_review(
+        review_id, work_dir, zip_path, template_path, zip_valid=True, template_valid=True, project_name="Test"
+    )
+
+    assert _reviews[review_id]["message"] == "Review failed"
+
+
 async def test_run_review_removes_work_dir_on_unexpected_exception(monkeypatch):
     review_id = "leak-check-exception"
     work_dir = Path(tempfile.mkdtemp(prefix=f"review_{review_id}_"))

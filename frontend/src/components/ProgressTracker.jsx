@@ -39,6 +39,7 @@ export default function ProgressTracker({ reviewId, onUpdate }) {
       <div className="w-full bg-gray-200 rounded h-2">
         <div className="bg-blue-600 h-2 rounded" style={{ width: `${progressData.progress}%` }} />
       </div>
+      {progressData.message && <p className="text-sm text-gray-500">{progressData.message}</p>}
     </div>
   );
 }

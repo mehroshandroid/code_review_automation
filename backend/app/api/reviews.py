@@ -66,6 +66,7 @@ async def create_review(androidZip: UploadFile = File(...), excelTemplate: Uploa
         state = _new_review_state()
         state["status"] = "error"
         state["phase"] = "error"
+        state["message"] = "Review failed"
         state["error"] = f"Failed to save uploaded files: {exc}"
         _reviews[review_id] = state
         return {"review_id": review_id, "status": "error"}
@@ -97,11 +98,13 @@ async def _run_review(
         if not zip_valid or not template_valid:
             state["status"] = "error"
             state["phase"] = "error"
+            state["message"] = "Review failed"
             state["error"] = "androidZip must be a .zip file and excelTemplate must be a .xlsx file"
             return
 
         t0 = time.monotonic()
         state["phase"] = "extracting"
+        state["message"] = "Extracting project files..."
         extract_dir.mkdir(parents=True, exist_ok=True)
         with zipfile.ZipFile(zip_path) as zf:
             zf.extractall(extract_dir)
@@ -110,10 +113,12 @@ async def _run_review(
 
         t1 = time.monotonic()
         state["phase"] = "analyzing"
+        state["message"] = "Analyzing project structure..."
         analysis = analyze_project(extract_dir)
         if analysis.fatal_error:
             state["status"] = "error"
             state["phase"] = "error"
+            state["message"] = "Review failed"
             state["error"] = analysis.fatal_error
             return
         state["warnings"] = analysis.structure_warnings + [w["issue"] for w in analysis.version_warnings]
@@ -128,17 +133,22 @@ async def _run_review(
         t2 = time.monotonic()
         state["phase"] = "scoring"
         scores_by_category = {}
-        for category_id, category in CATEGORIES.items():
+        category_count = len(CATEGORIES)
+        for index, (category_id, category) in enumerate(CATEGORIES.items()):
+            state["message"] = f"Evaluating {category['name']}..."
             sub_results = await score_category(
                 category["name"], category["sub_criteria"], sub_criteria_descriptions, code_context
             )
             scores_by_category[category_id] = aggregate_category_scores(sub_results)
+            state["progress"] = 50 + int(30 * (index + 1) / category_count)
         stats["scoring_time_ms"] = int((time.monotonic() - t2) * 1000)
-        state["progress"] = 80
 
         t3 = time.monotonic()
         state["phase"] = "generating"
+        state["message"] = "Generating overall summary..."
         general_remarks = await generate_general_remarks(scores_by_category)
+        state["progress"] = 90
+        state["message"] = "Populating review document..."
         output_path = work_dir / "output.xlsx"
         generate_review_excel(
             template_path,
@@ -162,6 +172,7 @@ async def _run_review(
         logger.exception("Review %s failed", review_id)
         state["status"] = "error"
         state["phase"] = "error"
+        state["message"] = "Review failed"
         state["error"] = str(exc)
     finally:
         shutil.rmtree(extract_dir, ignore_errors=True)
