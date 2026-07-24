@@ -1,6 +1,12 @@
+import datetime
 from pathlib import Path
 
 from openpyxl import load_workbook
+
+PLACEHOLDER_PROJECT_NAME = "<project name>"
+GENERAL_REMARKS_PREFIX = "general remarks"
+REVIEWERS_LABEL = "reviewers"
+DATED_LABEL = "dated"
 
 # The real template (samplefiles/SampleCodeReview.xlsx) has no separate "Score"
 # column: category rows carry an existing =AVERAGE(...) formula in the
@@ -91,9 +97,8 @@ def _resolve_columns(ws, header_row: int) -> dict:
     return columns
 
 
-def populate_scores(template_path: Path, output_path: Path, category_results: dict) -> None:
-    wb = load_workbook(template_path)
-    ws = wb.active
+def populate_scores(ws, category_results: dict) -> None:
+    """Writes sub-criterion scores/remarks into an already-loaded worksheet, in place."""
     header_row = _find_header_row(ws)
     columns = _resolve_columns(ws, header_row)
     id_col = columns["id"]
@@ -119,4 +124,53 @@ def populate_scores(template_path: Path, output_path: Path, category_results: di
         else:
             row += 1
 
+
+def populate_metadata(
+    ws,
+    project_name: str,
+    general_remarks: str,
+    reviewer_name: str,
+    review_date: datetime.date,
+) -> None:
+    """Fills in the template's whole-review metadata cells (title, general
+    remarks, reviewer, date), located by label text search rather than fixed
+    coordinates so it tolerates minor row/column drift between template
+    versions. Labels are matched case-insensitively; unmatched labels are
+    left untouched (non-fatal -- a template missing one of these is still
+    usable for scoring).
+    """
+    for row in ws.iter_rows():
+        for cell in row:
+            if not isinstance(cell.value, str):
+                continue
+            text = cell.value.strip().lower()
+            if text == PLACEHOLDER_PROJECT_NAME:
+                _set_cell(ws, cell.row, cell.column, project_name)
+            elif text.startswith(GENERAL_REMARKS_PREFIX):
+                _set_cell(ws, cell.row, cell.column, f"General Remarks: {general_remarks}")
+            elif text.startswith(REVIEWERS_LABEL):
+                _set_cell(ws, cell.row, cell.column + 1, reviewer_name)
+            elif text == DATED_LABEL:
+                _set_cell(ws, cell.row, cell.column + 1, review_date)
+
+
+def generate_review_excel(
+    template_path: Path,
+    output_path: Path,
+    category_results: dict,
+    project_name: str,
+    general_remarks: str,
+    reviewer_name: str = "Claude",
+    review_date: datetime.date | None = None,
+) -> None:
+    wb = load_workbook(template_path)
+    ws = wb.active
+    populate_scores(ws, category_results)
+    populate_metadata(
+        ws,
+        project_name=project_name,
+        general_remarks=general_remarks,
+        reviewer_name=reviewer_name,
+        review_date=review_date or datetime.date.today(),
+    )
     wb.save(output_path)

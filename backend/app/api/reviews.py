@@ -4,6 +4,7 @@ import tempfile
 import time
 import uuid
 import zipfile
+from datetime import date
 from pathlib import Path
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
@@ -11,8 +12,8 @@ from fastapi.responses import FileResponse
 from starlette.background import BackgroundTask
 
 from app.analyzer.android_analyzer import analyze_project, gather_code_context
-from app.analyzer.excel_handler import aggregate_category_scores, populate_scores
-from app.analyzer.openai_client import score_category
+from app.analyzer.excel_handler import aggregate_category_scores, generate_review_excel
+from app.analyzer.openai_client import generate_general_remarks, score_category
 from app.utils.logger import get_logger
 
 router = APIRouter()
@@ -66,9 +67,12 @@ async def create_review(androidZip: UploadFile = File(...), excelTemplate: Uploa
 
     zip_valid = (androidZip.filename or "").endswith(".zip")
     template_valid = (excelTemplate.filename or "").endswith(".xlsx")
+    project_name = Path(androidZip.filename).stem if androidZip.filename else "Unknown Project"
 
     _reviews[review_id] = _new_review_state()
-    asyncio.create_task(_run_review(review_id, work_dir, zip_path, template_path, zip_valid, template_valid))
+    asyncio.create_task(
+        _run_review(review_id, work_dir, zip_path, template_path, zip_valid, template_valid, project_name)
+    )
     return {"review_id": review_id, "status": "processing"}
 
 
@@ -79,6 +83,7 @@ async def _run_review(
     template_path: Path,
     zip_valid: bool,
     template_valid: bool,
+    project_name: str,
 ) -> None:
     state = _reviews[review_id]
     extract_dir = work_dir / "extracted"
@@ -124,8 +129,17 @@ async def _run_review(
 
         t3 = time.monotonic()
         state["phase"] = "generating"
+        general_remarks = await generate_general_remarks(scores_by_category)
         output_path = work_dir / "output.xlsx"
-        populate_scores(template_path, output_path, scores_by_category)
+        generate_review_excel(
+            template_path,
+            output_path,
+            scores_by_category,
+            project_name=project_name,
+            general_remarks=general_remarks,
+            reviewer_name="Claude",
+            review_date=date.today(),
+        )
         stats["generation_time_ms"] = int((time.monotonic() - t3) * 1000)
         stats["total_time_ms"] = sum(stats.values())
 

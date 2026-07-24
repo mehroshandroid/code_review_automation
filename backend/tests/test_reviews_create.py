@@ -102,7 +102,9 @@ async def test_run_review_removes_work_dir_when_no_output_produced():
 
     # zip_valid=False takes the early-return error branch inside the try block,
     # so no output.xlsx is ever written and download_path stays None.
-    await _run_review(review_id, work_dir, zip_path, template_path, zip_valid=False, template_valid=True)
+    await _run_review(
+        review_id, work_dir, zip_path, template_path, zip_valid=False, template_valid=True, project_name="Test"
+    )
 
     state = _reviews[review_id]
     assert state["status"] == "error"
@@ -125,7 +127,9 @@ async def test_run_review_removes_work_dir_on_unexpected_exception(monkeypatch):
 
     monkeypatch.setattr(reviews_module, "analyze_project", _boom)
 
-    await _run_review(review_id, work_dir, zip_path, template_path, zip_valid=True, template_valid=True)
+    await _run_review(
+        review_id, work_dir, zip_path, template_path, zip_valid=True, template_valid=True, project_name="Test"
+    )
 
     state = _reviews[review_id]
     assert state["status"] == "error"

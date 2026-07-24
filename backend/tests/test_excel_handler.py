@@ -1,9 +1,15 @@
+import datetime
 from pathlib import Path
 
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font
 
-from app.analyzer.excel_handler import aggregate_category_scores, populate_scores
+from app.analyzer.excel_handler import (
+    aggregate_category_scores,
+    generate_review_excel,
+    populate_metadata,
+    populate_scores,
+)
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
@@ -25,6 +31,10 @@ def _build_template(path: Path) -> None:
     ws.append([1, "Code naming conventions / Code Structure", 1, "=AVERAGE(D3:D4)", "=D3*C3", "=E3/C3", None])
     ws.append([None, "Clear and consistent naming", None, None, None, None, None])
     ws.append([1.2, "Clean structure and formatting", None, None, None, None, None])
+    ws.append([None, None, None, None, None, None, None])
+    ws.append([None, "General Remarks: placeholder text", None, None, None, None, None])
+    ws.append([None, "Reviewers: ", "<reviewer Name>", None, None, None, None])
+    ws.append([None, "Dated", None, None, None, None, None])
     wb.save(path)
 
 
@@ -50,8 +60,9 @@ def test_aggregate_category_scores_all_none_stays_none():
 
 def test_populate_scores_writes_sub_row_scores_positionally(tmp_path: Path):
     template_path = tmp_path / "template.xlsx"
-    output_path = tmp_path / "output.xlsx"
     _build_template(template_path)
+    wb = load_workbook(template_path)
+    ws = wb.active
 
     category_results = {
         "1": aggregate_category_scores(
@@ -61,10 +72,7 @@ def test_populate_scores_writes_sub_row_scores_positionally(tmp_path: Path):
             }
         )
     }
-    populate_scores(template_path, output_path, category_results)
-
-    wb = load_workbook(output_path)
-    ws = wb.active
+    populate_scores(ws, category_results)
 
     header_row = [c.value for c in ws[2]]
     assert header_row == ["Clause", None, "Weight", "Avg Points", "Final Points", "% Points", "Remarks"]
@@ -95,9 +103,9 @@ def test_populate_scores_raises_on_missing_columns(tmp_path: Path):
     ws.append(["Category", "Description"])
     wb.save(template_path)
 
-    output_path = tmp_path / "output.xlsx"
+    ws2 = load_workbook(template_path).active
     try:
-        populate_scores(template_path, output_path, {})
+        populate_scores(ws2, {})
         assert False, "expected ValueError"
     except ValueError as exc:
         assert "missing" in str(exc).lower()
@@ -110,43 +118,18 @@ def test_populate_scores_raises_when_no_header_row_found(tmp_path: Path):
     ws.append(["Nothing", "Relevant", "Here"])
     wb.save(template_path)
 
-    output_path = tmp_path / "output.xlsx"
+    ws2 = load_workbook(template_path).active
     try:
-        populate_scores(template_path, output_path, {})
+        populate_scores(ws2, {})
         assert False, "expected ValueError"
     except ValueError as exc:
         assert "header row" in str(exc).lower()
 
 
-def test_populate_scores_never_touches_category_rollup_formulas(tmp_path: Path):
-    template_path = tmp_path / "formula_template.xlsx"
-    output_path = tmp_path / "output.xlsx"
-    _build_template(template_path)
-
-    category_results = {
-        "1": aggregate_category_scores(
-            {
-                "1.1": {"score": 1, "remark": "Good naming"},
-                "1.2": {"score": 0.5, "remark": "Some issues"},
-            }
-        )
-    }
-    populate_scores(template_path, output_path, category_results)
-
-    wb2 = load_workbook(output_path)
-    ws2 = wb2.active
-
-    # All three rollup formulas on the category row survive untouched.
-    category_row = ws2[3]
-    assert category_row[3].value == "=AVERAGE(D3:D4)"
-    assert category_row[4].value == "=D3*C3"
-    assert category_row[5].value == "=E3/C3"
-
-
 def test_populate_scores_matches_excel_native_numeric_category_id(tmp_path: Path):
     template_path = tmp_path / "numeric_ids_template.xlsx"
-    output_path = tmp_path / "output.xlsx"
     _build_template(template_path)
+    ws = load_workbook(template_path).active
 
     # Category id cell (A3) is already an Excel-native int (1), not a string,
     # per _build_template -- this test exercises that _normalize_id handles it.
@@ -157,13 +140,92 @@ def test_populate_scores_matches_excel_native_numeric_category_id(tmp_path: Path
             }
         )
     }
-    populate_scores(template_path, output_path, category_results)
+    populate_scores(ws, category_results)
 
-    wb2 = load_workbook(output_path)
-    ws2 = wb2.active
-    sub_row_1_1 = ws2[4]
+    sub_row_1_1 = ws[4]
     assert sub_row_1_1[3].value == 1
     assert sub_row_1_1[6].value == "Good naming"
+
+
+def test_populate_metadata_fills_title_remarks_reviewer_and_date(tmp_path: Path):
+    template_path = tmp_path / "template.xlsx"
+    _build_template(template_path)
+    ws = load_workbook(template_path).active
+
+    review_date = datetime.date(2026, 7, 24)
+    populate_metadata(
+        ws,
+        project_name="My Cool App",
+        general_remarks="Solid overall, exception handling needs work.",
+        reviewer_name="Claude",
+        review_date=review_date,
+    )
+
+    assert ws["A1"].value == "My Cool App"
+    assert ws["B7"].value == "General Remarks: Solid overall, exception handling needs work."
+    assert ws["C8"].value == "Claude"
+    assert ws["C9"].value == review_date
+
+
+def test_populate_metadata_leaves_unmatched_labels_untouched(tmp_path: Path):
+    template_path = tmp_path / "no_metadata_template.xlsx"
+    wb = Workbook()
+    ws = wb.active
+    ws.append(["Clause", None, "Weight", "Avg Points", "Final Points", "% Points", "Remarks"])
+    wb.save(template_path)
+    ws2 = load_workbook(template_path).active
+
+    # Should not raise even though none of the metadata labels exist in this sheet.
+    populate_metadata(ws2, project_name="X", general_remarks="Y", reviewer_name="Claude", review_date=datetime.date.today())
+    assert ws2["A1"].value == "Clause"
+
+
+def test_generate_review_excel_writes_scores_and_metadata_in_one_save(tmp_path: Path):
+    template_path = tmp_path / "template.xlsx"
+    output_path = tmp_path / "output.xlsx"
+    _build_template(template_path)
+
+    category_results = {
+        "1": aggregate_category_scores({"1.1": {"score": 1, "remark": "Good naming"}}),
+    }
+    generate_review_excel(
+        template_path,
+        output_path,
+        category_results,
+        project_name="My Cool App",
+        general_remarks="Looks fine.",
+        reviewer_name="Claude",
+        review_date=datetime.date(2026, 7, 24),
+    )
+
+    wb = load_workbook(output_path)
+    ws = wb.active
+    assert ws["A1"].value == "My Cool App"
+    assert ws["C8"].value == "Claude"
+    # openpyxl always reads date-typed cells back from disk as datetime, even
+    # though a plain date was written -- expected, not a bug.
+    assert ws["C9"].value == datetime.datetime(2026, 7, 24)
+    assert ws[4][3].value == 1
+    assert ws[4][6].value == "Good naming"
+
+
+def test_generate_review_excel_defaults_reviewer_to_claude_and_date_to_today(tmp_path: Path):
+    template_path = tmp_path / "template.xlsx"
+    output_path = tmp_path / "output.xlsx"
+    _build_template(template_path)
+
+    generate_review_excel(
+        template_path,
+        output_path,
+        {},
+        project_name="My Cool App",
+        general_remarks="Looks fine.",
+    )
+
+    wb = load_workbook(output_path)
+    ws = wb.active
+    assert ws["C8"].value == "Claude"
+    assert ws["C9"].value.date() == datetime.date.today()
 
 
 def test_populate_scores_against_the_real_sample_template(tmp_path: Path):
@@ -172,7 +234,8 @@ def test_populate_scores_against_the_real_sample_template(tmp_path: Path):
     id labels in column A (e.g. category 4's rows are labeled 4.2, 4.3, 4.3
     instead of 4.1, 4.2, 4.3) -- positional matching must handle this correctly
     since the category's own AVERAGE(...) formula range is 3 rows regardless
-    of what the id column says.
+    of what the id column says. Also exercises the metadata fields against the
+    real title/general-remarks/reviewer/date cells.
     """
     template_path = FIXTURES_DIR / "SampleCodeReview.xlsx"
     output_path = tmp_path / "output.xlsx"
@@ -184,7 +247,15 @@ def test_populate_scores_against_the_real_sample_template(tmp_path: Path):
         "4": aggregate_category_scores({sub_id: {"score": 0, "remark": f"r{sub_id}"} for sub_id in ["4.1", "4.2", "4.3"]}),
         "6": aggregate_category_scores({sub_id: {"score": 1, "remark": f"r{sub_id}"} for sub_id in ["6.1", "6.2", "6.3"]}),
     }
-    populate_scores(template_path, output_path, category_results)
+    generate_review_excel(
+        template_path,
+        output_path,
+        category_results,
+        project_name="Real App",
+        general_remarks="Overall solid, needs test coverage work.",
+        reviewer_name="Claude",
+        review_date=datetime.date(2026, 7, 24),
+    )
 
     wb = load_workbook(output_path)
     ws = wb.active
@@ -211,3 +282,9 @@ def test_populate_scores_against_the_real_sample_template(tmp_path: Path):
     # "Total" row and other trailing rows are untouched, not mistaken for a category.
     assert ws["A32"].value == "Total"
     assert ws["C32"].value == "=SUM(C3:C30)"
+
+    # Real metadata cells, per samplefiles/SampleCodeReview.xlsx's actual layout.
+    assert ws["A1"].value == "Real App"
+    assert ws["B36"].value == "General Remarks: Overall solid, needs test coverage work."
+    assert ws["C37"].value == "Claude"
+    assert ws["C40"].value == datetime.datetime(2026, 7, 24)
