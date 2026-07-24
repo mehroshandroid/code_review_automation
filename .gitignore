@@ -22,3 +22,6 @@ backend/tmp/
 
 # Git worktrees
 .worktrees/
+
+# Local sample/test files (not part of the app; may contain real project data)
+/samplefiles/
