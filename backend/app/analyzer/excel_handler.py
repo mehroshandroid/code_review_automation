@@ -43,6 +43,17 @@ def aggregate_category_scores(sub_scores: dict) -> dict:
     }
 
 
+def compute_total_score_pct(scores_by_category: dict) -> float | None:
+    values = [
+        result["percent_points"]
+        for result in scores_by_category.values()
+        if result.get("percent_points") is not None
+    ]
+    if not values:
+        return None
+    return round(sum(values) / len(values), 1)
+
+
 def _normalize_id(value):
     """Normalize an id cell's value to the string form used as category_results keys.
 

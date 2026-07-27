@@ -6,6 +6,7 @@ from openpyxl.styles import Font
 
 from app.analyzer.excel_handler import (
     aggregate_category_scores,
+    compute_total_score_pct,
     extract_sub_criteria_descriptions,
     generate_review_excel,
     populate_metadata,
@@ -57,6 +58,29 @@ def test_aggregate_category_scores_all_none_stays_none():
     assert result["avg_points"] is None
     assert result["final_points"] is None
     assert result["percent_points"] is None
+
+
+def test_compute_total_score_pct_averages_category_percentages():
+    scores_by_category = {
+        "1": {"avg_points": 0.9, "final_points": 0.9, "percent_points": 90.0, "sub_scores": {}},
+        "2": {"avg_points": 0.6, "final_points": 0.6, "percent_points": 60.0, "sub_scores": {}},
+    }
+    assert compute_total_score_pct(scores_by_category) == 75.0
+
+
+def test_compute_total_score_pct_skips_categories_with_no_score():
+    scores_by_category = {
+        "1": {"avg_points": 1.0, "final_points": 1.0, "percent_points": 100.0, "sub_scores": {}},
+        "2": {"avg_points": None, "final_points": None, "percent_points": None, "sub_scores": {}},
+    }
+    assert compute_total_score_pct(scores_by_category) == 100.0
+
+
+def test_compute_total_score_pct_returns_none_when_no_category_has_a_score():
+    scores_by_category = {
+        "1": {"avg_points": None, "final_points": None, "percent_points": None, "sub_scores": {}},
+    }
+    assert compute_total_score_pct(scores_by_category) is None
 
 
 def test_populate_scores_writes_sub_row_scores_positionally(tmp_path: Path):
