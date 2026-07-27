@@ -26,7 +26,7 @@ async function uploadValidFiles(user) {
   const zip = buildFile("project.zip", "application/zip");
   const xlsx = buildFile("template.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
   await user.upload(screen.getByLabelText(/android project/i), zip);
-  await user.upload(screen.getByLabelText(/review template/i), xlsx);
+  await user.upload(screen.getByLabelText(/scoring template/i), xlsx);
   await user.click(screen.getByRole("button", { name: /start review/i }));
 }
 
@@ -37,6 +37,7 @@ test("full happy path: upload, poll, complete, download link, reset", async () =
     status: "completed", phase: "completed", progress: 100, message: "Done",
     stats: { total_time_ms: 500 }, download_url: "/api/reviews/abc-123/download", error: null,
     warnings: ["Missing AndroidManifest.xml"], test_coverage: 90.0, secrets_found: [],
+    total_score_pct: 78,
   });
 
   render(<App />);
@@ -46,9 +47,9 @@ test("full happy path: upload, poll, complete, download link, reset", async () =
     await Promise.resolve();
   });
 
-  expect(screen.getByText(/review complete/i)).toBeInTheDocument();
-  expect(screen.getByText("Missing AndroidManifest.xml")).toBeInTheDocument();
-  expect(screen.getByRole("link", { name: /download result/i })).toHaveAttribute(
+  expect(screen.getByText(/review ready/i)).toBeInTheDocument();
+  expect(screen.getByText("Total 78%")).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: /download populated workbook/i })).toHaveAttribute(
     "href",
     "http://localhost:8000/api/reviews/abc-123/download"
   );
@@ -71,13 +72,13 @@ test("shows an error message when review creation fails", async () => {
   expect(screen.getByText(/failed to start review/i)).toBeInTheDocument();
 });
 
-test("shows an error message when the review itself fails during processing", async () => {
+test("shows an error message when the review itself fails during processing, and Try again resets to idle", async () => {
   const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
   createReview.mockResolvedValue({ review_id: "abc-123", status: "processing" });
   getProgress.mockResolvedValue({
     status: "error", phase: "error", progress: 0, message: "Queued",
     stats: {}, download_url: null, error: "No source files found (.java/.kt)",
-    warnings: [], test_coverage: null, secrets_found: [],
+    warnings: [], test_coverage: null, secrets_found: [], total_score_pct: null,
   });
 
   render(<App />);
@@ -88,4 +89,6 @@ test("shows an error message when the review itself fails during processing", as
   });
 
   expect(screen.getByText("No source files found (.java/.kt)")).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: /try again/i }));
+  expect(screen.getByLabelText(/android project/i)).toBeInTheDocument();
 });

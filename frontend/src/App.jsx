@@ -3,6 +3,7 @@ import UploadForm from "./components/UploadForm";
 import ProgressTracker from "./components/ProgressTracker";
 import FindingsPanel from "./components/FindingsPanel";
 import StatsDisplay from "./components/StatsDisplay";
+import CornerMarks from "./components/CornerMarks";
 import { createReview } from "./services/api";
 
 export default function App() {
@@ -47,40 +48,66 @@ export default function App() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto p-6 space-y-6">
-      <h1 className="text-2xl font-bold">Android Code Review Automation</h1>
+    <div style={{ minHeight: "100vh", background: "var(--color-bg)", fontFamily: "var(--font-body)", color: "var(--color-text)" }}>
+      <nav className="nav"><span className="nav-brand">Code Review Automation</span></nav>
 
-      {(state === "idle" || state === "uploading") && (
-        <UploadForm onSubmit={handleUpload} disabled={state === "uploading"} />
-      )}
+      <main style={{ maxWidth: 920, margin: "0 auto", padding: "var(--space-8) var(--space-4) var(--space-10)" }}>
+        <header style={{ marginBottom: "var(--space-6)" }}>
+          <h1 style={{ fontFamily: "var(--font-heading)", fontSize: 38, lineHeight: 1.1, margin: "0 0 var(--space-2)" }}>
+            Android Code Review Automation
+          </h1>
+          <p style={{ margin: 0, opacity: 0.7, maxWidth: "60ch" }}>
+            Upload an Android project and a scoring template. The reviewer analyzes structure, security, tests and
+            dependency versions, scores each category with AI, and hands back a populated workbook.
+          </p>
+        </header>
 
-      {state === "polling" && reviewId && (
-        <ProgressTracker reviewId={reviewId} onUpdate={handleProgressUpdate} />
-      )}
+        {(state === "idle" || state === "uploading") && (
+          <UploadForm onSubmit={handleUpload} disabled={state === "uploading"} />
+        )}
 
-      {progressData && (state === "polling" || state === "completed") && (
-        <FindingsPanel
-          warnings={progressData.warnings}
-          testCoverage={progressData.test_coverage}
-          secretsFound={progressData.secrets_found}
-        />
-      )}
+        {state === "polling" && reviewId && (
+          <>
+            <ProgressTracker reviewId={reviewId} onUpdate={handleProgressUpdate} />
+            {progressData && (
+              <div style={{ marginTop: "var(--space-5)" }}>
+                <FindingsPanel
+                  warnings={progressData.warnings}
+                  testCoverage={progressData.test_coverage}
+                  secretsFound={progressData.secrets_found}
+                />
+              </div>
+            )}
+          </>
+        )}
 
-      {state === "completed" && progressData && (
-        <StatsDisplay stats={progressData.stats} downloadUrl={progressData.download_url} />
-      )}
+        {state === "completed" && progressData && (
+          <StatsDisplay
+            totalScorePct={progressData.total_score_pct}
+            warnings={progressData.warnings}
+            testCoverage={progressData.test_coverage}
+            secretsFound={progressData.secrets_found}
+            stats={progressData.stats}
+            downloadUrl={progressData.download_url}
+            onReset={handleReset}
+          />
+        )}
 
-      {state === "error" && (
-        <div className="space-y-3">
-          <p className="text-red-600">{errorMessage}</p>
-        </div>
-      )}
-
-      {(state === "completed" || state === "error") && (
-        <button onClick={handleReset} className="text-blue-600 underline">
-          Start New Review
-        </button>
-      )}
+        {state === "error" && (
+          <div className="card blueprint elev-md" style={{ padding: "var(--space-6)" }}>
+            <CornerMarks />
+            <div className="card-kicker">Error</div>
+            <div className="card-title" style={{ fontSize: 20 }}>Review failed</div>
+            <p className="card-body">{errorMessage}</p>
+            <div style={{ display: "flex", gap: "var(--space-3)", marginTop: "var(--space-4)" }}>
+              <button type="button" className="btn btn-primary blueprint" onClick={handleReset}>
+                <CornerMarks />
+                Try again
+              </button>
+            </div>
+          </div>
+        )}
+      </main>
     </div>
   );
 }
