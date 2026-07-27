@@ -23,6 +23,7 @@ def test_progress_reflects_stored_state():
         "warnings": ["Missing AndroidManifest.xml"],
         "test_coverage": 82.5,
         "secrets_found": [{"file": "Constants.java", "line": 42, "pattern": "api_key"}],
+        "total_score_pct": 78.0,
     }
     response = client.get("/api/reviews/fixed-id/progress")
     assert response.status_code == 200
@@ -35,6 +36,7 @@ def test_progress_reflects_stored_state():
     assert body["warnings"] == ["Missing AndroidManifest.xml"]
     assert body["test_coverage"] == 82.5
     assert body["secrets_found"] == [{"file": "Constants.java", "line": 42, "pattern": "api_key"}]
+    assert body["total_score_pct"] == 78.0
 
 
 def test_progress_defaults_detection_fields_when_absent():
@@ -52,6 +54,7 @@ def test_progress_defaults_detection_fields_when_absent():
     assert body["warnings"] == []
     assert body["test_coverage"] is None
     assert body["secrets_found"] == []
+    assert body["total_score_pct"] is None
 
 
 def test_progress_includes_download_url_when_completed():

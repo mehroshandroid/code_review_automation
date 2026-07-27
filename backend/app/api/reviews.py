@@ -15,6 +15,7 @@ from starlette.background import BackgroundTask
 from app.analyzer.android_analyzer import analyze_project, gather_code_context
 from app.analyzer.excel_handler import (
     aggregate_category_scores,
+    compute_total_score_pct,
     extract_sub_criteria_descriptions,
     generate_review_excel,
 )
@@ -47,6 +48,7 @@ def _new_review_state() -> dict:
         "warnings": [],
         "test_coverage": None,
         "secrets_found": [],
+        "total_score_pct": None,
     }
 
 
@@ -142,6 +144,7 @@ async def _run_review(
             scores_by_category[category_id] = aggregate_category_scores(sub_results)
             state["progress"] = 50 + int(30 * (index + 1) / category_count)
         stats["scoring_time_ms"] = int((time.monotonic() - t2) * 1000)
+        state["total_score_pct"] = compute_total_score_pct(scores_by_category)
 
         t3 = time.monotonic()
         state["phase"] = "generating"
@@ -198,6 +201,7 @@ async def get_progress(review_id: str):
         "warnings": state.get("warnings", []),
         "test_coverage": state.get("test_coverage"),
         "secrets_found": state.get("secrets_found", []),
+        "total_score_pct": state.get("total_score_pct"),
     }
 
 

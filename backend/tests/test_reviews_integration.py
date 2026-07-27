@@ -107,6 +107,10 @@ def test_full_review_pipeline_in_stub_mode(monkeypatch, tmp_path: Path):
         assert final_state["test_coverage"] == 90.0
         assert final_state["secrets_found"] == []
         assert final_state["warnings"] == []
+        # Stub mode scores every sub-criterion 1 (perfect) across all 5
+        # CATEGORIES, so every category's percent_points is 100.0 and the
+        # mean across categories is exactly 100.0.
+        assert final_state["total_score_pct"] == 100.0
 
         # Proves the runtime wiring end to end: extraction -> gather_code_context ->
         # _run_review -> score_category actually receives the gathered content, not
