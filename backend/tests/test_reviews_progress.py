@@ -28,6 +28,14 @@ def test_progress_reflects_stored_state():
             {"id": "1", "name": "Code naming conventions / Code Structure", "percent_points": 90.0},
             {"id": "2", "name": "Reliability, Security & Observability", "percent_points": None},
         ],
+        "code_context": "class MainActivity {}",
+        "prompt_log": [
+            {
+                "label": "Code naming conventions / Code Structure",
+                "prompt_text": "Score the following...",
+                "tokens": {"prompt_tokens": 500, "completion_tokens": 40, "total_tokens": 540, "cached_tokens": None},
+            },
+        ],
     }
     response = client.get("/api/reviews/fixed-id/progress")
     assert response.status_code == 200
@@ -44,6 +52,14 @@ def test_progress_reflects_stored_state():
     assert body["category_scores"] == [
         {"id": "1", "name": "Code naming conventions / Code Structure", "percent_points": 90.0},
         {"id": "2", "name": "Reliability, Security & Observability", "percent_points": None},
+    ]
+    assert body["code_context"] == "class MainActivity {}"
+    assert body["prompt_log"] == [
+        {
+            "label": "Code naming conventions / Code Structure",
+            "prompt_text": "Score the following...",
+            "tokens": {"prompt_tokens": 500, "completion_tokens": 40, "total_tokens": 540, "cached_tokens": None},
+        },
     ]
 
 
@@ -64,6 +80,8 @@ def test_progress_defaults_detection_fields_when_absent():
     assert body["secrets_found"] == []
     assert body["total_score_pct"] is None
     assert body["category_scores"] == []
+    assert body["code_context"] is None
+    assert body["prompt_log"] == []
 
 
 def test_progress_includes_download_url_when_completed():

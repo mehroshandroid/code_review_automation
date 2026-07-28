@@ -126,7 +126,11 @@ async def test_run_review_updates_message_per_category_during_scoring(monkeypatc
 
     async def _recording_score_category(category_name, sub_criteria, descriptions, code_snippets):
         seen_messages.append(_reviews[review_id]["message"])
-        return {sub_id: {"score": 1, "remark": ""} for sub_id in sub_criteria}
+        sub_results = {sub_id: {"score": 1, "remark": ""} for sub_id in sub_criteria}
+        prompt_info = {"label": category_name, "prompt_text": "stub", "tokens": {
+            "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "cached_tokens": 0,
+        }}
+        return sub_results, prompt_info
 
     monkeypatch.setattr(reviews_module, "score_category", _recording_score_category)
 
@@ -169,7 +173,11 @@ async def test_run_review_updates_category_scores_progressively(monkeypatch):
 
     async def _recording_score_category(category_name, sub_criteria, descriptions, code_snippets):
         snapshots.append([(e["id"], e["percent_points"]) for e in _reviews[review_id]["category_scores"]])
-        return {sub_id: {"score": 1, "remark": ""} for sub_id in sub_criteria}
+        sub_results = {sub_id: {"score": 1, "remark": ""} for sub_id in sub_criteria}
+        prompt_info = {"label": category_name, "prompt_text": "stub", "tokens": {
+            "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "cached_tokens": 0,
+        }}
+        return sub_results, prompt_info
 
     monkeypatch.setattr(reviews_module, "score_category", _recording_score_category)
 
@@ -187,6 +195,40 @@ async def test_run_review_updates_category_scores_progressively(monkeypatch):
 
     final_scores = _reviews[review_id]["category_scores"]
     assert all(entry["percent_points"] == 100.0 for entry in final_scores)
+
+
+async def test_run_review_builds_prompt_log_and_code_context(monkeypatch):
+    monkeypatch.delenv("AZURE_OPENAI_KEY", raising=False)
+    review_id = "prompt-log-check"
+    work_dir = Path(tempfile.mkdtemp(prefix=f"review_{review_id}_"))
+    zip_path = work_dir / "android.zip"
+    template_path = work_dir / "template.xlsx"
+    zip_path.write_bytes(_build_zip_bytes())
+    template_path.write_bytes(_build_xlsx_bytes())
+
+    _reviews[review_id] = _new_review_state()
+    assert _reviews[review_id]["code_context"] is None
+    assert _reviews[review_id]["prompt_log"] == []
+
+    await _run_review(
+        review_id, work_dir, zip_path, template_path, zip_valid=True, template_valid=True, project_name="Test"
+    )
+
+    state = _reviews[review_id]
+    assert "class Main {}" in state["code_context"]
+    # 5 category calls + 1 general-remarks call, in that order.
+    assert [entry["label"] for entry in state["prompt_log"]] == [
+        "Code naming conventions / Code Structure",
+        "Reliability, Security & Observability",
+        "Delivery Discipline & Architecture",
+        "AI Usage & Code Ownership",
+        "Safe & Integrated AI Code",
+        "General remarks",
+    ]
+    assert all(
+        entry["tokens"] == {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "cached_tokens": 0}
+        for entry in state["prompt_log"]
+    )
 
 
 async def test_run_review_updates_message_on_error_paths(monkeypatch):

@@ -53,6 +53,8 @@ def _new_review_state() -> dict:
             {"id": category_id, "name": category["name"], "percent_points": None}
             for category_id, category in CATEGORIES.items()
         ],
+        "code_context": None,
+        "prompt_log": [],
     }
 
 
@@ -131,6 +133,7 @@ async def _run_review(
         state["test_coverage"] = analysis.test_coverage
         state["secrets_found"] = analysis.secrets_found
         code_context = gather_code_context(extract_dir)
+        state["code_context"] = code_context
         template_ws = load_workbook(template_path).active
         sub_criteria_descriptions = extract_sub_criteria_descriptions(template_ws, CATEGORIES)
         stats["analysis_time_ms"] = int((time.monotonic() - t1) * 1000)
@@ -142,11 +145,12 @@ async def _run_review(
         category_count = len(CATEGORIES)
         for index, (category_id, category) in enumerate(CATEGORIES.items()):
             state["message"] = f"Evaluating {category['name']}..."
-            sub_results = await score_category(
+            sub_results, prompt_info = await score_category(
                 category["name"], category["sub_criteria"], sub_criteria_descriptions, code_context
             )
             scores_by_category[category_id] = aggregate_category_scores(sub_results)
             state["category_scores"][index]["percent_points"] = scores_by_category[category_id]["percent_points"]
+            state["prompt_log"].append(prompt_info)
             state["progress"] = 50 + int(30 * (index + 1) / category_count)
         stats["scoring_time_ms"] = int((time.monotonic() - t2) * 1000)
         state["total_score_pct"] = compute_total_score_pct(scores_by_category)
@@ -154,7 +158,8 @@ async def _run_review(
         t3 = time.monotonic()
         state["phase"] = "generating"
         state["message"] = "Generating overall summary..."
-        general_remarks = await generate_general_remarks(scores_by_category)
+        general_remarks, remarks_prompt_info = await generate_general_remarks(scores_by_category)
+        state["prompt_log"].append(remarks_prompt_info)
         state["progress"] = 90
         state["message"] = "Populating review document..."
         output_path = work_dir / "output.xlsx"
@@ -208,6 +213,8 @@ async def get_progress(review_id: str):
         "secrets_found": state.get("secrets_found", []),
         "total_score_pct": state.get("total_score_pct"),
         "category_scores": state.get("category_scores", []),
+        "code_context": state.get("code_context"),
+        "prompt_log": state.get("prompt_log", []),
     }
 
 
