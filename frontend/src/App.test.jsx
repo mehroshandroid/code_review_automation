@@ -49,6 +49,8 @@ test("full happy path: upload, poll, complete, download link, LLM stats, reset",
         tokens: { prompt_tokens: 500, completion_tokens: 40, total_tokens: 540, cached_tokens: null },
       },
     ],
+    lint_issues: [],
+    compile_status: "ok",
   });
 
   render(<App />);
@@ -64,6 +66,7 @@ test("full happy path: upload, poll, complete, download link, LLM stats, reset",
   expect(screen.getByText("1 LLM calls")).toBeInTheDocument();
   expect(screen.getByText("540 tokens used")).toBeInTheDocument();
   expect(screen.getByText(/show source code sent to the model/i)).toBeInTheDocument();
+  expect(screen.getByText("No Lint warnings or errors found.")).toBeInTheDocument();
   expect(screen.getByRole("link", { name: /download populated workbook/i })).toHaveAttribute(
     "href",
     "http://localhost:8000/api/reviews/abc-123/download"
@@ -95,6 +98,7 @@ test("shows an error message when the review itself fails during processing, and
     stats: {}, download_url: null, error: "No source files found (.java/.kt)",
     warnings: [], test_coverage: null, secrets_found: [], total_score_pct: null,
     category_scores: [], code_context: null, prompt_log: [],
+    lint_issues: [], compile_status: null,
   });
 
   render(<App />);

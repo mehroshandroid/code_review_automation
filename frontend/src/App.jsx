@@ -87,6 +87,8 @@ export default function App() {
                       warnings={progressData.warnings}
                       testCoverage={progressData.test_coverage}
                       secretsFound={progressData.secrets_found}
+                      lintIssues={progressData.lint_issues}
+                      compileStatus={progressData.compile_status}
                     />
                   </div>
                 )}
