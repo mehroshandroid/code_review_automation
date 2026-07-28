@@ -8,6 +8,7 @@ const POLL_INTERVAL_MS = 2000;
 const STEPS = [
   { phase: "extracting", label: "Extracting archive" },
   { phase: "analyzing", label: "Analyzing code" },
+  { phase: "compiling", label: "Compiling & linting" },
   { phase: "scoring", label: "Scoring with AI" },
   { phase: "generating", label: "Generating report" },
 ];

@@ -13,13 +13,14 @@ afterEach(() => {
   jest.resetAllMocks();
 });
 
-test("shows all four steps before the first poll resolves", () => {
+test("shows all five steps before the first poll resolves", () => {
   getProgress.mockReturnValue(new Promise(() => {}));
 
   render(<ProgressTracker reviewId="abc-123" onUpdate={jest.fn()} />);
 
   expect(screen.getByText("Extracting archive")).toBeInTheDocument();
   expect(screen.getByText("Analyzing code")).toBeInTheDocument();
+  expect(screen.getByText("Compiling & linting")).toBeInTheDocument();
   expect(screen.getByText("Scoring with AI")).toBeInTheDocument();
   expect(screen.getByText("Generating report")).toBeInTheDocument();
 });
