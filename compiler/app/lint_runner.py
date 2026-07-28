@@ -2,7 +2,11 @@ import zipfile
 from pathlib import Path
 
 SDK_DIR = "/opt/android-sdk"
-GRADLE_TIMEOUT_SECONDS = 280  # leaves headroom under the caller's 5-minute HTTP timeout
+# A cold build (fresh Gradle-distribution download + full dependency
+# resolution, now also under amd64/Rosetta emulation on Apple Silicon hosts)
+# can legitimately take several minutes for a real project. Leaves headroom
+# under the caller's own HTTP timeout (see compile_checker.TIMEOUT_SECONDS).
+GRADLE_TIMEOUT_SECONDS = 900
 
 
 def extract_zip(zip_bytes: bytes, dest_dir: Path) -> None:

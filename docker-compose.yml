@@ -27,6 +27,13 @@ services:
     # that's universally published, instead of hitting a mismatch only on
     # some projects.
     platform: linux/amd64
+    volumes:
+      # Persists downloaded Gradle distributions + the Maven dependency
+      # cache across container recreations (the image itself only bakes in
+      # the JDK/SDK/fallback Gradle -- a project's own wrapper version and
+      # its dependencies land here instead, and would otherwise re-download
+      # from scratch every time this container gets rebuilt/recreated).
+      - gradle-cache:/root/.gradle
     networks:
       - review-network
 
@@ -45,3 +52,6 @@ services:
 networks:
   review-network:
     driver: bridge
+
+volumes:
+  gradle-cache:
