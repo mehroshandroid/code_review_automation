@@ -24,20 +24,39 @@ function FindingCard({ kicker, value, caption, expandable, expanded, onToggle, c
   );
 }
 
-export default function FindingsPanel({ warnings, testCoverage, secretsFound }) {
+function lintCardProps(compileStatus, lintIssues) {
+  if (compileStatus === "ok") {
+    return lintIssues.length > 0
+      ? { value: lintIssues.length, caption: `${lintIssues.length} issue${lintIssues.length === 1 ? "" : "s"} found`, expandable: true }
+      : { value: 0, caption: "No Lint warnings or errors found.", expandable: false };
+  }
+  if (compileStatus === "build_failed") {
+    return { value: "—", caption: "Project failed to compile.", expandable: false };
+  }
+  if (compileStatus === "unavailable") {
+    return { value: "—", caption: "Compile check unavailable.", expandable: false };
+  }
+  return { value: "—", caption: "Not yet checked.", expandable: false };
+}
+
+export default function FindingsPanel({ warnings, testCoverage, secretsFound, lintIssues, compileStatus }) {
   const [warningsOpen, setWarningsOpen] = useState(false);
   const [secretsOpen, setSecretsOpen] = useState(false);
+  const [lintOpen, setLintOpen] = useState(false);
 
   const hasWarnings = warnings && warnings.length > 0;
   const hasSecrets = secretsFound && secretsFound.length > 0;
   const hasCoverage = testCoverage !== null && testCoverage !== undefined;
+  const hasLintStatus = compileStatus !== null && compileStatus !== undefined;
 
-  if (!hasWarnings && !hasSecrets && !hasCoverage) {
+  if (!hasWarnings && !hasSecrets && !hasCoverage && !hasLintStatus) {
     return null;
   }
 
+  const lint = lintCardProps(compileStatus, lintIssues || []);
+
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "var(--space-4)" }}>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "var(--space-4)" }}>
       <FindingCard
         kicker="Warnings"
         value={warnings.length}
@@ -71,6 +90,21 @@ export default function FindingsPanel({ warnings, testCoverage, secretsFound }) 
         <ul style={{ margin: "var(--space-2) 0 0", paddingLeft: "1.1em", fontSize: 13 }}>
           {secretsFound.map((secret, index) => (
             <li key={index}>{secret.file}:{secret.line} ({secret.pattern})</li>
+          ))}
+        </ul>
+      </FindingCard>
+
+      <FindingCard
+        kicker="Lint issues"
+        value={lint.value}
+        caption={lint.caption}
+        expandable={lint.expandable}
+        expanded={lintOpen}
+        onToggle={() => setLintOpen((open) => !open)}
+      >
+        <ul style={{ margin: "var(--space-2) 0 0", paddingLeft: "1.1em", fontSize: 13 }}>
+          {(lintIssues || []).map((issue, index) => (
+            <li key={index}>{issue.file}:{issue.line} ({issue.severity}): {issue.message}</li>
           ))}
         </ul>
       </FindingCard>
