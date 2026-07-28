@@ -24,6 +24,10 @@ def test_progress_reflects_stored_state():
         "test_coverage": 82.5,
         "secrets_found": [{"file": "Constants.java", "line": 42, "pattern": "api_key"}],
         "total_score_pct": 78.0,
+        "category_scores": [
+            {"id": "1", "name": "Code naming conventions / Code Structure", "percent_points": 90.0},
+            {"id": "2", "name": "Reliability, Security & Observability", "percent_points": None},
+        ],
     }
     response = client.get("/api/reviews/fixed-id/progress")
     assert response.status_code == 200
@@ -37,6 +41,10 @@ def test_progress_reflects_stored_state():
     assert body["test_coverage"] == 82.5
     assert body["secrets_found"] == [{"file": "Constants.java", "line": 42, "pattern": "api_key"}]
     assert body["total_score_pct"] == 78.0
+    assert body["category_scores"] == [
+        {"id": "1", "name": "Code naming conventions / Code Structure", "percent_points": 90.0},
+        {"id": "2", "name": "Reliability, Security & Observability", "percent_points": None},
+    ]
 
 
 def test_progress_defaults_detection_fields_when_absent():
@@ -55,6 +63,7 @@ def test_progress_defaults_detection_fields_when_absent():
     assert body["test_coverage"] is None
     assert body["secrets_found"] == []
     assert body["total_score_pct"] is None
+    assert body["category_scores"] == []
 
 
 def test_progress_includes_download_url_when_completed():

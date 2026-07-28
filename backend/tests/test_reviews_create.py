@@ -147,6 +147,48 @@ async def test_run_review_updates_message_per_category_during_scoring(monkeypatc
     assert state["message"] == "Review complete"
 
 
+async def test_run_review_updates_category_scores_progressively(monkeypatch):
+    review_id = "category-scores-progress-check"
+    work_dir = Path(tempfile.mkdtemp(prefix=f"review_{review_id}_"))
+    zip_path = work_dir / "android.zip"
+    template_path = work_dir / "template.xlsx"
+    zip_path.write_bytes(_build_zip_bytes())
+    template_path.write_bytes(_build_xlsx_bytes())
+
+    _reviews[review_id] = _new_review_state()
+
+    assert _reviews[review_id]["category_scores"] == [
+        {"id": "1", "name": "Code naming conventions / Code Structure", "percent_points": None},
+        {"id": "2", "name": "Reliability, Security & Observability", "percent_points": None},
+        {"id": "3", "name": "Delivery Discipline & Architecture", "percent_points": None},
+        {"id": "4", "name": "AI Usage & Code Ownership", "percent_points": None},
+        {"id": "6", "name": "Safe & Integrated AI Code", "percent_points": None},
+    ]
+
+    snapshots = []
+
+    async def _recording_score_category(category_name, sub_criteria, descriptions, code_snippets):
+        snapshots.append([(e["id"], e["percent_points"]) for e in _reviews[review_id]["category_scores"]])
+        return {sub_id: {"score": 1, "remark": ""} for sub_id in sub_criteria}
+
+    monkeypatch.setattr(reviews_module, "score_category", _recording_score_category)
+
+    await _run_review(
+        review_id, work_dir, zip_path, template_path, zip_valid=True, template_valid=True, project_name="Test"
+    )
+
+    # Snapshot taken right before each category is scored: earlier categories
+    # already show their resolved percent_points (stub mode always scores 1,
+    # i.e. 100.0%), later ones are still None -- proves updates land in place
+    # without disturbing sibling entries.
+    assert snapshots[0] == [("1", None), ("2", None), ("3", None), ("4", None), ("6", None)]
+    assert snapshots[1] == [("1", 100.0), ("2", None), ("3", None), ("4", None), ("6", None)]
+    assert snapshots[4] == [("1", 100.0), ("2", 100.0), ("3", 100.0), ("4", 100.0), ("6", None)]
+
+    final_scores = _reviews[review_id]["category_scores"]
+    assert all(entry["percent_points"] == 100.0 for entry in final_scores)
+
+
 async def test_run_review_updates_message_on_error_paths(monkeypatch):
     review_id = "progress-message-error-check"
     work_dir = Path(tempfile.mkdtemp(prefix=f"review_{review_id}_"))

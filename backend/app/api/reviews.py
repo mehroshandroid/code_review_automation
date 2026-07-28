@@ -49,6 +49,10 @@ def _new_review_state() -> dict:
         "test_coverage": None,
         "secrets_found": [],
         "total_score_pct": None,
+        "category_scores": [
+            {"id": category_id, "name": category["name"], "percent_points": None}
+            for category_id, category in CATEGORIES.items()
+        ],
     }
 
 
@@ -142,6 +146,7 @@ async def _run_review(
                 category["name"], category["sub_criteria"], sub_criteria_descriptions, code_context
             )
             scores_by_category[category_id] = aggregate_category_scores(sub_results)
+            state["category_scores"][index]["percent_points"] = scores_by_category[category_id]["percent_points"]
             state["progress"] = 50 + int(30 * (index + 1) / category_count)
         stats["scoring_time_ms"] = int((time.monotonic() - t2) * 1000)
         state["total_score_pct"] = compute_total_score_pct(scores_by_category)
@@ -202,6 +207,7 @@ async def get_progress(review_id: str):
         "test_coverage": state.get("test_coverage"),
         "secrets_found": state.get("secrets_found", []),
         "total_score_pct": state.get("total_score_pct"),
+        "category_scores": state.get("category_scores", []),
     }
 
 
