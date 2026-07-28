@@ -10,6 +10,14 @@ services:
       - OPENAI_API_VERSION=${OPENAI_API_VERSION:-}
       - OPENAI_DEPLOYMENT_NAME=${OPENAI_DEPLOYMENT_NAME:-}
       - AZURE_OPENAI_KEY=${AZURE_OPENAI_KEY:-}
+      - COMPILER_SERVICE_URL=http://compiler:8000
+    depends_on:
+      - compiler
+    networks:
+      - review-network
+
+  compiler:
+    build: ./compiler
     networks:
       - review-network
 
