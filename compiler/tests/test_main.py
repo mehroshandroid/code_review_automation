@@ -25,6 +25,7 @@ def test_lint_endpoint_returns_ok_with_parsed_issues(monkeypatch):
             '<issues format="6"><issue severity="Warning" message="m">'
             '<location file="f.java" line="1"/></issue></issues>'
         )
+        return {"returncode": 0, "stdout": "BUILD SUCCESSFUL", "stderr": ""}
 
     monkeypatch.setattr(main_module, "run_lint", fake_run_lint)
 
@@ -38,16 +39,29 @@ def test_lint_endpoint_returns_ok_with_parsed_issues(monkeypatch):
     }
 
 
-def test_lint_endpoint_returns_build_failed_when_no_report_produced(monkeypatch):
+def test_lint_endpoint_returns_build_failed_with_the_captured_gradle_output(monkeypatch):
     async def fake_run_lint(project_dir):
-        return None  # simulates a build that never got far enough to produce a report
+        # Simulates a build that never got far enough to produce a report --
+        # e.g. a real compile error -- and proves the actual Gradle
+        # stdout/stderr is surfaced so a build failure is diagnosable
+        # instead of being a silent dead end.
+        return {
+            "returncode": 1,
+            "stdout": "> Task :app:compileDebugJavaWithJavac FAILED",
+            "stderr": "error: cannot find symbol",
+        }
 
     monkeypatch.setattr(main_module, "run_lint", fake_run_lint)
 
     response = client.post("/lint", files={"project": ("project.zip", _build_zip_bytes(), "application/zip")})
 
     assert response.status_code == 200
-    assert response.json() == {"status": "build_failed", "warning_count": None, "issues": []}
+    body = response.json()
+    assert body["status"] == "build_failed"
+    assert body["warning_count"] is None
+    assert body["issues"] == []
+    assert "compileDebugJavaWithJavac FAILED" in body["log"]
+    assert "cannot find symbol" in body["log"]
 
 
 def test_health_returns_ok():
