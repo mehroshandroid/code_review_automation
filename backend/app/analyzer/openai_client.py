@@ -38,7 +38,7 @@ def _category_instructions(category_name: str, sub_criteria: list, descriptions:
     return (
         f"Score the following {category_name} sub-criteria based ONLY on the code above:\n"
         f"{criteria_lines}\n\n"
-        "For each sub-criterion, score 0 (fails), 0.5 (partial), 1 (meets it), or null if the "
+        "For each sub-criterion, score 0 (fails), 1 (meets it), or null if the "
         "code snippet does not contain enough information to judge that specific sub-criterion "
         "(e.g. it asks about PR comments, commit history, or other context not present in "
         "source code -- do not guess or assume in that case, use null). "

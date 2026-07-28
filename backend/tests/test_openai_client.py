@@ -118,6 +118,31 @@ async def test_live_mode_grounds_the_prompt_with_real_descriptions(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_live_mode_rubric_is_binary_no_partial_credit(monkeypatch):
+    monkeypatch.setenv("AZURE_OPENAI_KEY", "test-key")
+    monkeypatch.setenv("OPENAI_API_BASE", "https://example.cognitive.microsoft.com/")
+    monkeypatch.setenv("OPENAI_DEPLOYMENT_NAME", "gpt-4o-mini")
+    monkeypatch.setenv("OPENAI_API_VERSION", "2025-01-01-preview")
+
+    captured = {}
+
+    async def fake_post(self, url, headers=None, json=None):
+        captured["json"] = json
+        content = '{"1.1": {"score": 1, "remark": "ok"}}'
+        request = httpx.Request("POST", url)
+        return httpx.Response(status_code=200, json={"choices": [{"message": {"content": content}}]}, request=request)
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", fake_post)
+
+    await openai_client.score_category("Code Structure", ["1.1"], {}, "code here")
+
+    instructions = captured["json"]["messages"][1]["content"]
+    assert "0.5" not in instructions
+    assert "0 (fails)" in instructions
+    assert "1 (meets it)" in instructions
+
+
+@pytest.mark.asyncio
 async def test_live_mode_reorders_result_to_match_requested_sub_criteria(monkeypatch):
     # The model's JSON key order is not guaranteed to match the requested
     # sub_criteria order -- callers rely on dict order to align each score to
