@@ -5,12 +5,7 @@ import StatsDisplay from "./StatsDisplay";
 const baseProps = {
   totalScorePct: 78,
   warnings: [],
-  testCoverage: null,
   secretsFound: [],
-  categoryScores: [
-    { id: "1", name: "Code naming conventions / Code Structure", percent_points: 90.0 },
-    { id: "2", name: "Reliability, Security & Observability", percent_points: 60.0 },
-  ],
   stats: {},
   downloadUrl: "/api/reviews/abc-123/download",
   onReset: () => {},
@@ -48,14 +43,6 @@ test("shows warning and secret counts as outline tags", () => {
   );
   expect(screen.getByText("1 warnings")).toBeInTheDocument();
   expect(screen.getByText("1 secrets")).toBeInTheDocument();
-});
-
-test("renders the category scores chart with every category's score", () => {
-  render(<StatsDisplay {...baseProps} />);
-  expect(screen.getByText("Code naming conventions / Code Structure")).toBeInTheDocument();
-  expect(screen.getByText("90%")).toBeInTheDocument();
-  expect(screen.getByText("Reliability, Security & Observability")).toBeInTheDocument();
-  expect(screen.getByText("60%")).toBeInTheDocument();
 });
 
 test("renders a download link pointing at the constructed download URL", () => {

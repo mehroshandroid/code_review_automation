@@ -1,6 +1,4 @@
 import CornerMarks from "./CornerMarks";
-import FindingsPanel from "./FindingsPanel";
-import CategoryScoresChart from "./CategoryScoresChart";
 import { DownloadIcon } from "../icons";
 import { getDownloadUrl } from "../services/api";
 
@@ -16,9 +14,7 @@ const TIMING_ROWS = [
   { key: "total_time_ms", label: "Total" },
 ];
 
-export default function StatsDisplay({
-  totalScorePct, warnings, testCoverage, secretsFound, categoryScores, stats, downloadUrl, onReset,
-}) {
+export default function StatsDisplay({ totalScorePct, warnings, secretsFound, stats, downloadUrl, onReset }) {
   const rows = TIMING_ROWS.filter((row) => stats[row.key] !== undefined);
 
   return (
@@ -45,14 +41,6 @@ export default function StatsDisplay({
           Download populated workbook
           <DownloadIcon />
         </a>
-      </div>
-
-      <div style={{ marginTop: "var(--space-5)" }}>
-        <CategoryScoresChart categoryScores={categoryScores} />
-      </div>
-
-      <div style={{ marginTop: "var(--space-5)" }}>
-        <FindingsPanel warnings={warnings} testCoverage={testCoverage} secretsFound={secretsFound} />
       </div>
 
       <div className="card blueprint" style={{ padding: "var(--space-6)", marginTop: "var(--space-5)" }}>
