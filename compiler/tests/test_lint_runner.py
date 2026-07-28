@@ -1,4 +1,30 @@
-from app.lint_runner import find_gradle_root
+import pytest
+
+from app.lint_runner import _run_subprocess_streaming, find_gradle_root
+
+
+@pytest.mark.asyncio
+async def test_run_subprocess_streaming_collects_full_stdout_and_stderr(tmp_path):
+    result = await _run_subprocess_streaming(
+        ["sh", "-c", "echo out-line-1; echo out-line-2; echo err-line-1 1>&2"],
+        cwd=tmp_path,
+        timeout_seconds=10,
+    )
+    assert result["returncode"] == 0
+    assert result["stdout"] == "out-line-1\nout-line-2"
+    assert result["stderr"] == "err-line-1"
+
+
+@pytest.mark.asyncio
+async def test_run_subprocess_streaming_reports_nonzero_exit_code(tmp_path):
+    result = await _run_subprocess_streaming(["sh", "-c", "exit 3"], cwd=tmp_path, timeout_seconds=10)
+    assert result["returncode"] == 3
+
+
+@pytest.mark.asyncio
+async def test_run_subprocess_streaming_times_out(tmp_path):
+    result = await _run_subprocess_streaming(["sh", "-c", "sleep 5"], cwd=tmp_path, timeout_seconds=0.2)
+    assert result == {"returncode": None, "stdout": "", "stderr": "Gradle process timed out."}
 
 
 def test_find_gradle_root_locates_a_nested_settings_gradle_kts(tmp_path):

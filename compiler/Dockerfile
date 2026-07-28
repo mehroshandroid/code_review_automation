@@ -2,6 +2,10 @@ FROM eclipse-temurin:17-jdk-jammy
 
 ENV ANDROID_SDK_ROOT=/opt/android-sdk
 ENV PATH="${PATH}:${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin:${ANDROID_SDK_ROOT}/platform-tools"
+# Belt-and-suspenders alongside the explicit flush=True calls in lint_runner.py --
+# guarantees any stray print()/log line still streams immediately rather than
+# sitting in a buffer until the process exits.
+ENV PYTHONUNBUFFERED=1
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         curl unzip python3 python3-pip \

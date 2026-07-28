@@ -18,6 +18,15 @@ services:
 
   compiler:
     build: ./compiler
+    # Forced to amd64: Android build tooling (AAPT2, D8, NDK toolchains,
+    # etc.) is published per-platform, and arm64 native artifacts aren't
+    # reliably available/resolved across the whole range of AGP/Gradle
+    # versions an arbitrary uploaded project might use. Pinning the whole
+    # container to amd64 (run under Rosetta/QEMU on an Apple Silicon host)
+    # keeps every native binary a project pulls in on the one architecture
+    # that's universally published, instead of hitting a mismatch only on
+    # some projects.
+    platform: linux/amd64
     networks:
       - review-network
 
