@@ -18,15 +18,11 @@ services:
 
   compiler:
     build: ./compiler
-    # Forced to amd64: Android build tooling (AAPT2, D8, NDK toolchains,
-    # etc.) is published per-platform, and arm64 native artifacts aren't
-    # reliably available/resolved across the whole range of AGP/Gradle
-    # versions an arbitrary uploaded project might use. Pinning the whole
-    # container to amd64 (run under Rosetta/QEMU on an Apple Silicon host)
-    # keeps every native binary a project pulls in on the one architecture
-    # that's universally published, instead of hitting a mismatch only on
-    # some projects.
-    platform: linux/amd64
+    # Native arm64 (no platform pin) -- much faster than forcing amd64
+    # emulation on an Apple Silicon host. One project previously hit an
+    # AAPT2 x86_64/arm64 native-binary mismatch; if that recurs, the fix
+    # is to reintroduce `platform: linux/amd64` (see git history) as a
+    # deliberate speed-vs-compatibility trade-off, not silently re-add it.
     volumes:
       # Persists downloaded Gradle distributions + the Maven dependency
       # cache across container recreations (the image itself only bakes in
