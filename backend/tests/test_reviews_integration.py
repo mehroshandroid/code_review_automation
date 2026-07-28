@@ -76,6 +76,11 @@ def test_full_review_pipeline_in_stub_mode(monkeypatch, tmp_path: Path):
 
     monkeypatch.setattr(reviews_module, "score_category", _capturing_score_category)
 
+    async def _fake_check_compile_warnings(zip_path_arg):
+        return {"status": "ok", "warning_count": 0, "issues": []}
+
+    monkeypatch.setattr(reviews_module, "check_compile_warnings", _fake_check_compile_warnings)
+
     with TestClient(app) as client:
         create_response = client.post(
             "/api/reviews",
@@ -111,6 +116,8 @@ def test_full_review_pipeline_in_stub_mode(monkeypatch, tmp_path: Path):
         # CATEGORIES, so every category's percent_points is 100.0 and the
         # mean across categories is exactly 100.0.
         assert final_state["total_score_pct"] == 100.0
+        assert final_state["compile_status"] == "ok"
+        assert final_state["lint_issues"] == []
 
         # Proves the runtime wiring end to end: extraction -> gather_code_context ->
         # _run_review -> score_category actually receives the gathered content, not

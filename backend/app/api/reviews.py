@@ -13,6 +13,7 @@ from openpyxl import load_workbook
 from starlette.background import BackgroundTask
 
 from app.analyzer.android_analyzer import analyze_project, gather_code_context
+from app.analyzer.compile_checker import check_compile_warnings
 from app.analyzer.excel_handler import (
     aggregate_category_scores,
     compute_total_score_pct,
@@ -55,7 +56,26 @@ def _new_review_state() -> dict:
         ],
         "code_context": None,
         "prompt_log": [],
+        "lint_issues": [],
+        "compile_status": None,
     }
+
+
+def _compile_result_to_sub_score(compile_result: dict) -> dict:
+    status = compile_result["status"]
+    warning_count = compile_result["warning_count"]
+    if status == "unavailable":
+        return {"score": None, "remark": "Compile check unavailable (compiler service unreachable)."}
+    if status == "build_failed":
+        return {"score": 0, "remark": "Project failed to compile."}
+    if warning_count == 0:
+        return {"score": 1, "remark": "No Lint warnings or errors found."}
+    return {"score": 0, "remark": f"{warning_count} Lint warning(s)/error(s) found."}
+
+
+def _merge_compile_result_into_category_1(sub_results: dict, compile_sub_result: dict) -> dict:
+    merged = {**sub_results, "1.4": compile_sub_result}
+    return {sub_id: merged[sub_id] for sub_id in CATEGORIES["1"]["sub_criteria"]}
 
 
 @router.post("/api/reviews")
@@ -137,7 +157,17 @@ async def _run_review(
         template_ws = load_workbook(template_path).active
         sub_criteria_descriptions = extract_sub_criteria_descriptions(template_ws, CATEGORIES)
         stats["analysis_time_ms"] = int((time.monotonic() - t1) * 1000)
-        state["progress"] = 50
+        state["progress"] = 35
+
+        t1b = time.monotonic()
+        state["phase"] = "compiling"
+        state["message"] = "Compiling and running Lint checks..."
+        compile_result = await check_compile_warnings(zip_path)
+        state["lint_issues"] = compile_result["issues"]
+        state["compile_status"] = compile_result["status"]
+        compile_sub_result = _compile_result_to_sub_score(compile_result)
+        stats["compile_time_ms"] = int((time.monotonic() - t1b) * 1000)
+        state["progress"] = 55
 
         t2 = time.monotonic()
         state["phase"] = "scoring"
@@ -145,13 +175,19 @@ async def _run_review(
         category_count = len(CATEGORIES)
         for index, (category_id, category) in enumerate(CATEGORIES.items()):
             state["message"] = f"Evaluating {category['name']}..."
-            sub_results, prompt_info = await score_category(
-                category["name"], category["sub_criteria"], sub_criteria_descriptions, code_context
+            llm_sub_criteria = (
+                [sub_id for sub_id in category["sub_criteria"] if sub_id != "1.4"]
+                if category_id == "1" else category["sub_criteria"]
             )
+            sub_results, prompt_info = await score_category(
+                category["name"], llm_sub_criteria, sub_criteria_descriptions, code_context
+            )
+            if category_id == "1":
+                sub_results = _merge_compile_result_into_category_1(sub_results, compile_sub_result)
             scores_by_category[category_id] = aggregate_category_scores(sub_results)
             state["category_scores"][index]["percent_points"] = scores_by_category[category_id]["percent_points"]
             state["prompt_log"].append(prompt_info)
-            state["progress"] = 50 + int(30 * (index + 1) / category_count)
+            state["progress"] = 55 + int(30 * (index + 1) / category_count)
         stats["scoring_time_ms"] = int((time.monotonic() - t2) * 1000)
         state["total_score_pct"] = compute_total_score_pct(scores_by_category)
 
@@ -160,7 +196,7 @@ async def _run_review(
         state["message"] = "Generating overall summary..."
         general_remarks, remarks_prompt_info = await generate_general_remarks(scores_by_category)
         state["prompt_log"].append(remarks_prompt_info)
-        state["progress"] = 90
+        state["progress"] = 95
         state["message"] = "Populating review document..."
         output_path = work_dir / "output.xlsx"
         generate_review_excel(
@@ -215,6 +251,8 @@ async def get_progress(review_id: str):
         "category_scores": state.get("category_scores", []),
         "code_context": state.get("code_context"),
         "prompt_log": state.get("prompt_log", []),
+        "lint_issues": state.get("lint_issues", []),
+        "compile_status": state.get("compile_status"),
     }
 
 

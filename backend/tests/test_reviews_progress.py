@@ -36,6 +36,8 @@ def test_progress_reflects_stored_state():
                 "tokens": {"prompt_tokens": 500, "completion_tokens": 40, "total_tokens": 540, "cached_tokens": None},
             },
         ],
+        "lint_issues": [{"severity": "Warning", "message": "m", "file": "f.java", "line": 1}],
+        "compile_status": "ok",
     }
     response = client.get("/api/reviews/fixed-id/progress")
     assert response.status_code == 200
@@ -61,6 +63,8 @@ def test_progress_reflects_stored_state():
             "tokens": {"prompt_tokens": 500, "completion_tokens": 40, "total_tokens": 540, "cached_tokens": None},
         },
     ]
+    assert body["lint_issues"] == [{"severity": "Warning", "message": "m", "file": "f.java", "line": 1}]
+    assert body["compile_status"] == "ok"
 
 
 def test_progress_defaults_detection_fields_when_absent():
@@ -82,6 +86,8 @@ def test_progress_defaults_detection_fields_when_absent():
     assert body["category_scores"] == []
     assert body["code_context"] is None
     assert body["prompt_log"] == []
+    assert body["lint_issues"] == []
+    assert body["compile_status"] is None
 
 
 def test_progress_includes_download_url_when_completed():

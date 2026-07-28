@@ -132,7 +132,11 @@ async def test_run_review_updates_message_per_category_during_scoring(monkeypatc
         }}
         return sub_results, prompt_info
 
+    async def _fake_check_compile_warnings(zip_path_arg):
+        return {"status": "ok", "warning_count": 0, "issues": []}
+
     monkeypatch.setattr(reviews_module, "score_category", _recording_score_category)
+    monkeypatch.setattr(reviews_module, "check_compile_warnings", _fake_check_compile_warnings)
 
     await _run_review(
         review_id, work_dir, zip_path, template_path, zip_valid=True, template_valid=True, project_name="Test"
@@ -179,7 +183,11 @@ async def test_run_review_updates_category_scores_progressively(monkeypatch):
         }}
         return sub_results, prompt_info
 
+    async def _fake_check_compile_warnings(zip_path_arg):
+        return {"status": "ok", "warning_count": 0, "issues": []}
+
     monkeypatch.setattr(reviews_module, "score_category", _recording_score_category)
+    monkeypatch.setattr(reviews_module, "check_compile_warnings", _fake_check_compile_warnings)
 
     await _run_review(
         review_id, work_dir, zip_path, template_path, zip_valid=True, template_valid=True, project_name="Test"
@@ -210,6 +218,11 @@ async def test_run_review_builds_prompt_log_and_code_context(monkeypatch):
     assert _reviews[review_id]["code_context"] is None
     assert _reviews[review_id]["prompt_log"] == []
 
+    async def _fake_check_compile_warnings(zip_path_arg):
+        return {"status": "ok", "warning_count": 0, "issues": []}
+
+    monkeypatch.setattr(reviews_module, "check_compile_warnings", _fake_check_compile_warnings)
+
     await _run_review(
         review_id, work_dir, zip_path, template_path, zip_valid=True, template_valid=True, project_name="Test"
     )
@@ -229,6 +242,92 @@ async def test_run_review_builds_prompt_log_and_code_context(monkeypatch):
         entry["tokens"] == {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "cached_tokens": 0}
         for entry in state["prompt_log"]
     )
+
+
+def test_compile_result_to_sub_score_ok_zero_warnings():
+    result = reviews_module._compile_result_to_sub_score({"status": "ok", "warning_count": 0, "issues": []})
+    assert result == {"score": 1, "remark": "No Lint warnings or errors found."}
+
+
+def test_compile_result_to_sub_score_ok_with_warnings():
+    result = reviews_module._compile_result_to_sub_score({"status": "ok", "warning_count": 3, "issues": []})
+    assert result == {"score": 0, "remark": "3 Lint warning(s)/error(s) found."}
+
+
+def test_compile_result_to_sub_score_build_failed():
+    result = reviews_module._compile_result_to_sub_score(
+        {"status": "build_failed", "warning_count": None, "issues": []}
+    )
+    assert result == {"score": 0, "remark": "Project failed to compile."}
+
+
+def test_compile_result_to_sub_score_unavailable():
+    result = reviews_module._compile_result_to_sub_score(
+        {"status": "unavailable", "warning_count": None, "issues": []}
+    )
+    assert result == {"score": None, "remark": "Compile check unavailable (compiler service unreachable)."}
+
+
+def test_merge_compile_result_into_category_1_preserves_declared_order():
+    llm_sub_results = {
+        "1.1": {"score": 1, "remark": ""},
+        "1.2": {"score": 1, "remark": ""},
+        "1.3": {"score": 1, "remark": ""},
+        "1.5": {"score": 1, "remark": ""},
+        "1.6": {"score": 1, "remark": ""},
+    }
+    compile_sub_result = {"score": 0, "remark": "2 Lint warning(s)/error(s) found."}
+
+    merged = reviews_module._merge_compile_result_into_category_1(llm_sub_results, compile_sub_result)
+
+    assert list(merged.keys()) == ["1.1", "1.2", "1.3", "1.4", "1.5", "1.6"]
+    assert merged["1.4"] == compile_sub_result
+
+
+async def test_run_review_scores_1_4_from_compile_check_and_excludes_it_from_the_llm(monkeypatch):
+    review_id = "compile-check-1-4"
+    work_dir = Path(tempfile.mkdtemp(prefix=f"review_{review_id}_"))
+    zip_path = work_dir / "android.zip"
+    template_path = work_dir / "template.xlsx"
+    zip_path.write_bytes(_build_zip_bytes())
+    template_path.write_bytes(_build_xlsx_bytes())
+
+    _reviews[review_id] = _new_review_state()
+
+    captured_sub_criteria = {}
+
+    async def fake_score_category(category_name, sub_criteria, descriptions, code_snippets):
+        captured_sub_criteria[category_name] = list(sub_criteria)
+        sub_results = {sub_id: {"score": 1, "remark": ""} for sub_id in sub_criteria}
+        prompt_info = {"label": category_name, "prompt_text": "stub", "tokens": {
+            "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "cached_tokens": 0,
+        }}
+        return sub_results, prompt_info
+
+    async def fake_check_compile_warnings(zip_path_arg):
+        return {
+            "status": "ok", "warning_count": 2,
+            "issues": [{"severity": "Warning", "message": "m", "file": "f.java", "line": 1}],
+        }
+
+    monkeypatch.setattr(reviews_module, "score_category", fake_score_category)
+    monkeypatch.setattr(reviews_module, "check_compile_warnings", fake_check_compile_warnings)
+
+    await _run_review(
+        review_id, work_dir, zip_path, template_path, zip_valid=True, template_valid=True, project_name="Test"
+    )
+
+    # "1.4" must never be sent to the LLM -- it's scored deterministically.
+    assert "1.4" not in captured_sub_criteria["Code naming conventions / Code Structure"]
+
+    state = _reviews[review_id]
+    assert state["compile_status"] == "ok"
+    assert state["lint_issues"] == [{"severity": "Warning", "message": "m", "file": "f.java", "line": 1}]
+
+    # Category 1: 5 LLM sub-criteria stubbed at score 1, plus 1.4 scored 0
+    # (2 Lint warnings) -> (5*1 + 0) / 6 = 0.8333 -> rounds to 83.0%. Proves
+    # the real 1.4 score is actually folded into the average, not dropped.
+    assert state["category_scores"][0]["percent_points"] == 83.0
 
 
 async def test_run_review_updates_message_on_error_paths(monkeypatch):
