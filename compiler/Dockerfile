@@ -1,4 +1,9 @@
-FROM eclipse-temurin:17-jdk-jammy
+# A newer JDK can always compile older --release targets (8, 11, 17, ...)
+# but never a newer one than itself -- so the JDK version here should be the
+# highest one any uploaded project is likely to target, not the lowest.
+# JDK 21 (current LTS) covers the vast majority of real Android projects
+# without needing per-project toolchain provisioning.
+FROM eclipse-temurin:21-jdk-jammy
 
 ENV ANDROID_SDK_ROOT=/opt/android-sdk
 ENV PATH="${PATH}:${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin:${ANDROID_SDK_ROOT}/platform-tools"
