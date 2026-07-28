@@ -1,7 +1,9 @@
 import zipfile
 from pathlib import Path
+from typing import Optional
 
 SDK_DIR = "/opt/android-sdk"
+_APPLICATION_PLUGIN_ID = "com.android.application"
 # A cold build (fresh Gradle-distribution download + full dependency
 # resolution, now also under amd64/Rosetta emulation on Apple Silicon hosts)
 # can legitimately take several minutes for a real project. Leaves headroom
@@ -33,6 +35,71 @@ def find_gradle_root(project_dir: Path) -> Path:
         for path in project_dir.rglob(name):
             return path.parent
     return project_dir
+
+
+def _resolve_version_catalog_alias(gradle_root: Path) -> Optional[str]:
+    """Modern projects often apply plugins via a version-catalog alias
+    (e.g. `alias(libs.plugins.android.application)`) rather than the
+    literal plugin id string -- the id only appears in
+    gradle/libs.versions.toml. Looks up that file's [plugins] table for
+    whichever alias maps to com.android.application, and returns the
+    dotted accessor form Gradle generates for it (e.g. the TOML key
+    "android-application" becomes "libs.plugins.android.application").
+    """
+    catalog_path = gradle_root / "gradle" / "libs.versions.toml"
+    if not catalog_path.exists():
+        return None
+    try:
+        content = catalog_path.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return None
+
+    in_plugins_section = False
+    for line in content.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("["):
+            in_plugins_section = stripped == "[plugins]"
+            continue
+        if not in_plugins_section or "=" not in stripped:
+            continue
+        key, _, value = stripped.partition("=")
+        if f'"{_APPLICATION_PLUGIN_ID}"' in value or f"'{_APPLICATION_PLUGIN_ID}'" in value:
+            alias = key.strip().strip('"').strip("'")
+            return "libs.plugins." + alias.replace("-", ".").replace("_", ".")
+    return None
+
+
+def _module_applies_android_application(build_file: Path, catalog_alias: Optional[str]) -> bool:
+    try:
+        content = build_file.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return False
+    if _APPLICATION_PLUGIN_ID in content:
+        return True
+    if catalog_alias and catalog_alias in content:
+        return True
+    return False
+
+
+def find_app_module_path(gradle_root: Path) -> Optional[str]:
+    """Locates whichever module applies the com.android.application plugin
+    -- the actual Android application module, as opposed to library
+    modules (third-party/vendored dependencies included as local project
+    modules), so lint can be scoped to just that one module instead of
+    every module in the project. Returns a Gradle project path like
+    ":app", or None if no match was found (caller falls back to the
+    unscoped aggregate lint task).
+    """
+    gradle_root = Path(gradle_root)
+    catalog_alias = _resolve_version_catalog_alias(gradle_root)
+    for name in ("build.gradle.kts", "build.gradle"):
+        for build_file in gradle_root.rglob(name):
+            if build_file.parent == gradle_root:
+                continue  # the root project's own build file is never a module
+            if _module_applies_android_application(build_file, catalog_alias):
+                relative = build_file.parent.relative_to(gradle_root)
+                return ":" + ":".join(relative.parts)
+    return None
 
 
 async def _stream_and_collect(stream, label: str) -> str:
@@ -82,8 +149,12 @@ async def _run_subprocess_streaming(command: list, cwd: Path, timeout_seconds: f
 
 
 async def run_lint(project_dir: Path) -> dict:
-    """Runs `sh ./gradlew lint` (or the preinstalled fallback Gradle if no
-    wrapper is present) inside the discovered Gradle root under project_dir
+    """Runs `sh ./gradlew :app:lint` -- scoped to whichever module applies
+    com.android.application (see find_app_module_path), so lint doesn't
+    also analyze third-party/vendored library modules -- or the
+    preinstalled fallback Gradle if no wrapper is present. Falls back to
+    the unscoped aggregate `lint` task if no application module could be
+    identified. Runs inside the discovered Gradle root under project_dir
     (see find_gradle_root). Does not raise on a non-zero exit code --
     Android Lint's own Gradle task exits non-zero whenever there's an
     Error-severity finding, which is not the same as the build failing to
@@ -99,6 +170,9 @@ async def run_lint(project_dir: Path) -> dict:
     (gradle_root / "local.properties").write_text(f"sdk.dir={SDK_DIR}\n")
 
     gradlew = gradle_root / "gradlew"
-    command = ["sh", "gradlew", "lint"] if gradlew.exists() else ["gradle", "lint"]
+    base_command = ["sh", "gradlew"] if gradlew.exists() else ["gradle"]
 
-    return await _run_subprocess_streaming(command, gradle_root, GRADLE_TIMEOUT_SECONDS)
+    app_module = find_app_module_path(gradle_root)
+    lint_task = f"{app_module}:lint" if app_module else "lint"
+
+    return await _run_subprocess_streaming(base_command + [lint_task], gradle_root, GRADLE_TIMEOUT_SECONDS)
