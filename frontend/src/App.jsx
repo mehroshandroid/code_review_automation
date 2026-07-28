@@ -3,9 +3,13 @@ import UploadForm from "./components/UploadForm";
 import ProgressTracker from "./components/ProgressTracker";
 import FindingsPanel from "./components/FindingsPanel";
 import CategoryScoresChart from "./components/CategoryScoresChart";
+import LlmUsageStats from "./components/LlmUsageStats";
+import PromptDebugLog from "./components/PromptDebugLog";
 import StatsDisplay from "./components/StatsDisplay";
 import CornerMarks from "./components/CornerMarks";
 import { createReview } from "./services/api";
+
+const SCORING_PHASES = ["scoring", "generating", "completed"];
 
 export default function App() {
   const [state, setState] = useState("idle"); // idle | uploading | polling | completed | error
@@ -48,11 +52,14 @@ export default function App() {
     setErrorMessage("");
   }
 
+  const isRunningOrDone = state === "polling" || state === "completed";
+  const showLlmDetails = !!progressData && SCORING_PHASES.includes(progressData.phase);
+
   return (
     <div style={{ minHeight: "100vh", background: "var(--color-bg)", fontFamily: "var(--font-body)", color: "var(--color-text)" }}>
       <nav className="nav"><span className="nav-brand">Code Review Automation</span></nav>
 
-      <main style={{ maxWidth: 920, margin: "0 auto", padding: "var(--space-8) var(--space-4) var(--space-10)" }}>
+      <main style={{ maxWidth: isRunningOrDone ? 1440 : 920, margin: "0 auto", padding: "var(--space-8) var(--space-4) var(--space-10)" }}>
         <header style={{ marginBottom: "var(--space-6)" }}>
           <h1 style={{ fontFamily: "var(--font-heading)", fontSize: 38, lineHeight: 1.1, margin: "0 0 var(--space-2)" }}>
             Android Code Review Automation
@@ -67,37 +74,54 @@ export default function App() {
           <UploadForm onSubmit={handleUpload} disabled={state === "uploading"} />
         )}
 
-        {state === "polling" && reviewId && (
+        {isRunningOrDone && reviewId && (
           <>
-            <ProgressTracker reviewId={reviewId} onUpdate={handleProgressUpdate} />
-            {progressData && ["scoring", "generating"].includes(progressData.phase) && (
-              <div style={{ marginTop: "var(--space-5)" }}>
-                <CategoryScoresChart categoryScores={progressData.category_scores} />
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "var(--space-5)" }}>
+              <div>
+                {state === "polling" && (
+                  <ProgressTracker reviewId={reviewId} onUpdate={handleProgressUpdate} />
+                )}
+                {progressData && (
+                  <div style={{ marginTop: state === "polling" ? "var(--space-5)" : 0 }}>
+                    <FindingsPanel
+                      warnings={progressData.warnings}
+                      testCoverage={progressData.test_coverage}
+                      secretsFound={progressData.secrets_found}
+                    />
+                  </div>
+                )}
+                {state === "completed" && progressData && (
+                  <div style={{ marginTop: "var(--space-5)" }}>
+                    <StatsDisplay
+                      totalScorePct={progressData.total_score_pct}
+                      warnings={progressData.warnings}
+                      secretsFound={progressData.secrets_found}
+                      stats={progressData.stats}
+                      downloadUrl={progressData.download_url}
+                      onReset={handleReset}
+                    />
+                  </div>
+                )}
               </div>
-            )}
-            {progressData && (
+
+              <div>
+                {showLlmDetails && (
+                  <>
+                    <CategoryScoresChart categoryScores={progressData.category_scores} />
+                    <div style={{ marginTop: "var(--space-4)" }}>
+                      <LlmUsageStats promptLog={progressData.prompt_log} />
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {showLlmDetails && (
               <div style={{ marginTop: "var(--space-5)" }}>
-                <FindingsPanel
-                  warnings={progressData.warnings}
-                  testCoverage={progressData.test_coverage}
-                  secretsFound={progressData.secrets_found}
-                />
+                <PromptDebugLog codeContext={progressData.code_context} promptLog={progressData.prompt_log} />
               </div>
             )}
           </>
-        )}
-
-        {state === "completed" && progressData && (
-          <StatsDisplay
-            totalScorePct={progressData.total_score_pct}
-            warnings={progressData.warnings}
-            testCoverage={progressData.test_coverage}
-            secretsFound={progressData.secrets_found}
-            categoryScores={progressData.category_scores}
-            stats={progressData.stats}
-            downloadUrl={progressData.download_url}
-            onReset={handleReset}
-          />
         )}
 
         {state === "error" && (

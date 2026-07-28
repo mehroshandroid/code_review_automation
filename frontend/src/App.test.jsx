@@ -30,7 +30,7 @@ async function uploadValidFiles(user) {
   await user.click(screen.getByRole("button", { name: /start review/i }));
 }
 
-test("full happy path: upload, poll, complete, download link, reset", async () => {
+test("full happy path: upload, poll, complete, download link, LLM stats, reset", async () => {
   const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
   createReview.mockResolvedValue({ review_id: "abc-123", status: "processing" });
   getProgress.mockResolvedValue({
@@ -40,6 +40,14 @@ test("full happy path: upload, poll, complete, download link, reset", async () =
     total_score_pct: 78,
     category_scores: [
       { id: "1", name: "Code naming conventions / Code Structure", percent_points: 90.0 },
+    ],
+    code_context: "class MainActivity {}",
+    prompt_log: [
+      {
+        label: "Code naming conventions / Code Structure",
+        prompt_text: "Score the following...",
+        tokens: { prompt_tokens: 500, completion_tokens: 40, total_tokens: 540, cached_tokens: null },
+      },
     ],
   });
 
@@ -52,7 +60,10 @@ test("full happy path: upload, poll, complete, download link, reset", async () =
 
   expect(screen.getByText(/review ready/i)).toBeInTheDocument();
   expect(screen.getByText("Total 78%")).toBeInTheDocument();
-  expect(screen.getByText("Code naming conventions / Code Structure")).toBeInTheDocument();
+  expect(screen.getAllByText("Code naming conventions / Code Structure").length).toBeGreaterThan(0);
+  expect(screen.getByText("1 LLM calls")).toBeInTheDocument();
+  expect(screen.getByText("540 tokens used")).toBeInTheDocument();
+  expect(screen.getByText(/show source code sent to the model/i)).toBeInTheDocument();
   expect(screen.getByRole("link", { name: /download populated workbook/i })).toHaveAttribute(
     "href",
     "http://localhost:8000/api/reviews/abc-123/download"
@@ -83,7 +94,7 @@ test("shows an error message when the review itself fails during processing, and
     status: "error", phase: "error", progress: 0, message: "Queued",
     stats: {}, download_url: null, error: "No source files found (.java/.kt)",
     warnings: [], test_coverage: null, secrets_found: [], total_score_pct: null,
-    category_scores: [],
+    category_scores: [], code_context: null, prompt_log: [],
   });
 
   render(<App />);
