@@ -2,6 +2,7 @@ import { useCallback, useState } from "react";
 import UploadForm from "./components/UploadForm";
 import ProgressTracker from "./components/ProgressTracker";
 import FindingsPanel from "./components/FindingsPanel";
+import CategoryScoresChart from "./components/CategoryScoresChart";
 import StatsDisplay from "./components/StatsDisplay";
 import CornerMarks from "./components/CornerMarks";
 import { createReview } from "./services/api";
@@ -69,6 +70,11 @@ export default function App() {
         {state === "polling" && reviewId && (
           <>
             <ProgressTracker reviewId={reviewId} onUpdate={handleProgressUpdate} />
+            {progressData && ["scoring", "generating"].includes(progressData.phase) && (
+              <div style={{ marginTop: "var(--space-5)" }}>
+                <CategoryScoresChart categoryScores={progressData.category_scores} />
+              </div>
+            )}
             {progressData && (
               <div style={{ marginTop: "var(--space-5)" }}>
                 <FindingsPanel
@@ -87,6 +93,7 @@ export default function App() {
             warnings={progressData.warnings}
             testCoverage={progressData.test_coverage}
             secretsFound={progressData.secrets_found}
+            categoryScores={progressData.category_scores}
             stats={progressData.stats}
             downloadUrl={progressData.download_url}
             onReset={handleReset}

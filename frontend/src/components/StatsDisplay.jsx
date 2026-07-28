@@ -1,5 +1,6 @@
 import CornerMarks from "./CornerMarks";
 import FindingsPanel from "./FindingsPanel";
+import CategoryScoresChart from "./CategoryScoresChart";
 import { DownloadIcon } from "../icons";
 import { getDownloadUrl } from "../services/api";
 
@@ -16,7 +17,7 @@ const TIMING_ROWS = [
 ];
 
 export default function StatsDisplay({
-  totalScorePct, warnings, testCoverage, secretsFound, stats, downloadUrl, onReset,
+  totalScorePct, warnings, testCoverage, secretsFound, categoryScores, stats, downloadUrl, onReset,
 }) {
   const rows = TIMING_ROWS.filter((row) => stats[row.key] !== undefined);
 
@@ -44,6 +45,10 @@ export default function StatsDisplay({
           Download populated workbook
           <DownloadIcon />
         </a>
+      </div>
+
+      <div style={{ marginTop: "var(--space-5)" }}>
+        <CategoryScoresChart categoryScores={categoryScores} />
       </div>
 
       <div style={{ marginTop: "var(--space-5)" }}>

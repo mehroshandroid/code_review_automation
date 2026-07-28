@@ -38,6 +38,9 @@ test("full happy path: upload, poll, complete, download link, reset", async () =
     stats: { total_time_ms: 500 }, download_url: "/api/reviews/abc-123/download", error: null,
     warnings: ["Missing AndroidManifest.xml"], test_coverage: 90.0, secrets_found: [],
     total_score_pct: 78,
+    category_scores: [
+      { id: "1", name: "Code naming conventions / Code Structure", percent_points: 90.0 },
+    ],
   });
 
   render(<App />);
@@ -49,6 +52,7 @@ test("full happy path: upload, poll, complete, download link, reset", async () =
 
   expect(screen.getByText(/review ready/i)).toBeInTheDocument();
   expect(screen.getByText("Total 78%")).toBeInTheDocument();
+  expect(screen.getByText("Code naming conventions / Code Structure")).toBeInTheDocument();
   expect(screen.getByRole("link", { name: /download populated workbook/i })).toHaveAttribute(
     "href",
     "http://localhost:8000/api/reviews/abc-123/download"
@@ -79,6 +83,7 @@ test("shows an error message when the review itself fails during processing, and
     status: "error", phase: "error", progress: 0, message: "Queued",
     stats: {}, download_url: null, error: "No source files found (.java/.kt)",
     warnings: [], test_coverage: null, secrets_found: [], total_score_pct: null,
+    category_scores: [],
   });
 
   render(<App />);
