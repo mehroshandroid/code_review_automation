@@ -8,7 +8,7 @@ _APPLICATION_PLUGIN_ID = "com.android.application"
 # resolution, now also under amd64/Rosetta emulation on Apple Silicon hosts)
 # can legitimately take several minutes for a real project. Leaves headroom
 # under the caller's own HTTP timeout (see compile_checker.TIMEOUT_SECONDS).
-GRADLE_TIMEOUT_SECONDS = 900
+GRADLE_TIMEOUT_SECONDS = 1440
 
 
 def extract_zip(zip_bytes: bytes, dest_dir: Path) -> None:

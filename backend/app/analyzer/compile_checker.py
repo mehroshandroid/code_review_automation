@@ -4,10 +4,10 @@ from pathlib import Path
 import httpx
 
 DEFAULT_COMPILER_SERVICE_URL = "http://compiler:8000"
-# Kept above the compiler service's own GRADLE_TIMEOUT_SECONDS (900s) so the
+# Kept above the compiler service's own GRADLE_TIMEOUT_SECONDS (1440s) so the
 # compiler always gets to return its own "timed out" result first, rather
 # than this client's connection timing out first and masking it.
-TIMEOUT_SECONDS = 960.0
+TIMEOUT_SECONDS = 1500.0
 
 
 async def check_compile_warnings(zip_path: Path) -> dict:

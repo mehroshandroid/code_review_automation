@@ -18,11 +18,15 @@ services:
 
   compiler:
     build: ./compiler
-    # Native arm64 (no platform pin) -- much faster than forcing amd64
-    # emulation on an Apple Silicon host. One project previously hit an
-    # AAPT2 x86_64/arm64 native-binary mismatch; if that recurs, the fix
-    # is to reintroduce `platform: linux/amd64` (see git history) as a
-    # deliberate speed-vs-compatibility trade-off, not silently re-add it.
+    # Forced to amd64: confirmed against a real production project whose
+    # AAPT2 resolution picks the x86_64 Linux artifact unconditionally --
+    # it failed the exact same way running natively on arm64 as it did
+    # under amd64 emulation (before this pin existed), proving it's not
+    # host-arch-aware. Native arm64 is faster where it works, but this
+    # project (and potentially others) hard-requires x86_64 regardless of
+    # host architecture, so amd64 is the trade-off that actually holds for
+    # "any project," not just the common case.
+    platform: linux/amd64
     volumes:
       # Persists downloaded Gradle distributions + the Maven dependency
       # cache across container recreations (the image itself only bakes in
