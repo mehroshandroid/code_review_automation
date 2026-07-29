@@ -11,16 +11,33 @@ const baseProps = {
   onReset: () => {},
 };
 
-test("shows timing breakdown for each provided stat, formatted as seconds", () => {
+test("shows timing breakdown for each provided stat, formatted as seconds, inside the performance breakdown modal", async () => {
+  const user = userEvent.setup();
   render(
     <StatsDisplay
       {...baseProps}
-      stats={{ ingest_time_ms: 800, analysis_time_ms: 2100, scoring_time_ms: 11400, generation_time_ms: 600, total_time_ms: 14900 }}
+      stats={{ ingest_time_ms: 800, analysis_time_ms: 2100, compile_time_ms: 5200, scoring_time_ms: 11400, generation_time_ms: 600, total_time_ms: 14900 }}
     />
   );
 
+  expect(screen.queryByText("0.8s")).not.toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: /performance breakdown/i }));
+
   expect(screen.getByText("0.8s")).toBeInTheDocument();
   expect(screen.getByText("14.9s")).toBeInTheDocument();
+  expect(screen.getByText("Compiling & Lint (Gradle)")).toBeInTheDocument();
+  expect(screen.getByText("5.2s")).toBeInTheDocument();
+});
+
+test("closes the performance breakdown modal when Close is clicked", async () => {
+  const user = userEvent.setup();
+  render(<StatsDisplay {...baseProps} stats={{ total_time_ms: 500 }} />);
+
+  await user.click(screen.getByRole("button", { name: /performance breakdown/i }));
+  expect(screen.getByText("Total")).toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: /^close$/i }));
+  expect(screen.queryByText("Total")).not.toBeInTheDocument();
 });
 
 test("shows the total score tag when totalScorePct is present", () => {
