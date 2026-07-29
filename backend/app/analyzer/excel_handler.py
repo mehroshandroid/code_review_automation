@@ -1,4 +1,5 @@
 import datetime
+import re
 from pathlib import Path
 
 from openpyxl import load_workbook
@@ -133,6 +134,55 @@ def _iter_positional_sub_rows(ws, header_row: int, id_col: int, category_sub_ids
             row += offset
         else:
             row += 1
+
+
+AVERAGE_FORMULA_RE = re.compile(r"=AVERAGE\([A-Z]+(\d+):[A-Z]+(\d+)\)", re.IGNORECASE)
+
+
+def discover_structure(ws) -> tuple[dict, dict]:
+    """Discovers the full category/sub-criteria structure directly from the
+    template, with no hardcoded platform-specific knowledge: a category row
+    is any row whose Avg Points cell holds a pre-existing =AVERAGE(range)
+    rollup formula (every real template's convention, regardless of
+    platform); the formula's own row range tells us exactly how many
+    sub-criterion rows follow and where. Sub-criterion ids are synthesized
+    positionally ("{category_id}.{n}") since sub-row id cells are already
+    known to be unreliable (blank/typo'd/duplicated) in real templates.
+    Returns (categories, descriptions):
+      categories: {category_id: {"name": str, "sub_criteria": [sub_id, ...]}}
+      descriptions: {sub_id: str}
+    """
+    header_row = _find_header_row(ws)
+    columns = _resolve_columns(ws, header_row)
+    id_col = columns["id"]
+    avg_col = columns["avg_points"]
+    description_col = id_col + 1
+
+    categories = {}
+    descriptions = {}
+    max_row = ws.max_row
+    row = header_row + 1
+    while row <= max_row:
+        avg_cell = ws.cell(row=row, column=avg_col)
+        match = AVERAGE_FORMULA_RE.match(str(avg_cell.value)) if _is_formula_cell(avg_cell) else None
+        if match:
+            category_id = _normalize_id(ws.cell(row=row, column=id_col).value)
+            name_cell = ws.cell(row=row, column=description_col)
+            category_name = str(name_cell.value).strip() if name_cell.value else ""
+            start_row, end_row = int(match.group(1)), int(match.group(2))
+
+            sub_ids = []
+            for offset, sub_row in enumerate(range(start_row, end_row + 1), start=1):
+                sub_id = f"{category_id}.{offset}"
+                sub_ids.append(sub_id)
+                desc_cell = ws.cell(row=sub_row, column=description_col)
+                descriptions[sub_id] = str(desc_cell.value).strip() if desc_cell.value else ""
+
+            categories[category_id] = {"name": category_name, "sub_criteria": sub_ids}
+            row = end_row + 1
+        else:
+            row += 1
+    return categories, descriptions
 
 
 def populate_scores(ws, category_results: dict) -> None:
