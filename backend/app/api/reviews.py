@@ -94,6 +94,7 @@ async def create_review(
     llmProvider: str = Form("azure"),
     ollamaModel: str | None = Form(None),
     compileCheckMode: str = Form("compiler"),
+    platform: str = Form("Android"),
 ):
     review_id = str(uuid.uuid4())
     work_dir = Path(tempfile.mkdtemp(prefix=f"review_{review_id}_"))
@@ -124,7 +125,7 @@ async def create_review(
     asyncio.create_task(
         _run_review(
             review_id, work_dir, zip_path, template_path, zip_valid, template_valid, project_name,
-            llmProvider, ollamaModel, compileCheckMode,
+            llmProvider, ollamaModel, compileCheckMode, platform,
         )
     )
     return {"review_id": review_id, "status": "processing"}
@@ -141,6 +142,7 @@ async def _run_review(
     llm_provider: str = "azure",
     ollama_model: str | None = None,
     compile_check_mode: str = "compiler",
+    platform: str = "Android",
 ) -> None:
     state = _reviews[review_id]
     extract_dir = work_dir / "extracted"
@@ -213,7 +215,7 @@ async def _run_review(
             )
             sub_results, prompt_info = await score_category(
                 llm_provider, category["name"], llm_sub_criteria, sub_criteria_descriptions, code_context,
-                model=ollama_model,
+                model=ollama_model, platform=platform,
             )
             if category_id == "1" and compile_check_mode == "compiler":
                 sub_results = _merge_compile_result_into_category_1(sub_results, compile_sub_result)
@@ -234,7 +236,7 @@ async def _run_review(
         state["phase"] = "generating"
         state["message"] = "Generating overall summary..."
         general_remarks, remarks_prompt_info = await generate_general_remarks(
-            llm_provider, scores_by_category, model=ollama_model
+            llm_provider, scores_by_category, model=ollama_model, platform=platform
         )
         state["prompt_log"].append(remarks_prompt_info)
         state["progress"] = 95
