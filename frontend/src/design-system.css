@@ -30,6 +30,10 @@
   --radius-md: 4px;
 
   --shadow-md: 0 3px 10px color-mix(in srgb, #2b2b2d 16%, transparent);
+
+  --color-neutral-900: #17181a;
+  --radius-lg: 8px;
+  --shadow-lg: 0 12px 32px color-mix(in srgb, #2b2b2d 28%, transparent);
 }
 
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -128,3 +132,37 @@
   border-bottom: 1px solid color-mix(in srgb, var(--color-text) 8%, transparent);
 }
 .text-muted { color: color-mix(in srgb, var(--color-text) 55%, transparent); }
+
+/* — dialog (modal) — */
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  background: color-mix(in srgb, var(--color-neutral-900) 55%, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+  z-index: 100;
+}
+.dialog {
+  position: relative;
+  width: 100%;
+  max-width: 480px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: var(--space-6);
+}
+.dialog-title {
+  font-family: var(--font-heading);
+  font-weight: var(--font-heading-weight);
+  font-size: 20px;
+  margin: 0 0 var(--space-4);
+}
+.dialog-body { margin: 0; }
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--space-5);
+}
