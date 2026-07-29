@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import CornerMarks from "../components/CornerMarks";
 import { PLATFORMS } from "../platforms";
-import { getLlmProvider, setLlmProvider } from "../services/llmProviderStorage";
+import { getOllamaModels } from "../services/api";
+import { getLlmProvider, setLlmProvider, getOllamaModel, setOllamaModel } from "../services/llmProviderStorage";
 
 const LLM_PROVIDERS = [
   { id: "azure", label: "Azure OpenAI" },
@@ -11,11 +12,39 @@ const LLM_PROVIDERS = [
 
 export default function HomePage() {
   const [llmProvider, setLlmProviderState] = useState(() => getLlmProvider());
+  const [ollamaModel, setOllamaModelState] = useState(() => getOllamaModel());
+  const [ollamaModels, setOllamaModels] = useState(null); // null = still loading
+
+  useEffect(() => {
+    let cancelled = false;
+    getOllamaModels()
+      .then((models) => { if (!cancelled) setOllamaModels(models); })
+      .catch(() => { if (!cancelled) setOllamaModels([]); });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!ollamaModels || ollamaModels.length === 0) return;
+    const initial = ollamaModels.includes(ollamaModel) ? ollamaModel : ollamaModels[0];
+    if (initial !== ollamaModel) {
+      setOllamaModel(initial);
+      setOllamaModelState(initial);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ollamaModels]);
 
   function handleSelectProvider(providerId) {
     setLlmProvider(providerId);
     setLlmProviderState(providerId);
   }
+
+  function handleSelectModel(model) {
+    setOllamaModel(model);
+    setOllamaModelState(model);
+  }
+
+  const ollamaEnabled = ollamaModels === null || ollamaModels.length > 0;
+  const effectiveProvider = !ollamaEnabled && llmProvider === "ollama" ? "azure" : llmProvider;
 
   return (
     <div style={{ minHeight: "100vh", background: "var(--color-bg)", fontFamily: "var(--font-body)", color: "var(--color-text)" }}>
@@ -51,17 +80,34 @@ export default function HomePage() {
           <div className="card-kicker">LLM provider</div>
           <div className="card-title" style={{ fontSize: 20 }}>Choose a model provider</div>
           <div style={{ display: "flex", gap: "var(--space-2)", marginTop: "var(--space-4)" }}>
-            {LLM_PROVIDERS.map((provider) => (
-              <button
-                key={provider.id}
-                type="button"
-                className={`btn ${llmProvider === provider.id ? "btn-primary" : ""}`}
-                onClick={() => handleSelectProvider(provider.id)}
-              >
-                {provider.label}
-              </button>
-            ))}
+            {LLM_PROVIDERS.map((provider) => {
+              const disabled = provider.id === "ollama" && !ollamaEnabled;
+              return (
+                <button
+                  key={provider.id}
+                  type="button"
+                  className={`btn ${effectiveProvider === provider.id ? "btn-primary" : ""}`}
+                  disabled={disabled}
+                  onClick={() => handleSelectProvider(provider.id)}
+                >
+                  {provider.label}
+                </button>
+              );
+            })}
           </div>
+          {effectiveProvider === "ollama" && ollamaModels && ollamaModels.length > 0 && (
+            <select
+              aria-label="Ollama model"
+              value={ollamaModel || ollamaModels[0]}
+              onChange={(event) => handleSelectModel(event.target.value)}
+              className="input"
+              style={{ marginTop: "var(--space-3)" }}
+            >
+              {ollamaModels.map((model) => (
+                <option key={model} value={model}>{model}</option>
+              ))}
+            </select>
+          )}
         </div>
       </main>
     </div>
