@@ -5,6 +5,7 @@ import FindingsPanel from "./components/FindingsPanel";
 import CategoryScoresChart from "./components/CategoryScoresChart";
 import LlmUsageStats from "./components/LlmUsageStats";
 import PromptDebugLog from "./components/PromptDebugLog";
+import ReportTable from "./components/ReportTable";
 import StatsDisplay from "./components/StatsDisplay";
 import CornerMarks from "./components/CornerMarks";
 import { createReview } from "./services/api";
@@ -16,6 +17,7 @@ export default function App() {
   const [reviewId, setReviewId] = useState(null);
   const [progressData, setProgressData] = useState(null);
   const [errorMessage, setErrorMessage] = useState("");
+  const [bottomView, setBottomView] = useState("report"); // report | debug
 
   const handleUpload = useCallback(async (androidZip, excelTemplate) => {
     setState("uploading");
@@ -120,7 +122,27 @@ export default function App() {
 
             {showLlmDetails && (
               <div style={{ marginTop: "var(--space-5)" }}>
-                <PromptDebugLog codeContext={progressData.code_context} promptLog={progressData.prompt_log} />
+                <div style={{ display: "flex", gap: "var(--space-2)", marginBottom: "var(--space-4)" }}>
+                  <button
+                    type="button"
+                    className={`btn ${bottomView === "report" ? "btn-primary" : ""}`}
+                    onClick={() => setBottomView("report")}
+                  >
+                    Report
+                  </button>
+                  <button
+                    type="button"
+                    className={`btn ${bottomView === "debug" ? "btn-primary" : ""}`}
+                    onClick={() => setBottomView("debug")}
+                  >
+                    Debug info
+                  </button>
+                </div>
+                {bottomView === "report" ? (
+                  <ReportTable categoryScores={progressData.category_scores} />
+                ) : (
+                  <PromptDebugLog codeContext={progressData.code_context} promptLog={progressData.prompt_log} />
+                )}
               </div>
             )}
           </>

@@ -69,7 +69,19 @@ test("full happy path: upload, poll, complete, download link, LLM stats, reset",
   expect(screen.getAllByText("Code naming conventions / Code Structure").length).toBeGreaterThan(0);
   expect(screen.getByText("1 LLM calls")).toBeInTheDocument();
   expect(screen.getByText("540 tokens used")).toBeInTheDocument();
+  // Report view is the default: the report table's clause is visible, the
+  // debug log's prompt-source toggle is not.
+  expect(screen.getByText("1.1")).toBeInTheDocument();
+  expect(screen.queryByText(/show source code sent to the model/i)).not.toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: "Debug info" }));
   expect(screen.getByText(/show source code sent to the model/i)).toBeInTheDocument();
+  expect(screen.queryByText("1.1")).not.toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: "Report" }));
+  expect(screen.getByText("1.1")).toBeInTheDocument();
+  expect(screen.queryByText(/show source code sent to the model/i)).not.toBeInTheDocument();
+
   expect(screen.getByText("No Lint warnings or errors found.")).toBeInTheDocument();
   expect(screen.getByRole("link", { name: /download populated workbook/i })).toHaveAttribute(
     "href",
