@@ -1,11 +1,13 @@
 import { useState } from "react";
 import CornerMarks from "./CornerMarks";
 import { FileIcon, ArrowRightIcon } from "../icons";
+import { getCompileCheckMode, setCompileCheckMode } from "../services/compileCheckModeStorage";
 
-export default function UploadForm({ onSubmit, disabled, disabledLabel = "Starting review…" }) {
+export default function UploadForm({ onSubmit, disabled, disabledLabel = "Starting review…", showCompileCheckToggle = false }) {
   const [androidZip, setAndroidZip] = useState(null);
   const [excelTemplate, setExcelTemplate] = useState(null);
   const [validationError, setValidationError] = useState("");
+  const [compileCheckMode, setCompileCheckModeState] = useState(() => getCompileCheckMode());
 
   function handleSubmit(event) {
     event.preventDefault();
@@ -19,6 +21,11 @@ export default function UploadForm({ onSubmit, disabled, disabledLabel = "Starti
     }
     setValidationError("");
     onSubmit(androidZip, excelTemplate);
+  }
+
+  function handleSelectMode(mode) {
+    setCompileCheckMode(mode);
+    setCompileCheckModeState(mode);
   }
 
   const canStart = !!androidZip && !!excelTemplate;
@@ -62,6 +69,30 @@ export default function UploadForm({ onSubmit, disabled, disabledLabel = "Starti
           </label>
         </div>
       </div>
+
+      {showCompileCheckToggle && (
+        <div style={{ marginTop: "var(--space-4)" }}>
+          <p className="card-body" style={{ marginBottom: "var(--space-2)" }}>Clause 1.4 evaluation</p>
+          <div style={{ display: "flex", gap: "var(--space-2)" }}>
+            <button
+              type="button"
+              className={`btn ${compileCheckMode === "compiler" ? "btn-primary" : ""}`}
+              disabled={disabled}
+              onClick={() => handleSelectMode("compiler")}
+            >
+              Compile-time lint
+            </button>
+            <button
+              type="button"
+              className={`btn ${compileCheckMode === "static" ? "btn-primary" : ""}`}
+              disabled={disabled}
+              onClick={() => handleSelectMode("static")}
+            >
+              Static file analysis
+            </button>
+          </div>
+        </div>
+      )}
 
       {validationError && <p className="card-body" style={{ color: "#b3261e" }}>{validationError}</p>}
 

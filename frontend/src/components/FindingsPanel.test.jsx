@@ -114,3 +114,10 @@ test("shows an unavailable caption when the compile check couldn't run", () => {
   );
   expect(screen.getByText("Compile check unavailable.")).toBeInTheDocument();
 });
+
+test("shows a static-analysis caption when the compiler check was skipped", () => {
+  render(
+    <FindingsPanel warnings={[]} testCoverage={null} secretsFound={[]} lintIssues={[]} compileStatus="skipped" />
+  );
+  expect(screen.getByText("Static analysis mode selected — clause 1.4 scored by AI.")).toBeInTheDocument();
+});

@@ -70,9 +70,11 @@ def test_full_review_pipeline_in_stub_mode(monkeypatch, tmp_path: Path):
     real_score_category = reviews_module.score_category
     captured_code_snippets = []
 
-    async def _capturing_score_category(category_name, sub_criteria, descriptions, code_snippets):
+    async def _capturing_score_category(provider, category_name, sub_criteria, descriptions, code_snippets, model=None, platform="Android"):
         captured_code_snippets.append(code_snippets)
-        return await real_score_category(category_name, sub_criteria, descriptions, code_snippets)
+        return await real_score_category(
+            provider, category_name, sub_criteria, descriptions, code_snippets, model=model, platform=platform
+        )
 
     monkeypatch.setattr(reviews_module, "score_category", _capturing_score_category)
 
@@ -167,3 +169,48 @@ def test_full_review_pipeline_in_stub_mode(monkeypatch, tmp_path: Path):
         # Remarks/Reviewers/Dated cells -- those are covered end-to-end
         # against the real template in test_excel_handler.py).
         assert ws["A1"].value == "project"
+
+
+async def test_full_review_pipeline_static_mode_scores_1_4_via_stub_llm(monkeypatch):
+    monkeypatch.delenv("AZURE_OPENAI_KEY", raising=False)
+
+    async def _fail_if_called(zip_path_arg):
+        raise AssertionError("check_compile_warnings must not be called in static mode")
+
+    monkeypatch.setattr(reviews_module, "check_compile_warnings", _fail_if_called)
+
+    with TestClient(app) as client:
+        create_response = client.post(
+            "/api/reviews",
+            files={
+                "androidZip": ("project.zip", _build_zip_bytes(), "application/zip"),
+                "excelTemplate": (
+                    "template.xlsx",
+                    _build_xlsx_bytes(),
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                ),
+            },
+            data={"compileCheckMode": "static"},
+        )
+        assert create_response.status_code == 200
+        review_id = create_response.json()["review_id"]
+
+        final_state = None
+        for _ in range(50):
+            progress_response = client.get(f"/api/reviews/{review_id}/progress")
+            body = progress_response.json()
+            if body["status"] in ("completed", "error"):
+                final_state = body
+                break
+            time.sleep(0.05)
+
+        assert final_state is not None, "review did not finish in time"
+        assert final_state["status"] == "completed"
+        assert final_state["compile_status"] == "skipped"
+        assert final_state["lint_issues"] == []
+
+        category_1 = next(c for c in final_state["category_scores"] if c["id"] == "1")
+        sub_1_4 = next(s for s in category_1["sub_criteria"] if s["id"] == "1.4")
+        assert sub_1_4["description"] == "No compile-time warnings"
+        assert sub_1_4["score"] == 1
+        assert "placeholder score" in sub_1_4["remark"]

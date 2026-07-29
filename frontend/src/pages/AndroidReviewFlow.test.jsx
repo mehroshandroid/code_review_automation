@@ -2,16 +2,20 @@ import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import AndroidReviewFlow from "./AndroidReviewFlow";
-import { createReview, getProgress } from "../services/api";
+import { createReview, getProgress, getOllamaModels } from "../services/api";
 
 jest.mock("../services/api", () => ({
   ...jest.requireActual("../services/api"),
   createReview: jest.fn(),
   getProgress: jest.fn(),
+  getOllamaModels: jest.fn(),
 }));
 
 beforeEach(() => {
   jest.useFakeTimers();
+  localStorage.clear();
+  localStorage.setItem("llmProvider", "azure");
+  getOllamaModels.mockResolvedValue([]);
 });
 
 afterEach(() => {
@@ -161,4 +165,100 @@ test("shows an error message when the review itself fails during processing, and
   expect(screen.getByText("No source files found (.java/.kt)")).toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: /try again/i }));
   expect(screen.getByLabelText(/android project/i)).toBeInTheDocument();
+});
+
+test("sends the selected Ollama provider and model when available", async () => {
+  const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+  localStorage.setItem("llmProvider", "ollama");
+  localStorage.setItem("ollamaModel", "qwen2.5-coder:7b");
+  getOllamaModels.mockResolvedValue(["qwen2.5-coder:7b"]);
+  createReview.mockResolvedValue({ review_id: "abc-123", status: "processing" });
+  getProgress.mockResolvedValue({
+    status: "processing", phase: "extracting", progress: 20, message: "Extracting...",
+    stats: {}, download_url: null, error: null, warnings: [], test_coverage: null, secrets_found: [],
+    total_score_pct: null, project_name: null, category_scores: [], code_context: null, prompt_log: [],
+    lint_issues: [], compile_status: null,
+  });
+
+  renderFlow();
+  await act(async () => {
+    await uploadValidFiles(user);
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+
+  expect(createReview).toHaveBeenCalledWith(expect.anything(), expect.anything(), "ollama", "qwen2.5-coder:7b", "compiler", "Android");
+});
+
+test("falls back to Azure when Ollama is selected but no models are installed", async () => {
+  const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+  localStorage.setItem("llmProvider", "ollama");
+  getOllamaModels.mockResolvedValue([]);
+  createReview.mockResolvedValue({ review_id: "abc-123", status: "processing" });
+  getProgress.mockResolvedValue({
+    status: "processing", phase: "extracting", progress: 20, message: "Extracting...",
+    stats: {}, download_url: null, error: null, warnings: [], test_coverage: null, secrets_found: [],
+    total_score_pct: null, project_name: null, category_scores: [], code_context: null, prompt_log: [],
+    lint_issues: [], compile_status: null,
+  });
+
+  renderFlow();
+  await act(async () => {
+    await uploadValidFiles(user);
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+
+  expect(createReview).toHaveBeenCalledWith(expect.anything(), expect.anything(), "azure", null, "compiler", "Android");
+});
+
+test("shows the compile-check mode toggle", () => {
+  renderFlow();
+  expect(screen.getByRole("button", { name: "Compile-time lint" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Static file analysis" })).toBeInTheDocument();
+});
+
+test("sends the persisted compile-check mode when starting a review", async () => {
+  const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+  localStorage.setItem("compileCheckMode", "static");
+  createReview.mockResolvedValue({ review_id: "abc-123", status: "processing" });
+  getProgress.mockResolvedValue({
+    status: "processing", phase: "extracting", progress: 20, message: "Extracting...",
+    stats: {}, download_url: null, error: null, warnings: [], test_coverage: null, secrets_found: [],
+    total_score_pct: null, project_name: null, category_scores: [], code_context: null, prompt_log: [],
+    lint_issues: [], compile_status: null,
+  });
+
+  renderFlow();
+  await act(async () => {
+    await uploadValidFiles(user);
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+
+  expect(createReview).toHaveBeenCalledWith(expect.anything(), expect.anything(), "azure", null, "static", "Android");
+});
+
+test("sends the platform label from a custom platform prop instead of the default", async () => {
+  const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+  createReview.mockResolvedValue({ review_id: "abc-123", status: "processing" });
+  getProgress.mockResolvedValue({
+    status: "processing", phase: "extracting", progress: 20, message: "Extracting...",
+    stats: {}, download_url: null, error: null, warnings: [], test_coverage: null, secrets_found: [],
+    total_score_pct: null, project_name: null, category_scores: [], code_context: null, prompt_log: [],
+    lint_issues: [], compile_status: null,
+  });
+
+  render(
+    <MemoryRouter>
+      <AndroidReviewFlow platform={{ id: "android", label: "AndroidCustom" }} />
+    </MemoryRouter>
+  );
+  await act(async () => {
+    await uploadValidFiles(user);
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+
+  expect(createReview).toHaveBeenCalledWith(expect.anything(), expect.anything(), "azure", null, "compiler", "AndroidCustom");
 });

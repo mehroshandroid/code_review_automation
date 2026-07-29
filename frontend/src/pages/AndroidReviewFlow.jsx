@@ -9,11 +9,13 @@ import ReportTable from "../components/ReportTable";
 import StatsDisplay from "../components/StatsDisplay";
 import CornerMarks from "../components/CornerMarks";
 import TopNav from "../components/TopNav";
-import { createReview } from "../services/api";
+import { createReview, getOllamaModels } from "../services/api";
+import { getLlmProvider, getOllamaModel } from "../services/llmProviderStorage";
+import { getCompileCheckMode } from "../services/compileCheckModeStorage";
 
 const SCORING_PHASES = ["scoring", "generating", "completed"];
 
-export default function AndroidReviewFlow() {
+export default function AndroidReviewFlow({ platform = { id: "android", label: "Android" } }) {
   const [state, setState] = useState("idle"); // idle | uploading | polling | completed | error
   const [reviewId, setReviewId] = useState(null);
   const [progressData, setProgressData] = useState(null);
@@ -24,7 +26,15 @@ export default function AndroidReviewFlow() {
     setState("uploading");
     setErrorMessage("");
     try {
-      const result = await createReview(androidZip, excelTemplate);
+      const models = await getOllamaModels().catch(() => []);
+      const storedProvider = getLlmProvider();
+      const effectiveProvider = storedProvider === "ollama" && models.length === 0 ? "azure" : storedProvider;
+      const effectiveModel = effectiveProvider === "ollama" ? getOllamaModel() : null;
+      const compileCheckMode = getCompileCheckMode();
+
+      const result = await createReview(
+        androidZip, excelTemplate, effectiveProvider, effectiveModel, compileCheckMode, platform.label
+      );
       if (result.status === "error") {
         setErrorMessage(result.error || "Upload failed");
         setState("error");
@@ -74,7 +84,7 @@ export default function AndroidReviewFlow() {
         </header>
 
         {(state === "idle" || state === "uploading") && (
-          <UploadForm onSubmit={handleUpload} disabled={state === "uploading"} />
+          <UploadForm onSubmit={handleUpload} disabled={state === "uploading"} showCompileCheckToggle />
         )}
 
         {isRunningOrDone && reviewId && (
