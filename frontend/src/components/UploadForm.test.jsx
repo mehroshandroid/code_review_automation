@@ -1,6 +1,11 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import UploadForm from "./UploadForm";
+import { getCompileCheckMode } from "../services/compileCheckModeStorage";
+
+beforeEach(() => {
+  localStorage.clear();
+});
 
 function buildFile(name, type) {
   return new File(["content"], name, { type });
@@ -62,4 +67,25 @@ test("disables inputs and shows the starting label when disabled prop is true", 
 test("shows a custom disabledLabel on the button when disabled and provided", () => {
   render(<UploadForm onSubmit={jest.fn()} disabled={true} disabledLabel="Coming soon" />);
   expect(screen.getByRole("button", { name: "Coming soon" })).toBeDisabled();
+});
+
+test("does not render the compile-check toggle by default", () => {
+  render(<UploadForm onSubmit={jest.fn()} disabled={false} />);
+  expect(screen.queryByText("Compile-time lint")).not.toBeInTheDocument();
+});
+
+test("renders the compile-check toggle when showCompileCheckToggle is true, defaulting to Compile-time lint", () => {
+  render(<UploadForm onSubmit={jest.fn()} disabled={false} showCompileCheckToggle />);
+  expect(screen.getByRole("button", { name: "Compile-time lint" })).toHaveClass("btn-primary");
+  expect(screen.getByRole("button", { name: "Static file analysis" })).not.toHaveClass("btn-primary");
+});
+
+test("selecting Static file analysis persists the choice and highlights it", async () => {
+  const user = userEvent.setup();
+  render(<UploadForm onSubmit={jest.fn()} disabled={false} showCompileCheckToggle />);
+
+  await user.click(screen.getByRole("button", { name: "Static file analysis" }));
+
+  expect(screen.getByRole("button", { name: "Static file analysis" })).toHaveClass("btn-primary");
+  expect(getCompileCheckMode()).toBe("static");
 });
