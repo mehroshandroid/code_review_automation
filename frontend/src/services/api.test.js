@@ -53,6 +53,17 @@ describe("createReview", () => {
     const [, formData] = axios.post.mock.calls[0];
     expect(formData.get("compileCheckMode")).toBe("static");
   });
+
+  it("includes platform field when provided", async () => {
+    axios.post.mockResolvedValue({ data: { review_id: "abc-123", status: "processing" } });
+    const zip = new File(["zip content"], "project.zip", { type: "application/zip" });
+    const xlsx = new File(["xlsx content"], "template.xlsx", { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+
+    await createReview(zip, xlsx, "azure", null, "compiler", "Android");
+
+    const [, formData] = axios.post.mock.calls[0];
+    expect(formData.get("platform")).toBe("Android");
+  });
 });
 
 describe("getProgress", () => {

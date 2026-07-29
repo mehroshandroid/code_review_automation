@@ -15,7 +15,7 @@ import { getCompileCheckMode } from "../services/compileCheckModeStorage";
 
 const SCORING_PHASES = ["scoring", "generating", "completed"];
 
-export default function AndroidReviewFlow() {
+export default function AndroidReviewFlow({ platform = { id: "android", label: "Android" } }) {
   const [state, setState] = useState("idle"); // idle | uploading | polling | completed | error
   const [reviewId, setReviewId] = useState(null);
   const [progressData, setProgressData] = useState(null);
@@ -32,7 +32,9 @@ export default function AndroidReviewFlow() {
       const effectiveModel = effectiveProvider === "ollama" ? getOllamaModel() : null;
       const compileCheckMode = getCompileCheckMode();
 
-      const result = await createReview(androidZip, excelTemplate, effectiveProvider, effectiveModel, compileCheckMode);
+      const result = await createReview(
+        androidZip, excelTemplate, effectiveProvider, effectiveModel, compileCheckMode, platform.label
+      );
       if (result.status === "error") {
         setErrorMessage(result.error || "Upload failed");
         setState("error");
