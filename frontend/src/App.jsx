@@ -62,7 +62,7 @@ export default function App() {
       <main style={{ maxWidth: isRunningOrDone ? 1440 : 920, margin: "0 auto", padding: "var(--space-8) var(--space-4) var(--space-10)" }}>
         <header style={{ marginBottom: "var(--space-6)" }}>
           <h1 style={{ fontFamily: "var(--font-heading)", fontSize: 38, lineHeight: 1.1, margin: "0 0 var(--space-2)" }}>
-            Android Code Review Automation
+            {progressData?.project_name || "Android Code Review Automation"}
           </h1>
           <p style={{ margin: 0, opacity: 0.7, maxWidth: "60ch" }}>
             Upload an Android project and a scoring template. The reviewer analyzes structure, security, tests and

@@ -38,8 +38,12 @@ test("full happy path: upload, poll, complete, download link, LLM stats, reset",
     stats: { total_time_ms: 500 }, download_url: "/api/reviews/abc-123/download", error: null,
     warnings: ["Missing AndroidManifest.xml"], test_coverage: 90.0, secrets_found: [],
     total_score_pct: 78,
+    project_name: "project",
     category_scores: [
-      { id: "1", name: "Code naming conventions / Code Structure", percent_points: 90.0 },
+      {
+        id: "1", name: "Code naming conventions / Code Structure", percent_points: 90.0,
+        sub_criteria: [{ id: "1.1", description: "Clear naming", score: 1, remark: "" }],
+      },
     ],
     code_context: "class MainActivity {}",
     prompt_log: [
@@ -76,6 +80,31 @@ test("full happy path: upload, poll, complete, download link, LLM stats, reset",
   expect(screen.getByLabelText(/android project/i)).toBeInTheDocument();
 });
 
+test("shows the project name in the header once progress data has it, falling back beforehand", async () => {
+  const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+  createReview.mockResolvedValue({ review_id: "abc-123", status: "processing" });
+  getProgress.mockResolvedValue({
+    status: "completed", phase: "completed", progress: 100, message: "Done",
+    stats: {}, download_url: "/api/reviews/abc-123/download", error: null,
+    warnings: [], test_coverage: null, secrets_found: [], total_score_pct: null,
+    project_name: "MyAndroidApp",
+    category_scores: [], code_context: null, prompt_log: [],
+    lint_issues: [], compile_status: "ok",
+  });
+
+  render(<App />);
+  expect(screen.getByRole("heading", { name: "Android Code Review Automation" })).toBeInTheDocument();
+
+  await act(async () => {
+    await uploadValidFiles(user);
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+
+  expect(screen.getByRole("heading", { name: "MyAndroidApp" })).toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "Android Code Review Automation" })).not.toBeInTheDocument();
+});
+
 test("shows an error message when review creation fails", async () => {
   const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
   createReview.mockRejectedValue(new Error("network error"));
@@ -97,6 +126,7 @@ test("shows an error message when the review itself fails during processing, and
     status: "error", phase: "error", progress: 0, message: "Queued",
     stats: {}, download_url: null, error: "No source files found (.java/.kt)",
     warnings: [], test_coverage: null, secrets_found: [], total_score_pct: null,
+    project_name: null,
     category_scores: [], code_context: null, prompt_log: [],
     lint_issues: [], compile_status: null,
   });
