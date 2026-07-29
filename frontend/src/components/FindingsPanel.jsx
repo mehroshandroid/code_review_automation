@@ -36,6 +36,9 @@ function lintCardProps(compileStatus, lintIssues) {
   if (compileStatus === "unavailable") {
     return { value: "—", caption: "Compile check unavailable.", expandable: false };
   }
+  if (compileStatus === "skipped") {
+    return { value: "—", caption: "Static analysis mode selected — clause 1.4 scored by AI.", expandable: false };
+  }
   return { value: "—", caption: "Not yet checked.", expandable: false };
 }
 
