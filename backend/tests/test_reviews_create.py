@@ -26,7 +26,22 @@ def _build_xlsx_bytes() -> bytes:
     buffer = io.BytesIO()
     wb = Workbook()
     ws = wb.active
-    ws.append(["Category", "Description", "Score", "Avg Points", "Final Points", "% Points", "Remarks"])
+    ws.append(["Clause", None, "Weight", "Avg Points", "Final Points", "% Points", "Remarks"])
+
+    category_specs = [
+        ("1", "Code naming conventions / Code Structure", 6),
+        ("2", "Reliability, Security & Observability", 4),
+        ("3", "Delivery Discipline & Architecture", 4),
+        ("4", "AI Usage & Code Ownership", 3),
+        ("6", "Safe & Integrated AI Code", 3),
+    ]
+    for category_id, name, sub_count in category_specs:
+        category_row = ws.max_row + 1
+        start_row = category_row + 1
+        end_row = start_row + sub_count - 1
+        ws.append([int(category_id), name, 1, f"=AVERAGE(D{start_row}:D{end_row})", None, None, None])
+        for offset in range(1, sub_count + 1):
+            ws.append([f"{category_id}.{offset}", f"Sub {category_id}.{offset}", None, None, None, None, None])
     wb.save(buffer)
     return buffer.getvalue()
 
@@ -166,17 +181,9 @@ async def test_run_review_updates_category_scores_progressively(monkeypatch):
 
     _reviews[review_id] = _new_review_state()
 
-    expected_sub_criteria = {
-        cid: [{"id": sub_id, "description": None, "score": None, "remark": None} for sub_id in cat["sub_criteria"]]
-        for cid, cat in reviews_module.CATEGORIES.items()
-    }
-    assert _reviews[review_id]["category_scores"] == [
-        {"id": "1", "name": "Code naming conventions / Code Structure", "percent_points": None, "sub_criteria": expected_sub_criteria["1"]},
-        {"id": "2", "name": "Reliability, Security & Observability", "percent_points": None, "sub_criteria": expected_sub_criteria["2"]},
-        {"id": "3", "name": "Delivery Discipline & Architecture", "percent_points": None, "sub_criteria": expected_sub_criteria["3"]},
-        {"id": "4", "name": "AI Usage & Code Ownership", "percent_points": None, "sub_criteria": expected_sub_criteria["4"]},
-        {"id": "6", "name": "Safe & Integrated AI Code", "percent_points": None, "sub_criteria": expected_sub_criteria["6"]},
-    ]
+    # category_scores can't be seeded until the uploaded template is parsed
+    # (categories are now discovered from it, not hardcoded).
+    assert _reviews[review_id]["category_scores"] == []
 
     snapshots = []
 
@@ -198,10 +205,10 @@ async def test_run_review_updates_category_scores_progressively(monkeypatch):
         review_id, work_dir, zip_path, template_path, zip_valid=True, template_valid=True, project_name="Test"
     )
 
-    # Snapshot taken right before each category is scored: earlier categories
-    # already show their resolved percent_points (stub mode always scores 1,
-    # i.e. 100.0%), later ones are still None -- proves updates land in place
-    # without disturbing sibling entries.
+    # Snapshot taken right before each category is scored: by the time scoring
+    # starts, category_scores has already been seeded (during analysis) with
+    # all 5 discovered categories -- earlier categories show their resolved
+    # percent_points, later ones are still None.
     assert snapshots[0] == [("1", None), ("2", None), ("3", None), ("4", None), ("6", None)]
     assert snapshots[1] == [("1", 100.0), ("2", None), ("3", None), ("4", None), ("6", None)]
     assert snapshots[4] == [("1", 100.0), ("2", 100.0), ("3", 100.0), ("4", 100.0), ("6", None)]
@@ -384,8 +391,9 @@ def test_merge_compile_result_into_category_1_preserves_declared_order():
         "1.6": {"score": 1, "remark": ""},
     }
     compile_sub_result = {"score": 0, "remark": "2 Lint warning(s)/error(s) found."}
+    categories = {"1": {"name": "Code Structure", "sub_criteria": ["1.1", "1.2", "1.3", "1.4", "1.5", "1.6"]}}
 
-    merged = reviews_module._merge_compile_result_into_category_1(llm_sub_results, compile_sub_result)
+    merged = reviews_module._merge_compile_result_into_category_1(llm_sub_results, compile_sub_result, categories)
 
     assert list(merged.keys()) == ["1.1", "1.2", "1.3", "1.4", "1.5", "1.6"]
     assert merged["1.4"] == compile_sub_result
@@ -527,3 +535,47 @@ async def test_run_review_removes_work_dir_on_unexpected_exception(monkeypatch):
     assert state["error"] == "simulated analysis crash"
     assert state["download_path"] is None
     assert not work_dir.exists()
+
+
+async def test_run_review_non_android_platform_skips_compile_check_entirely(monkeypatch):
+    review_id = "non-android-compile-check-skip"
+    work_dir = Path(tempfile.mkdtemp(prefix=f"review_{review_id}_"))
+    zip_path = work_dir / "android.zip"
+    template_path = work_dir / "template.xlsx"
+    zip_path.write_bytes(_build_zip_bytes())
+    template_path.write_bytes(_build_xlsx_bytes())
+
+    _reviews[review_id] = _new_review_state()
+
+    compile_check_called = []
+    captured_sub_criteria = {}
+
+    async def fake_check_compile_warnings(zip_path_arg):
+        compile_check_called.append(True)
+        return {"status": "ok", "warning_count": 0, "issues": []}
+
+    async def fake_score_category(provider, category_name, sub_criteria, descriptions, code_snippets, model=None, platform="Android"):
+        captured_sub_criteria[category_name] = list(sub_criteria)
+        sub_results = {sub_id: {"score": 1, "remark": ""} for sub_id in sub_criteria}
+        prompt_info = {"label": category_name, "prompt_text": "stub", "tokens": {
+            "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "cached_tokens": 0,
+        }}
+        return sub_results, prompt_info
+
+    monkeypatch.setattr(reviews_module, "check_compile_warnings", fake_check_compile_warnings)
+    monkeypatch.setattr(reviews_module, "score_category", fake_score_category)
+
+    await _run_review(
+        review_id, work_dir, zip_path, template_path, zip_valid=True, template_valid=True, project_name="Test",
+        platform="iOS",
+    )
+
+    assert compile_check_called == []
+    # "1.4" is scored by the LLM like every other sub-criterion -- no exclusion.
+    assert "1.4" in captured_sub_criteria["Code naming conventions / Code Structure"]
+
+    state = _reviews[review_id]
+    assert state["compile_status"] is None
+    assert state["lint_issues"] == []
+    sub_1_4 = next(s for s in state["category_scores"][0]["sub_criteria"] if s["id"] == "1.4")
+    assert sub_1_4["score"] == 1
