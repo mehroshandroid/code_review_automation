@@ -50,6 +50,7 @@ def _new_review_state() -> dict:
         "test_coverage": None,
         "secrets_found": [],
         "total_score_pct": None,
+        "project_name": None,
         "category_scores": [
             {"id": category_id, "name": category["name"], "percent_points": None}
             for category_id, category in CATEGORIES.items()
@@ -103,7 +104,9 @@ async def create_review(androidZip: UploadFile = File(...), excelTemplate: Uploa
     template_valid = (excelTemplate.filename or "").endswith(".xlsx")
     project_name = Path(androidZip.filename).stem if androidZip.filename else "Unknown Project"
 
-    _reviews[review_id] = _new_review_state()
+    state = _new_review_state()
+    state["project_name"] = project_name
+    _reviews[review_id] = state
     asyncio.create_task(
         _run_review(review_id, work_dir, zip_path, template_path, zip_valid, template_valid, project_name)
     )
@@ -248,6 +251,7 @@ async def get_progress(review_id: str):
         "test_coverage": state.get("test_coverage"),
         "secrets_found": state.get("secrets_found", []),
         "total_score_pct": state.get("total_score_pct"),
+        "project_name": state.get("project_name"),
         "category_scores": state.get("category_scores", []),
         "code_context": state.get("code_context"),
         "prompt_log": state.get("prompt_log", []),

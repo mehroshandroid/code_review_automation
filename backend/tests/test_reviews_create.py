@@ -46,6 +46,7 @@ def test_create_review_returns_id_and_creates_state(monkeypatch):
         assert "review_id" in body
         assert body["status"] == "processing"
         assert body["review_id"] in _reviews
+        assert _reviews[body["review_id"]]["project_name"] == "project"
 
 
 def test_create_review_write_failure_returns_200_with_error_state(monkeypatch):
