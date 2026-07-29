@@ -166,12 +166,16 @@ async def test_run_review_updates_category_scores_progressively(monkeypatch):
 
     _reviews[review_id] = _new_review_state()
 
+    expected_sub_criteria = {
+        cid: [{"id": sub_id, "description": None, "score": None, "remark": None} for sub_id in cat["sub_criteria"]]
+        for cid, cat in reviews_module.CATEGORIES.items()
+    }
     assert _reviews[review_id]["category_scores"] == [
-        {"id": "1", "name": "Code naming conventions / Code Structure", "percent_points": None},
-        {"id": "2", "name": "Reliability, Security & Observability", "percent_points": None},
-        {"id": "3", "name": "Delivery Discipline & Architecture", "percent_points": None},
-        {"id": "4", "name": "AI Usage & Code Ownership", "percent_points": None},
-        {"id": "6", "name": "Safe & Integrated AI Code", "percent_points": None},
+        {"id": "1", "name": "Code naming conventions / Code Structure", "percent_points": None, "sub_criteria": expected_sub_criteria["1"]},
+        {"id": "2", "name": "Reliability, Security & Observability", "percent_points": None, "sub_criteria": expected_sub_criteria["2"]},
+        {"id": "3", "name": "Delivery Discipline & Architecture", "percent_points": None, "sub_criteria": expected_sub_criteria["3"]},
+        {"id": "4", "name": "AI Usage & Code Ownership", "percent_points": None, "sub_criteria": expected_sub_criteria["4"]},
+        {"id": "6", "name": "Safe & Integrated AI Code", "percent_points": None, "sub_criteria": expected_sub_criteria["6"]},
     ]
 
     snapshots = []
@@ -204,6 +208,20 @@ async def test_run_review_updates_category_scores_progressively(monkeypatch):
 
     final_scores = _reviews[review_id]["category_scores"]
     assert all(entry["percent_points"] == 100.0 for entry in final_scores)
+
+    # Stub-style score_category above scores every LLM-scored sub-criterion 1
+    # with an empty remark; every sub_criteria entry across every category
+    # must reflect that (proves the per-category backfill runs for every
+    # category, not just the first) -- except "1.4", which the compile-check
+    # merge (_merge_compile_result_into_category_1) overwrites with its own
+    # score/remark before scoring even runs, independent of score_category.
+    for entry in final_scores:
+        for sub in entry["sub_criteria"]:
+            assert sub["score"] == 1
+            if sub["id"] == "1.4":
+                assert sub["remark"] == "No Lint warnings or errors found."
+            else:
+                assert sub["remark"] == ""
 
 
 async def test_run_review_builds_prompt_log_and_code_context(monkeypatch):

@@ -52,7 +52,15 @@ def _new_review_state() -> dict:
         "total_score_pct": None,
         "project_name": None,
         "category_scores": [
-            {"id": category_id, "name": category["name"], "percent_points": None}
+            {
+                "id": category_id,
+                "name": category["name"],
+                "percent_points": None,
+                "sub_criteria": [
+                    {"id": sub_id, "description": None, "score": None, "remark": None}
+                    for sub_id in category["sub_criteria"]
+                ],
+            }
             for category_id, category in CATEGORIES.items()
         ],
         "code_context": None,
@@ -159,6 +167,9 @@ async def _run_review(
         state["code_context"] = code_context
         template_ws = load_workbook(template_path).active
         sub_criteria_descriptions = extract_sub_criteria_descriptions(template_ws, CATEGORIES)
+        for category_entry in state["category_scores"]:
+            for sub_entry in category_entry["sub_criteria"]:
+                sub_entry["description"] = sub_criteria_descriptions.get(sub_entry["id"])
         stats["analysis_time_ms"] = int((time.monotonic() - t1) * 1000)
         state["progress"] = 35
 
@@ -188,6 +199,12 @@ async def _run_review(
             if category_id == "1":
                 sub_results = _merge_compile_result_into_category_1(sub_results, compile_sub_result)
             scores_by_category[category_id] = aggregate_category_scores(sub_results)
+            sub_scores = scores_by_category[category_id]["sub_scores"]
+            for sub_entry in state["category_scores"][index]["sub_criteria"]:
+                sub_result = sub_scores.get(sub_entry["id"])
+                if sub_result is not None:
+                    sub_entry["score"] = sub_result["score"]
+                    sub_entry["remark"] = sub_result["remark"]
             state["category_scores"][index]["percent_points"] = scores_by_category[category_id]["percent_points"]
             state["prompt_log"].append(prompt_info)
             state["progress"] = 55 + int(30 * (index + 1) / category_count)
