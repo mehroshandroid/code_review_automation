@@ -8,7 +8,6 @@ from app.analyzer.excel_handler import (
     aggregate_category_scores,
     compute_total_score_pct,
     discover_structure,
-    extract_sub_criteria_descriptions,
     generate_review_excel,
     populate_metadata,
     populate_scores,
@@ -381,43 +380,6 @@ def test_populate_scores_against_the_real_sample_template(tmp_path: Path):
     assert ws["C40"].value == datetime.datetime(2026, 7, 24)
 
 
-def test_extract_sub_criteria_descriptions_reads_positionally(tmp_path: Path):
-    template_path = tmp_path / "template.xlsx"
-    _build_template(template_path)
-    ws = load_workbook(template_path).active
-
-    categories = {"1": {"name": "Code Structure", "sub_criteria": ["1.1", "1.2"]}}
-    descriptions = extract_sub_criteria_descriptions(ws, categories)
-
-    # First sub-row's id cell is blank in _build_template, but its description
-    # is still read correctly since matching is positional, not id-based.
-    assert descriptions == {
-        "1.1": "Clear and consistent naming",
-        "1.2": "Clean structure and formatting",
-    }
-
-
-def test_extract_sub_criteria_descriptions_against_the_real_sample_template():
-    """Grounds the fix for the reported bug: the LLM prompt only sent bare ids
-    like "2.4", never their actual meaning, causing remarks unrelated to the
-    real criterion (e.g. a keystore-storage criterion getting an EventBus
-    remark). This locks in that the exact real wording is extracted for
-    every category, including the mislabeled category 4 rows.
-    """
-    ws = load_workbook(FIXTURES_DIR / "SampleCodeReview.xlsx").active
-    categories = {
-        "1": {"name": "x", "sub_criteria": ["1.1", "1.2", "1.3", "1.4", "1.5", "1.6"]},
-        "2": {"name": "x", "sub_criteria": ["2.1", "2.2", "2.3", "2.4"]},
-        "4": {"name": "x", "sub_criteria": ["4.1", "4.2", "4.3"]},
-    }
-    descriptions = extract_sub_criteria_descriptions(ws, categories)
-
-    assert descriptions["1.1"] == "Clear and consistent naming conventions"
-    assert descriptions["2.4"] == "Keystore information should be stored in env. Or gradle"
-    # Category 4's rows are labeled 4.2/4.3/4.3 in the real file, but
-    # positional matching still assigns the right description to 4.1/4.2/4.3.
-    assert descriptions["4.1"] == "AI usage declared in PR comments along with tool name  (e.g., Copilot, ChatGPT, Azure OpenAI)"
-    assert descriptions["4.3"] == "No unexplained or uncommented complex logic, No blind copy-paste"
 
 
 def test_discover_structure_reads_categories_and_descriptions_positionally(tmp_path: Path):
