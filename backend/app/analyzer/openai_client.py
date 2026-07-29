@@ -41,20 +41,20 @@ def _extract_usage(response) -> dict:
     }
 
 
-async def score_category(category_name: str, sub_criteria: list, descriptions: dict, code_snippets: str) -> tuple:
+async def score_category(category_name: str, sub_criteria: list, descriptions: dict, code_snippets: str, platform: str = "Android") -> tuple:
     if is_stub_mode():
-        return _stub_score(category_name, sub_criteria, descriptions)
-    return await _live_score(category_name, sub_criteria, descriptions, code_snippets)
+        return _stub_score(category_name, sub_criteria, descriptions, platform)
+    return await _live_score(category_name, sub_criteria, descriptions, code_snippets, platform)
 
 
-async def generate_general_remarks(category_results: dict) -> tuple:
+async def generate_general_remarks(category_results: dict, platform: str = "Android") -> tuple:
     if is_stub_mode():
-        return _stub_general_remarks()
-    return await _live_general_remarks(category_results)
+        return _stub_general_remarks(platform)
+    return await _live_general_remarks(category_results, platform)
 
 
-def _stub_score(category_name: str, sub_criteria: list, descriptions: dict) -> tuple:
-    instructions = category_instructions(category_name, sub_criteria, descriptions)
+def _stub_score(category_name: str, sub_criteria: list, descriptions: dict, platform: str = "Android") -> tuple:
+    instructions = category_instructions(category_name, sub_criteria, descriptions, platform)
     sub_results = {
         sub_id: {"score": 1, "remark": f"{STUB_PREFIX} No Azure OpenAI key configured; placeholder score."}
         for sub_id in sub_criteria
@@ -63,9 +63,9 @@ def _stub_score(category_name: str, sub_criteria: list, descriptions: dict) -> t
     return sub_results, prompt_info
 
 
-def _stub_general_remarks() -> tuple:
+def _stub_general_remarks(platform: str = "Android") -> tuple:
     text = f"{STUB_PREFIX} No Azure OpenAI key configured; general remarks not generated."
-    prompt_info = {"label": "General remarks", "prompt_text": general_remarks_prompt(), "tokens": _zero_tokens()}
+    prompt_info = {"label": "General remarks", "prompt_text": general_remarks_prompt(platform), "tokens": _zero_tokens()}
     return text, prompt_info
 
 
@@ -90,11 +90,11 @@ async def _post_with_retry(payload: dict):
         return response
 
 
-async def _live_score(category_name: str, sub_criteria: list, descriptions: dict, code_snippets: str) -> tuple:
-    instructions = category_instructions(category_name, sub_criteria, descriptions)
+async def _live_score(category_name: str, sub_criteria: list, descriptions: dict, code_snippets: str, platform: str = "Android") -> tuple:
+    instructions = category_instructions(category_name, sub_criteria, descriptions, platform)
     payload = {
         "messages": [
-            {"role": "system", "content": code_context_message(code_snippets)},
+            {"role": "system", "content": code_context_message(code_snippets, platform)},
             {"role": "user", "content": instructions},
         ],
         "temperature": 0.3,
@@ -116,8 +116,8 @@ async def _live_score(category_name: str, sub_criteria: list, descriptions: dict
         return fallback, prompt_info
 
 
-async def _live_general_remarks(category_results: dict) -> tuple:
-    system_prompt = general_remarks_prompt()
+async def _live_general_remarks(category_results: dict, platform: str = "Android") -> tuple:
+    system_prompt = general_remarks_prompt(platform)
     payload = {
         "messages": [
             {"role": "system", "content": system_prompt},

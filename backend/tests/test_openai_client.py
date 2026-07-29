@@ -20,6 +20,13 @@ async def test_stub_mode_returns_placeholder_scores(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_stub_mode_defaults_platform_to_android(monkeypatch):
+    monkeypatch.delenv("AZURE_OPENAI_KEY", raising=False)
+    _, prompt_info = await openai_client.score_category("Code Structure", ["1.1"], {}, "code here")
+    assert "as an expert Android code reviewer" in prompt_info["prompt_text"]
+
+
+@pytest.mark.asyncio
 async def test_live_mode_calls_azure_endpoint_and_parses_response(monkeypatch):
     monkeypatch.setenv("AZURE_OPENAI_KEY", "test-key")
     monkeypatch.setenv("OPENAI_API_BASE", "https://example.cognitive.microsoft.com/")
@@ -55,6 +62,29 @@ async def test_live_mode_calls_azure_endpoint_and_parses_response(monkeypatch):
     assert prompt_info["tokens"] == {
         "prompt_tokens": 500, "completion_tokens": 40, "total_tokens": 540, "cached_tokens": None,
     }
+
+
+@pytest.mark.asyncio
+async def test_live_mode_sends_the_provided_platform_in_both_prompt_messages(monkeypatch):
+    monkeypatch.setenv("AZURE_OPENAI_KEY", "test-key")
+    monkeypatch.setenv("OPENAI_API_BASE", "https://example.cognitive.microsoft.com/")
+    monkeypatch.setenv("OPENAI_DEPLOYMENT_NAME", "gpt-4o-mini")
+    monkeypatch.setenv("OPENAI_API_VERSION", "2025-01-01-preview")
+
+    captured = {}
+
+    async def fake_post(self, url, headers=None, json=None):
+        captured["json"] = json
+        content = '{"1.1": {"score": 1, "remark": "ok"}}'
+        request = httpx.Request("POST", url)
+        return httpx.Response(status_code=200, json={"choices": [{"message": {"content": content}}]}, request=request)
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", fake_post)
+
+    _, prompt_info = await openai_client.score_category("Code Structure", ["1.1"], {}, "code here", platform="iOS")
+
+    assert "as an expert iOS code reviewer" in prompt_info["prompt_text"]
+    assert "expert iOS code reviewer" in captured["json"]["messages"][0]["content"]
 
 
 @pytest.mark.asyncio
@@ -287,6 +317,25 @@ async def test_generate_general_remarks_live_mode(monkeypatch):
     assert "response_format" not in captured["json"]
     assert prompt_info["label"] == "General remarks"
     assert prompt_info["prompt_text"] == captured["json"]["messages"][0]["content"]
+
+
+@pytest.mark.asyncio
+async def test_generate_general_remarks_sends_the_provided_platform(monkeypatch):
+    monkeypatch.setenv("AZURE_OPENAI_KEY", "test-key")
+    monkeypatch.setenv("OPENAI_API_BASE", "https://example.cognitive.microsoft.com/")
+    monkeypatch.setenv("OPENAI_DEPLOYMENT_NAME", "gpt-4o-mini")
+    monkeypatch.setenv("OPENAI_API_VERSION", "2025-01-01-preview")
+
+    async def fake_post(self, url, headers=None, json=None):
+        content = "Overall summary."
+        request = httpx.Request("POST", url)
+        return httpx.Response(status_code=200, json={"choices": [{"message": {"content": content}}]}, request=request)
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", fake_post)
+
+    _, prompt_info = await openai_client.generate_general_remarks({}, platform="iOS")
+
+    assert "expert iOS code reviewer" in prompt_info["prompt_text"]
 
 
 @pytest.mark.asyncio

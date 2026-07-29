@@ -1,10 +1,11 @@
 import re
 
 
-def category_instructions(category_name: str, sub_criteria: list, descriptions: dict) -> str:
+def category_instructions(category_name: str, sub_criteria: list, descriptions: dict, platform: str = "Android") -> str:
     criteria_lines = "\n".join(f"{sub_id}: {descriptions.get(sub_id, '')}" for sub_id in sub_criteria)
     return (
-        f"Score the following {category_name} sub-criteria based ONLY on the code above:\n"
+        f"Score the following {category_name} sub-criteria as an expert {platform} code reviewer, "
+        f"based ONLY on the code above:\n"
         f"{criteria_lines}\n\n"
         "For each sub-criterion, score 0 (fails), 1 (meets it), or null if the "
         "code snippet does not contain enough information to judge that specific sub-criterion "
@@ -16,16 +17,16 @@ def category_instructions(category_name: str, sub_criteria: list, descriptions: 
     )
 
 
-def code_context_message(code_snippets: str) -> str:
+def code_context_message(code_snippets: str, platform: str = "Android") -> str:
     return (
-        "You are an expert Android code reviewer. Here is the Android project's "
+        f"You are an expert {platform} code reviewer. Here is the {platform} project's "
         f"source code for review:\n\n{code_snippets}"
     )
 
 
-def general_remarks_prompt() -> str:
+def general_remarks_prompt(platform: str = "Android") -> str:
     return (
-        "You are an expert Android code reviewer. Given per-criterion scores and remarks "
+        f"You are an expert {platform} code reviewer. Given per-criterion scores and remarks "
         "from a completed code review, write a concise 2-3 sentence overall summary of the "
         "code quality, highlighting the weakest areas. Respond with plain text only, no JSON."
     )
