@@ -58,3 +58,8 @@ test("disables inputs and shows the starting label when disabled prop is true", 
   expect(screen.getByLabelText(/android project/i)).toBeDisabled();
   expect(screen.getByRole("button", { name: /starting review/i })).toBeDisabled();
 });
+
+test("shows a custom disabledLabel on the button when disabled and provided", () => {
+  render(<UploadForm onSubmit={jest.fn()} disabled={true} disabledLabel="Coming soon" />);
+  expect(screen.getByRole("button", { name: "Coming soon" })).toBeDisabled();
+});

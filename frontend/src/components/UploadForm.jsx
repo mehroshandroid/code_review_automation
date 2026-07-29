@@ -2,7 +2,7 @@ import { useState } from "react";
 import CornerMarks from "./CornerMarks";
 import { FileIcon, ArrowRightIcon } from "../icons";
 
-export default function UploadForm({ onSubmit, disabled }) {
+export default function UploadForm({ onSubmit, disabled, disabledLabel = "Starting review…" }) {
   const [androidZip, setAndroidZip] = useState(null);
   const [excelTemplate, setExcelTemplate] = useState(null);
   const [validationError, setValidationError] = useState("");
@@ -72,7 +72,7 @@ export default function UploadForm({ onSubmit, disabled }) {
         disabled={disabled || !canStart}
       >
         <CornerMarks />
-        {disabled ? "Starting review…" : "Start review"}
+        {disabled ? disabledLabel : "Start review"}
         <ArrowRightIcon />
       </button>
     </form>
