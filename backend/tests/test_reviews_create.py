@@ -125,7 +125,7 @@ async def test_run_review_updates_message_per_category_during_scoring(monkeypatc
 
     seen_messages = []
 
-    async def _recording_score_category(category_name, sub_criteria, descriptions, code_snippets):
+    async def _recording_score_category(provider, category_name, sub_criteria, descriptions, code_snippets, model=None):
         seen_messages.append(_reviews[review_id]["message"])
         sub_results = {sub_id: {"score": 1, "remark": ""} for sub_id in sub_criteria}
         prompt_info = {"label": category_name, "prompt_text": "stub", "tokens": {
@@ -180,7 +180,7 @@ async def test_run_review_updates_category_scores_progressively(monkeypatch):
 
     snapshots = []
 
-    async def _recording_score_category(category_name, sub_criteria, descriptions, code_snippets):
+    async def _recording_score_category(provider, category_name, sub_criteria, descriptions, code_snippets, model=None):
         snapshots.append([(e["id"], e["percent_points"]) for e in _reviews[review_id]["category_scores"]])
         sub_results = {sub_id: {"score": 1, "remark": ""} for sub_id in sub_criteria}
         prompt_info = {"label": category_name, "prompt_text": "stub", "tokens": {
@@ -222,6 +222,52 @@ async def test_run_review_updates_category_scores_progressively(monkeypatch):
                 assert sub["remark"] == "No Lint warnings or errors found."
             else:
                 assert sub["remark"] == ""
+
+
+async def test_run_review_passes_llm_provider_and_model_through_to_scoring_calls(monkeypatch):
+    review_id = "llm-provider-threading-check"
+    work_dir = Path(tempfile.mkdtemp(prefix=f"review_{review_id}_"))
+    zip_path = work_dir / "android.zip"
+    template_path = work_dir / "template.xlsx"
+    zip_path.write_bytes(_build_zip_bytes())
+    template_path.write_bytes(_build_xlsx_bytes())
+
+    _reviews[review_id] = _new_review_state()
+
+    captured_providers = []
+    captured_models = []
+
+    async def fake_score_category(provider, category_name, sub_criteria, descriptions, code_snippets, model=None):
+        captured_providers.append(provider)
+        captured_models.append(model)
+        sub_results = {sub_id: {"score": 1, "remark": ""} for sub_id in sub_criteria}
+        prompt_info = {"label": category_name, "prompt_text": "stub", "tokens": {
+            "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "cached_tokens": 0,
+        }}
+        return sub_results, prompt_info
+
+    async def fake_generate_general_remarks(provider, category_results, model=None):
+        captured_providers.append(provider)
+        captured_models.append(model)
+        return "summary", {"label": "General remarks", "prompt_text": "stub", "tokens": {
+            "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "cached_tokens": 0,
+        }}
+
+    async def fake_check_compile_warnings(zip_path_arg):
+        return {"status": "ok", "warning_count": 0, "issues": []}
+
+    monkeypatch.setattr(reviews_module, "score_category", fake_score_category)
+    monkeypatch.setattr(reviews_module, "generate_general_remarks", fake_generate_general_remarks)
+    monkeypatch.setattr(reviews_module, "check_compile_warnings", fake_check_compile_warnings)
+
+    await _run_review(
+        review_id, work_dir, zip_path, template_path, zip_valid=True, template_valid=True, project_name="Test",
+        llm_provider="ollama", ollama_model="qwen2.5-coder:7b",
+    )
+
+    # 5 category calls + 1 general-remarks call, all carrying the same provider/model.
+    assert captured_providers == ["ollama"] * 6
+    assert captured_models == ["qwen2.5-coder:7b"] * 6
 
 
 async def test_run_review_builds_prompt_log_and_code_context(monkeypatch):
@@ -315,7 +361,7 @@ async def test_run_review_scores_1_4_from_compile_check_and_excludes_it_from_the
 
     captured_sub_criteria = {}
 
-    async def fake_score_category(category_name, sub_criteria, descriptions, code_snippets):
+    async def fake_score_category(provider, category_name, sub_criteria, descriptions, code_snippets, model=None):
         captured_sub_criteria[category_name] = list(sub_criteria)
         sub_results = {sub_id: {"score": 1, "remark": ""} for sub_id in sub_criteria}
         prompt_info = {"label": category_name, "prompt_text": "stub", "tokens": {

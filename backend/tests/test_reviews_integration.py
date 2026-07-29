@@ -70,9 +70,9 @@ def test_full_review_pipeline_in_stub_mode(monkeypatch, tmp_path: Path):
     real_score_category = reviews_module.score_category
     captured_code_snippets = []
 
-    async def _capturing_score_category(category_name, sub_criteria, descriptions, code_snippets):
+    async def _capturing_score_category(provider, category_name, sub_criteria, descriptions, code_snippets, model=None):
         captured_code_snippets.append(code_snippets)
-        return await real_score_category(category_name, sub_criteria, descriptions, code_snippets)
+        return await real_score_category(provider, category_name, sub_criteria, descriptions, code_snippets, model=model)
 
     monkeypatch.setattr(reviews_module, "score_category", _capturing_score_category)
 
