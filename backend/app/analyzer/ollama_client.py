@@ -53,13 +53,14 @@ async def _post(payload: dict):
 
 
 async def score_category(
-    category_name: str, sub_criteria: list, descriptions: dict, code_snippets: str, model: str | None = None
+    category_name: str, sub_criteria: list, descriptions: dict, code_snippets: str,
+    model: str | None = None, platform: str = "Android",
 ) -> tuple:
-    instructions = category_instructions(category_name, sub_criteria, descriptions)
+    instructions = category_instructions(category_name, sub_criteria, descriptions, platform)
     payload = {
         "model": _model(model),
         "messages": [
-            {"role": "system", "content": code_context_message(code_snippets)},
+            {"role": "system", "content": code_context_message(code_snippets, platform)},
             {"role": "user", "content": instructions},
         ],
         "temperature": 0.3,
@@ -80,8 +81,8 @@ async def score_category(
         return fallback, prompt_info
 
 
-async def generate_general_remarks(category_results: dict, model: str | None = None) -> tuple:
-    system_prompt = general_remarks_prompt()
+async def generate_general_remarks(category_results: dict, model: str | None = None, platform: str = "Android") -> tuple:
+    system_prompt = general_remarks_prompt(platform)
     payload = {
         "model": _model(model),
         "messages": [

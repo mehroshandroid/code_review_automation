@@ -54,6 +54,43 @@ async def test_score_category_uses_the_model_override_when_provided(monkeypatch)
 
 
 @pytest.mark.asyncio
+async def test_score_category_sends_the_provided_platform(monkeypatch):
+    monkeypatch.setenv("OLLAMA_BASE_URL", "http://fake-ollama:11434")
+    captured = {}
+
+    async def fake_post(self, url, json=None):
+        captured["json"] = json
+        content = '{"1.1": {"score": 1, "remark": "ok"}}'
+        request = httpx.Request("POST", url)
+        return httpx.Response(status_code=200, json={"choices": [{"message": {"content": content}}]}, request=request)
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", fake_post)
+
+    await ollama_client.score_category("Code Structure", ["1.1"], {}, "code here", platform="iOS")
+
+    assert "expert iOS code reviewer" in captured["json"]["messages"][0]["content"]
+    assert "as an expert iOS code reviewer" in captured["json"]["messages"][1]["content"]
+
+
+@pytest.mark.asyncio
+async def test_score_category_defaults_platform_to_android(monkeypatch):
+    monkeypatch.setenv("OLLAMA_BASE_URL", "http://fake-ollama:11434")
+    captured = {}
+
+    async def fake_post(self, url, json=None):
+        captured["json"] = json
+        content = '{"1.1": {"score": 1, "remark": "ok"}}'
+        request = httpx.Request("POST", url)
+        return httpx.Response(status_code=200, json={"choices": [{"message": {"content": content}}]}, request=request)
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", fake_post)
+
+    await ollama_client.score_category("Code Structure", ["1.1"], {}, "code here")
+
+    assert "expert Android code reviewer" in captured["json"]["messages"][0]["content"]
+
+
+@pytest.mark.asyncio
 async def test_score_category_falls_back_on_connection_error(monkeypatch):
     monkeypatch.setenv("OLLAMA_BASE_URL", "http://fake-ollama:11434")
 
@@ -107,6 +144,24 @@ async def test_generate_general_remarks_calls_ollama_and_parses_text(monkeypatch
     assert result == "Overall code quality is solid."
     assert "1.1: score=1, remark=Good naming" in captured["json"]["messages"][1]["content"]
     assert prompt_info["label"] == "General remarks"
+
+
+@pytest.mark.asyncio
+async def test_generate_general_remarks_sends_the_provided_platform(monkeypatch):
+    monkeypatch.setenv("OLLAMA_BASE_URL", "http://fake-ollama:11434")
+    captured = {}
+
+    async def fake_post(self, url, json=None):
+        captured["json"] = json
+        content = "Overall summary."
+        request = httpx.Request("POST", url)
+        return httpx.Response(status_code=200, json={"choices": [{"message": {"content": content}}]}, request=request)
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", fake_post)
+
+    await ollama_client.generate_general_remarks({}, platform="iOS")
+
+    assert "expert iOS code reviewer" in captured["json"]["messages"][0]["content"]
 
 
 @pytest.mark.asyncio
