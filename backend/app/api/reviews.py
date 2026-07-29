@@ -93,6 +93,7 @@ async def create_review(
     excelTemplate: UploadFile = File(...),
     llmProvider: str = Form("azure"),
     ollamaModel: str | None = Form(None),
+    compileCheckMode: str = Form("compiler"),
 ):
     review_id = str(uuid.uuid4())
     work_dir = Path(tempfile.mkdtemp(prefix=f"review_{review_id}_"))
@@ -123,7 +124,7 @@ async def create_review(
     asyncio.create_task(
         _run_review(
             review_id, work_dir, zip_path, template_path, zip_valid, template_valid, project_name,
-            llmProvider, ollamaModel,
+            llmProvider, ollamaModel, compileCheckMode,
         )
     )
     return {"review_id": review_id, "status": "processing"}
@@ -139,6 +140,7 @@ async def _run_review(
     project_name: str,
     llm_provider: str = "azure",
     ollama_model: str | None = None,
+    compile_check_mode: str = "compiler",
 ) -> None:
     state = _reviews[review_id]
     extract_dir = work_dir / "extracted"
@@ -185,11 +187,17 @@ async def _run_review(
 
         t1b = time.monotonic()
         state["phase"] = "compiling"
-        state["message"] = "Compiling and running Lint checks..."
-        compile_result = await check_compile_warnings(zip_path)
-        state["lint_issues"] = compile_result["issues"]
-        state["compile_status"] = compile_result["status"]
-        compile_sub_result = _compile_result_to_sub_score(compile_result)
+        if compile_check_mode == "static":
+            state["message"] = "Skipping compiler check (static analysis mode)..."
+            state["lint_issues"] = []
+            state["compile_status"] = "skipped"
+            compile_sub_result = None
+        else:
+            state["message"] = "Compiling and running Lint checks..."
+            compile_result = await check_compile_warnings(zip_path)
+            state["lint_issues"] = compile_result["issues"]
+            state["compile_status"] = compile_result["status"]
+            compile_sub_result = _compile_result_to_sub_score(compile_result)
         stats["compile_time_ms"] = int((time.monotonic() - t1b) * 1000)
         state["progress"] = 55
 
@@ -201,13 +209,13 @@ async def _run_review(
             state["message"] = f"Evaluating {category['name']}..."
             llm_sub_criteria = (
                 [sub_id for sub_id in category["sub_criteria"] if sub_id != "1.4"]
-                if category_id == "1" else category["sub_criteria"]
+                if category_id == "1" and compile_check_mode == "compiler" else category["sub_criteria"]
             )
             sub_results, prompt_info = await score_category(
                 llm_provider, category["name"], llm_sub_criteria, sub_criteria_descriptions, code_context,
                 model=ollama_model,
             )
-            if category_id == "1":
+            if category_id == "1" and compile_check_mode == "compiler":
                 sub_results = _merge_compile_result_into_category_1(sub_results, compile_sub_result)
             scores_by_category[category_id] = aggregate_category_scores(sub_results)
             sub_scores = scores_by_category[category_id]["sub_scores"]

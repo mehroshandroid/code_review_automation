@@ -395,6 +395,50 @@ async def test_run_review_scores_1_4_from_compile_check_and_excludes_it_from_the
     assert state["category_scores"][0]["percent_points"] == 83.0
 
 
+async def test_run_review_static_mode_skips_compiler_and_scores_1_4_via_llm(monkeypatch):
+    review_id = "static-mode-check"
+    work_dir = Path(tempfile.mkdtemp(prefix=f"review_{review_id}_"))
+    zip_path = work_dir / "android.zip"
+    template_path = work_dir / "template.xlsx"
+    zip_path.write_bytes(_build_zip_bytes())
+    template_path.write_bytes(_build_xlsx_bytes())
+
+    _reviews[review_id] = _new_review_state()
+
+    compile_check_called = []
+    captured_sub_criteria = {}
+
+    async def fake_check_compile_warnings(zip_path_arg):
+        compile_check_called.append(True)
+        return {"status": "ok", "warning_count": 0, "issues": []}
+
+    async def fake_score_category(provider, category_name, sub_criteria, descriptions, code_snippets, model=None):
+        captured_sub_criteria[category_name] = list(sub_criteria)
+        sub_results = {sub_id: {"score": 1, "remark": "stub"} for sub_id in sub_criteria}
+        prompt_info = {"label": category_name, "prompt_text": "stub", "tokens": {
+            "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "cached_tokens": 0,
+        }}
+        return sub_results, prompt_info
+
+    monkeypatch.setattr(reviews_module, "check_compile_warnings", fake_check_compile_warnings)
+    monkeypatch.setattr(reviews_module, "score_category", fake_score_category)
+
+    await _run_review(
+        review_id, work_dir, zip_path, template_path, zip_valid=True, template_valid=True, project_name="Test",
+        compile_check_mode="static",
+    )
+
+    assert compile_check_called == []
+    assert "1.4" in captured_sub_criteria["Code naming conventions / Code Structure"]
+
+    state = _reviews[review_id]
+    assert state["compile_status"] == "skipped"
+    assert state["lint_issues"] == []
+    sub_1_4 = next(s for s in state["category_scores"][0]["sub_criteria"] if s["id"] == "1.4")
+    assert sub_1_4["score"] == 1
+    assert sub_1_4["remark"] == "stub"
+
+
 async def test_run_review_updates_message_on_error_paths(monkeypatch):
     review_id = "progress-message-error-check"
     work_dir = Path(tempfile.mkdtemp(prefix=f"review_{review_id}_"))
