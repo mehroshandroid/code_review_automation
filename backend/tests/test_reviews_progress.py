@@ -23,6 +23,22 @@ def test_progress_reflects_stored_state():
         "warnings": ["Missing AndroidManifest.xml"],
         "test_coverage": 82.5,
         "secrets_found": [{"file": "Constants.java", "line": 42, "pattern": "api_key"}],
+        "total_score_pct": 78.0,
+        "project_name": "MyProject",
+        "category_scores": [
+            {"id": "1", "name": "Code naming conventions / Code Structure", "percent_points": 90.0},
+            {"id": "2", "name": "Reliability, Security & Observability", "percent_points": None},
+        ],
+        "code_context": "class MainActivity {}",
+        "prompt_log": [
+            {
+                "label": "Code naming conventions / Code Structure",
+                "prompt_text": "Score the following...",
+                "tokens": {"prompt_tokens": 500, "completion_tokens": 40, "total_tokens": 540, "cached_tokens": None},
+            },
+        ],
+        "lint_issues": [{"severity": "Warning", "message": "m", "file": "f.java", "line": 1}],
+        "compile_status": "ok",
     }
     response = client.get("/api/reviews/fixed-id/progress")
     assert response.status_code == 200
@@ -35,6 +51,22 @@ def test_progress_reflects_stored_state():
     assert body["warnings"] == ["Missing AndroidManifest.xml"]
     assert body["test_coverage"] == 82.5
     assert body["secrets_found"] == [{"file": "Constants.java", "line": 42, "pattern": "api_key"}]
+    assert body["total_score_pct"] == 78.0
+    assert body["project_name"] == "MyProject"
+    assert body["category_scores"] == [
+        {"id": "1", "name": "Code naming conventions / Code Structure", "percent_points": 90.0},
+        {"id": "2", "name": "Reliability, Security & Observability", "percent_points": None},
+    ]
+    assert body["code_context"] == "class MainActivity {}"
+    assert body["prompt_log"] == [
+        {
+            "label": "Code naming conventions / Code Structure",
+            "prompt_text": "Score the following...",
+            "tokens": {"prompt_tokens": 500, "completion_tokens": 40, "total_tokens": 540, "cached_tokens": None},
+        },
+    ]
+    assert body["lint_issues"] == [{"severity": "Warning", "message": "m", "file": "f.java", "line": 1}]
+    assert body["compile_status"] == "ok"
 
 
 def test_progress_defaults_detection_fields_when_absent():
@@ -52,6 +84,13 @@ def test_progress_defaults_detection_fields_when_absent():
     assert body["warnings"] == []
     assert body["test_coverage"] is None
     assert body["secrets_found"] == []
+    assert body["total_score_pct"] is None
+    assert body["project_name"] is None
+    assert body["category_scores"] == []
+    assert body["code_context"] is None
+    assert body["prompt_log"] == []
+    assert body["lint_issues"] == []
+    assert body["compile_status"] is None
 
 
 def test_progress_includes_download_url_when_completed():

@@ -12,23 +12,83 @@ def is_stub_mode() -> bool:
     return not os.environ.get("AZURE_OPENAI_KEY")
 
 
-async def score_category(category_name: str, sub_criteria: list, descriptions: dict, code_snippets: str) -> dict:
+def _zero_tokens() -> dict:
+    return {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "cached_tokens": 0}
+
+
+def _empty_tokens() -> dict:
+    return {"prompt_tokens": None, "completion_tokens": None, "total_tokens": None, "cached_tokens": None}
+
+
+def _extract_usage(response) -> dict:
+    if response is None:
+        return _empty_tokens()
+    usage = response.json().get("usage") or {}
+    details = usage.get("prompt_tokens_details") or {}
+    return {
+        "prompt_tokens": usage.get("prompt_tokens"),
+        "completion_tokens": usage.get("completion_tokens"),
+        "total_tokens": usage.get("total_tokens"),
+        "cached_tokens": details.get("cached_tokens"),
+    }
+
+
+def _category_instructions(category_name: str, sub_criteria: list, descriptions: dict) -> str:
+    criteria_lines = "\n".join(f"{sub_id}: {descriptions.get(sub_id, '')}" for sub_id in sub_criteria)
+    return (
+        f"Score the following {category_name} sub-criteria based ONLY on the code above:\n"
+        f"{criteria_lines}\n\n"
+        "For each sub-criterion, score 0 (fails), 1 (meets it), or null if the "
+        "code snippet does not contain enough information to judge that specific sub-criterion "
+        "(e.g. it asks about PR comments, commit history, or other context not present in "
+        "source code -- do not guess or assume in that case, use null). "
+        "Each remark must be specific to its own sub-criterion's exact wording above, not a "
+        "general comment about the code as a whole or about a different sub-criterion.\n"
+        'Respond as JSON: {"<id>": {"score": <num or null>, "remark": "<1-2 sentences>"}, ...}'
+    )
+
+
+def _code_context_message(code_snippets: str) -> str:
+    return (
+        "You are an expert Android code reviewer. Here is the Android project's "
+        f"source code for review:\n\n{code_snippets}"
+    )
+
+
+def _general_remarks_prompt() -> str:
+    return (
+        "You are an expert Android code reviewer. Given per-criterion scores and remarks "
+        "from a completed code review, write a concise 2-3 sentence overall summary of the "
+        "code quality, highlighting the weakest areas. Respond with plain text only, no JSON."
+    )
+
+
+async def score_category(category_name: str, sub_criteria: list, descriptions: dict, code_snippets: str) -> tuple:
     if is_stub_mode():
-        return _stub_score(sub_criteria)
+        return _stub_score(category_name, sub_criteria, descriptions)
     return await _live_score(category_name, sub_criteria, descriptions, code_snippets)
 
 
-async def generate_general_remarks(category_results: dict) -> str:
+async def generate_general_remarks(category_results: dict) -> tuple:
     if is_stub_mode():
-        return f"{STUB_PREFIX} No Azure OpenAI key configured; general remarks not generated."
+        return _stub_general_remarks()
     return await _live_general_remarks(category_results)
 
 
-def _stub_score(sub_criteria: list) -> dict:
-    return {
+def _stub_score(category_name: str, sub_criteria: list, descriptions: dict) -> tuple:
+    instructions = _category_instructions(category_name, sub_criteria, descriptions)
+    sub_results = {
         sub_id: {"score": 1, "remark": f"{STUB_PREFIX} No Azure OpenAI key configured; placeholder score."}
         for sub_id in sub_criteria
     }
+    prompt_info = {"label": category_name, "prompt_text": instructions, "tokens": _zero_tokens()}
+    return sub_results, prompt_info
+
+
+def _stub_general_remarks() -> tuple:
+    text = f"{STUB_PREFIX} No Azure OpenAI key configured; general remarks not generated."
+    prompt_info = {"label": "General remarks", "prompt_text": _general_remarks_prompt(), "tokens": _zero_tokens()}
+    return text, prompt_info
 
 
 async def _post_with_retry(payload: dict):
@@ -52,24 +112,12 @@ async def _post_with_retry(payload: dict):
         return response
 
 
-async def _live_score(category_name: str, sub_criteria: list, descriptions: dict, code_snippets: str) -> dict:
-    criteria_lines = "\n".join(f"{sub_id}: {descriptions.get(sub_id, '')}" for sub_id in sub_criteria)
-    system_prompt = (
-        f"You are an expert Android code reviewer. Score the following {category_name} "
-        "sub-criteria based ONLY on the provided code snippet:\n"
-        f"{criteria_lines}\n\n"
-        "For each sub-criterion, score 0 (fails), 0.5 (partial), 1 (meets it), or null if the "
-        "code snippet does not contain enough information to judge that specific sub-criterion "
-        "(e.g. it asks about PR comments, commit history, or other context not present in "
-        "source code -- do not guess or assume in that case, use null). "
-        "Each remark must be specific to its own sub-criterion's exact wording above, not a "
-        "general comment about the code as a whole or about a different sub-criterion.\n"
-        'Respond as JSON: {"<id>": {"score": <num or null>, "remark": "<1-2 sentences>"}, ...}'
-    )
+async def _live_score(category_name: str, sub_criteria: list, descriptions: dict, code_snippets: str) -> tuple:
+    instructions = _category_instructions(category_name, sub_criteria, descriptions)
     payload = {
         "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": code_snippets},
+            {"role": "system", "content": _code_context_message(code_snippets)},
+            {"role": "user", "content": instructions},
         ],
         "temperature": 0.3,
         "max_tokens": 1500,
@@ -78,15 +126,16 @@ async def _live_score(category_name: str, sub_criteria: list, descriptions: dict
     fallback = {sub_id: {"score": None, "remark": ""} for sub_id in sub_criteria}
 
     response = await _post_with_retry(payload)
+    prompt_info = {"label": category_name, "prompt_text": instructions, "tokens": _extract_usage(response)}
     if response is None:
-        return fallback
+        return fallback, prompt_info
 
     try:
         content = response.json()["choices"][0]["message"]["content"]
         parsed = json.loads(_strip_markdown_fences(content))
-        return _normalize_score_result(parsed, sub_criteria)
+        return _normalize_score_result(parsed, sub_criteria), prompt_info
     except (ValueError, KeyError, IndexError, TypeError):
-        return fallback
+        return fallback, prompt_info
 
 
 def _normalize_score_result(parsed: dict, sub_criteria: list) -> dict:
@@ -115,12 +164,8 @@ def _build_findings_summary(category_results: dict) -> str:
     return "\n".join(lines) if lines else "No findings were scored."
 
 
-async def _live_general_remarks(category_results: dict) -> str:
-    system_prompt = (
-        "You are an expert Android code reviewer. Given per-criterion scores and remarks "
-        "from a completed code review, write a concise 2-3 sentence overall summary of the "
-        "code quality, highlighting the weakest areas. Respond with plain text only, no JSON."
-    )
+async def _live_general_remarks(category_results: dict) -> tuple:
+    system_prompt = _general_remarks_prompt()
     payload = {
         "messages": [
             {"role": "system", "content": system_prompt},
@@ -131,13 +176,15 @@ async def _live_general_remarks(category_results: dict) -> str:
     }
 
     response = await _post_with_retry(payload)
+    prompt_info = {"label": "General remarks", "prompt_text": system_prompt, "tokens": _extract_usage(response)}
     if response is None:
-        return ""
+        return "", prompt_info
 
     try:
-        return response.json()["choices"][0]["message"]["content"].strip()
+        text = response.json()["choices"][0]["message"]["content"].strip()
+        return text, prompt_info
     except (ValueError, KeyError, IndexError, TypeError):
-        return ""
+        return "", prompt_info
 
 
 def _strip_markdown_fences(content: str) -> str:
