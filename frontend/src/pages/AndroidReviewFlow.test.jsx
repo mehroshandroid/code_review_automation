@@ -187,7 +187,7 @@ test("sends the selected Ollama provider and model when available", async () => 
     await Promise.resolve();
   });
 
-  expect(createReview).toHaveBeenCalledWith(expect.anything(), expect.anything(), "ollama", "qwen2.5-coder:7b");
+  expect(createReview).toHaveBeenCalledWith(expect.anything(), expect.anything(), "ollama", "qwen2.5-coder:7b", "compiler");
 });
 
 test("falls back to Azure when Ollama is selected but no models are installed", async () => {
@@ -209,5 +209,32 @@ test("falls back to Azure when Ollama is selected but no models are installed", 
     await Promise.resolve();
   });
 
-  expect(createReview).toHaveBeenCalledWith(expect.anything(), expect.anything(), "azure", null);
+  expect(createReview).toHaveBeenCalledWith(expect.anything(), expect.anything(), "azure", null, "compiler");
+});
+
+test("shows the compile-check mode toggle", () => {
+  renderFlow();
+  expect(screen.getByRole("button", { name: "Compile-time lint" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Static file analysis" })).toBeInTheDocument();
+});
+
+test("sends the persisted compile-check mode when starting a review", async () => {
+  const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+  localStorage.setItem("compileCheckMode", "static");
+  createReview.mockResolvedValue({ review_id: "abc-123", status: "processing" });
+  getProgress.mockResolvedValue({
+    status: "processing", phase: "extracting", progress: 20, message: "Extracting...",
+    stats: {}, download_url: null, error: null, warnings: [], test_coverage: null, secrets_found: [],
+    total_score_pct: null, project_name: null, category_scores: [], code_context: null, prompt_log: [],
+    lint_issues: [], compile_status: null,
+  });
+
+  renderFlow();
+  await act(async () => {
+    await uploadValidFiles(user);
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+
+  expect(createReview).toHaveBeenCalledWith(expect.anything(), expect.anything(), "azure", null, "static");
 });
