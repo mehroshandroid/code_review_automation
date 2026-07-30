@@ -70,6 +70,7 @@ def test_create_review_returns_id_and_creates_state(monkeypatch):
         assert "review_id" in body
         assert body["status"] == "processing"
         assert body["review_id"] in _reviews
+        assert _reviews[body["review_id"]]["source"] == "upload"
         assert _reviews[body["review_id"]]["project_name"] == "project"
 
 
@@ -177,6 +178,7 @@ def test_create_review_with_devops_fields_derives_project_name_from_repo_url(mon
         assert response.status_code == 200
         body = response.json()
         assert body["status"] == "processing"
+        assert _reviews[body["review_id"]]["source"] == "devops"
         assert _reviews[body["review_id"]]["project_name"] == "my-repo"
 
 

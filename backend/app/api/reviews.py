@@ -49,6 +49,7 @@ def _new_review_state() -> dict:
         "prompt_log": [],
         "lint_issues": [],
         "compile_status": None,
+        "source": None,
     }
 
 
@@ -132,6 +133,7 @@ async def create_review(
 
     state = _new_review_state()
     state["project_name"] = project_name
+    state["source"] = "devops" if has_devops else "upload"
     _reviews[review_id] = state
     asyncio.create_task(
         _run_review(
@@ -339,6 +341,7 @@ async def get_progress(review_id: str):
         "prompt_log": state.get("prompt_log", []),
         "lint_issues": state.get("lint_issues", []),
         "compile_status": state.get("compile_status"),
+        "source": state.get("source"),
     }
 
 
