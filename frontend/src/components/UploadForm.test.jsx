@@ -76,10 +76,28 @@ test("does not render the compile-check toggle by default", () => {
   expect(screen.queryByText("Compile-time lint")).not.toBeInTheDocument();
 });
 
-test("renders the compile-check toggle when showCompileCheckToggle is true, defaulting to Compile-time lint", () => {
+test("renders the compile-check toggle when showCompileCheckToggle is true, defaulting to Compile-time lint (Docker) for Android", () => {
   render(<UploadForm onSubmit={jest.fn()} disabled={false} showCompileCheckToggle />);
-  expect(screen.getByRole("button", { name: "Compile-time lint" })).toHaveClass("btn-primary");
+  expect(screen.getByRole("button", { name: "Compile-time lint (Docker)" })).toHaveClass("btn-primary");
+  expect(screen.getByRole("button", { name: "Compile-time lint (local)" })).not.toHaveClass("btn-primary");
   expect(screen.getByRole("button", { name: "Static file analysis" })).not.toHaveClass("btn-primary");
+});
+
+test("selecting Compile-time lint (local) persists the choice and highlights it", async () => {
+  const user = userEvent.setup();
+  render(<UploadForm onSubmit={jest.fn()} disabled={false} showCompileCheckToggle />);
+
+  await user.click(screen.getByRole("button", { name: "Compile-time lint (local)" }));
+
+  expect(screen.getByRole("button", { name: "Compile-time lint (local)" })).toHaveClass("btn-primary");
+  expect(getCompileCheckMode()).toBe("local");
+});
+
+test("does not show the local build option, or the (Docker) suffix, for a non-Android platform", () => {
+  render(<UploadForm onSubmit={jest.fn()} disabled={false} showCompileCheckToggle platformLabel="iOS" />);
+  expect(screen.getByRole("button", { name: "Compile-time lint" })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Compile-time lint (Docker)" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Compile-time lint (local)" })).not.toBeInTheDocument();
 });
 
 test("selecting Static file analysis persists the choice and highlights it", async () => {

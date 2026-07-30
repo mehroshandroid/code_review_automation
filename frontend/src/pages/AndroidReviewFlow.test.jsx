@@ -214,7 +214,8 @@ test("falls back to Azure when Ollama is selected but no models are installed", 
 
 test("shows the compile-check mode toggle", () => {
   renderFlow();
-  expect(screen.getByRole("button", { name: "Compile-time lint" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Compile-time lint (Docker)" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Compile-time lint (local)" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Static file analysis" })).toBeInTheDocument();
 });
 
