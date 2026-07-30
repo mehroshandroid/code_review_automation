@@ -5,7 +5,13 @@ from pathlib import Path
 from typing import Optional
 
 BUILD_TIMEOUT_SECONDS = 900
-SCHEME_LIST_TIMEOUT_SECONDS = 60
+# `xcodebuild -list` triggers full Swift Package Manager dependency
+# resolution for any project with SPM packages -- confirmed against a real
+# project where most dependencies were cached but one still did a live
+# GitHub fetch. A short timeout here was mistaken for "no scheme found."
+# Kept well below BUILD_TIMEOUT_SECONDS since resolution should be a
+# strict subset of the work the actual build does afterward.
+SCHEME_LIST_TIMEOUT_SECONDS = 600
 
 
 def extract_zip(zip_bytes: bytes, dest_dir: Path) -> None:
