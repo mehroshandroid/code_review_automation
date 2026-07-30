@@ -6,12 +6,21 @@ from app.analyzer import devops_client
 
 def test_parse_repo_url_extracts_org_project_repo():
     result = devops_client.parse_repo_url("https://dev.azure.com/myorg/MyProject/_git/my-repo")
-    assert result == {"organization": "myorg", "project": "MyProject", "repository": "my-repo"}
+    assert result == {"organization": "myorg", "project": "MyProject", "repository": "my-repo", "username": None}
 
 
 def test_parse_repo_url_accepts_trailing_slash():
     result = devops_client.parse_repo_url("https://dev.azure.com/myorg/MyProject/_git/my-repo/")
-    assert result == {"organization": "myorg", "project": "MyProject", "repository": "my-repo"}
+    assert result == {"organization": "myorg", "project": "MyProject", "repository": "my-repo", "username": None}
+
+
+def test_parse_repo_url_extracts_embedded_username():
+    # Azure DevOps's own "Clone" URL and the URL shown after "Generate Git
+    # Credentials" both embed the username as user@dev.azure.com.
+    result = devops_client.parse_repo_url("https://myteo@dev.azure.com/myteo/MyMasjid/_git/My_Masjid_Android")
+    assert result == {
+        "organization": "myteo", "project": "MyMasjid", "repository": "My_Masjid_Android", "username": "myteo",
+    }
 
 
 def test_parse_repo_url_returns_none_for_unrecognized_url():
@@ -56,6 +65,30 @@ async def test_fetch_repo_zip_success_returns_zip_bytes(monkeypatch):
         "?path=/&download=true&$format=zip&api-version=7.0&recursionLevel=full"
     )
     assert captured["auth"] == ("", "fake-pat")
+
+
+@pytest.mark.asyncio
+async def test_fetch_repo_zip_uses_the_url_embedded_username_for_basic_auth_when_present(monkeypatch):
+    captured = {}
+
+    async def fake_get(self, url, auth=None):
+        captured["url"] = url
+        captured["auth"] = auth
+        request = httpx.Request("GET", url)
+        return httpx.Response(status_code=200, content=b"zipbytes", request=request)
+
+    monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
+
+    result = await devops_client.fetch_repo_zip(
+        "https://myteo@dev.azure.com/myteo/MyMasjid/_git/My_Masjid_Android", "fake-pat"
+    )
+
+    assert result["status"] == "ok"
+    assert captured["auth"] == ("myteo", "fake-pat")
+    assert captured["url"] == (
+        "https://dev.azure.com/myteo/MyMasjid/_apis/git/repositories/My_Masjid_Android/items"
+        "?path=/&download=true&$format=zip&api-version=7.0&recursionLevel=full"
+    )
 
 
 @pytest.mark.asyncio

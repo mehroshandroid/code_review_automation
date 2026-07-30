@@ -2,19 +2,22 @@ import re
 
 import httpx
 
-REPO_URL_RE = re.compile(r"^https://dev\.azure\.com/([^/]+)/([^/]+)/_git/([^/]+)/?$")
+REPO_URL_RE = re.compile(r"^https://(?:([^@/]+)@)?dev\.azure\.com/([^/]+)/([^/]+)/_git/([^/]+)/?$")
 
 
 def parse_repo_url(url: str) -> dict | None:
-    """Extracts {organization, project, repository} from an Azure DevOps repo
-    URL of the form https://dev.azure.com/{org}/{project}/_git/{repo}.
-    Returns None if the URL doesn't match this shape.
+    """Extracts {organization, project, repository, username} from an Azure
+    DevOps repo URL of the form https://dev.azure.com/{org}/{project}/_git/{repo},
+    optionally with a username embedded as https://{username}@dev.azure.com/...
+    (the form Azure DevOps's own "Clone" button and "Generate Git Credentials"
+    flow both produce). username is None when the URL has no embedded
+    username. Returns None if the URL doesn't match this shape at all.
     """
     match = REPO_URL_RE.match(url.strip())
     if not match:
         return None
-    organization, project, repository = match.groups()
-    return {"organization": organization, "project": project, "repository": repository}
+    username, organization, project, repository = match.groups()
+    return {"organization": organization, "project": project, "repository": repository, "username": username}
 
 
 async def fetch_repo_zip(repo_url: str, pat: str, branch: str | None = None) -> dict:
@@ -39,7 +42,7 @@ async def fetch_repo_zip(repo_url: str, pat: str, branch: str | None = None) -> 
 
     try:
         async with httpx.AsyncClient(timeout=60.0) as client:
-            response = await client.get(url, auth=("", pat))
+            response = await client.get(url, auth=(parsed["username"] or "", pat))
         if response.status_code == 401:
             return {"status": "unauthorized", "content": None, "message": "Invalid PAT or insufficient permissions."}
         if response.status_code == 404:

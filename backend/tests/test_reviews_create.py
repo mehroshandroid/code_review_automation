@@ -547,6 +547,7 @@ async def test_run_review_static_mode_skips_compiler_and_scores_1_4_via_llm(monk
 
 
 async def test_run_review_fetching_phase_writes_zip_from_devops_on_success(monkeypatch):
+    monkeypatch.delenv("AZURE_OPENAI_KEY", raising=False)
     review_id = "devops-fetch-success"
     work_dir = Path(tempfile.mkdtemp(prefix=f"review_{review_id}_"))
     zip_path = work_dir / "android.zip"
