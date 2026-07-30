@@ -48,7 +48,7 @@ async def fetch_repo_zip(repo_url: str, pat: str, branch: str | None = None) -> 
     url = (
         f"https://dev.azure.com/{parsed['organization']}/{parsed['project']}"
         f"/_apis/git/repositories/{parsed['repository']}/items"
-        "?path=/&download=true&$format=zip&api-version=7.0&recursionLevel=full"
+        "?scopePath=/&download=true&$format=zip&api-version=7.0&recursionLevel=full"
     )
     if branch:
         url += f"&versionDescriptor.version={branch}"

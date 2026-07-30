@@ -62,7 +62,7 @@ async def test_fetch_repo_zip_success_returns_zip_bytes(monkeypatch):
     assert result == {"status": "ok", "content": b"PK\x03\x04fakezipbytes", "message": None}
     assert captured["url"] == (
         "https://dev.azure.com/myorg/MyProject/_apis/git/repositories/my-repo/items"
-        "?path=/&download=true&$format=zip&api-version=7.0&recursionLevel=full"
+        "?scopePath=/&download=true&$format=zip&api-version=7.0&recursionLevel=full"
     )
     assert captured["auth"] == ("", "fake-pat")
 
@@ -87,7 +87,7 @@ async def test_fetch_repo_zip_uses_the_url_embedded_username_for_basic_auth_when
     assert captured["auth"] == ("myteo", "fake-pat")
     assert captured["url"] == (
         "https://dev.azure.com/myteo/MyMasjid/_apis/git/repositories/My_Masjid_Android/items"
-        "?path=/&download=true&$format=zip&api-version=7.0&recursionLevel=full"
+        "?scopePath=/&download=true&$format=zip&api-version=7.0&recursionLevel=full"
     )
 
 
