@@ -91,6 +91,71 @@ def test_create_review_write_failure_returns_200_with_error_state(monkeypatch):
         assert created_tasks == []
 
 
+def test_create_review_returns_error_when_neither_zip_nor_devops_fields_provided(monkeypatch):
+    monkeypatch.delenv("AZURE_OPENAI_KEY", raising=False)
+    with TestClient(app) as test_client:
+        response = test_client.post(
+            "/api/reviews",
+            files={
+                "excelTemplate": (
+                    "template.xlsx", _build_xlsx_bytes(),
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                ),
+            },
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "error"
+        state = _reviews[body["review_id"]]
+        assert state["error"] == "Provide either a project zip file or an Azure DevOps repo URL + PAT, not neither."
+
+
+def test_create_review_returns_error_when_both_zip_and_devops_fields_provided(monkeypatch):
+    monkeypatch.delenv("AZURE_OPENAI_KEY", raising=False)
+    with TestClient(app) as test_client:
+        response = test_client.post(
+            "/api/reviews",
+            files={
+                "androidZip": ("project.zip", _build_zip_bytes(), "application/zip"),
+                "excelTemplate": (
+                    "template.xlsx", _build_xlsx_bytes(),
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                ),
+            },
+            data={
+                "devopsRepoUrl": "https://dev.azure.com/myorg/MyProject/_git/my-repo",
+                "devopsPat": "fake-pat",
+            },
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "error"
+        state = _reviews[body["review_id"]]
+        assert state["error"] == "Provide either a project zip file or an Azure DevOps repo URL + PAT, not both."
+
+
+def test_create_review_with_devops_fields_derives_project_name_from_repo_url(monkeypatch):
+    monkeypatch.delenv("AZURE_OPENAI_KEY", raising=False)
+    with TestClient(app) as test_client:
+        response = test_client.post(
+            "/api/reviews",
+            files={
+                "excelTemplate": (
+                    "template.xlsx", _build_xlsx_bytes(),
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                ),
+            },
+            data={
+                "devopsRepoUrl": "https://dev.azure.com/myorg/MyProject/_git/my-repo",
+                "devopsPat": "fake-pat",
+            },
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "processing"
+        assert _reviews[body["review_id"]]["project_name"] == "my-repo"
+
+
 async def test_run_review_removes_work_dir_when_no_output_produced():
     review_id = "leak-check-invalid-inputs"
     work_dir = Path(tempfile.mkdtemp(prefix=f"review_{review_id}_"))
@@ -479,6 +544,59 @@ async def test_run_review_static_mode_skips_compiler_and_scores_1_4_via_llm(monk
     sub_1_4 = next(s for s in state["category_scores"][0]["sub_criteria"] if s["id"] == "1.4")
     assert sub_1_4["score"] == 1
     assert sub_1_4["remark"] == "stub"
+
+
+async def test_run_review_fetching_phase_writes_zip_from_devops_on_success(monkeypatch):
+    review_id = "devops-fetch-success"
+    work_dir = Path(tempfile.mkdtemp(prefix=f"review_{review_id}_"))
+    zip_path = work_dir / "android.zip"
+    template_path = work_dir / "template.xlsx"
+    template_path.write_bytes(_build_xlsx_bytes())
+
+    _reviews[review_id] = _new_review_state()
+
+    async def fake_fetch_repo_zip(repo_url, pat, branch=None):
+        return {"status": "ok", "content": _build_zip_bytes(), "message": None}
+
+    async def fake_check_compile_warnings(zip_path_arg):
+        return {"status": "ok", "warning_count": 0, "issues": []}
+
+    monkeypatch.setattr(reviews_module, "fetch_repo_zip", fake_fetch_repo_zip)
+    monkeypatch.setattr(reviews_module, "check_compile_warnings", fake_check_compile_warnings)
+
+    await _run_review(
+        review_id, work_dir, zip_path, template_path, zip_valid=True, template_valid=True, project_name="my-repo",
+        devops_repo_url="https://dev.azure.com/myorg/MyProject/_git/my-repo", devops_pat="fake-pat",
+    )
+
+    state = _reviews[review_id]
+    assert state["status"] == "completed"
+    assert "fetch_time_ms" in state["stats"]
+
+
+async def test_run_review_fetching_phase_failure_ends_review_with_devops_error_message(monkeypatch):
+    review_id = "devops-fetch-failure"
+    work_dir = Path(tempfile.mkdtemp(prefix=f"review_{review_id}_"))
+    zip_path = work_dir / "android.zip"
+    template_path = work_dir / "template.xlsx"
+    template_path.write_bytes(_build_xlsx_bytes())
+
+    _reviews[review_id] = _new_review_state()
+
+    async def fake_fetch_repo_zip(repo_url, pat, branch=None):
+        return {"status": "unauthorized", "content": None, "message": "Invalid PAT or insufficient permissions."}
+
+    monkeypatch.setattr(reviews_module, "fetch_repo_zip", fake_fetch_repo_zip)
+
+    await _run_review(
+        review_id, work_dir, zip_path, template_path, zip_valid=True, template_valid=True, project_name="my-repo",
+        devops_repo_url="https://dev.azure.com/myorg/MyProject/_git/my-repo", devops_pat="secret-pat-value",
+    )
+
+    state = _reviews[review_id]
+    assert state["status"] == "error"
+    assert state["error"] == "Invalid PAT or insufficient permissions."
+    assert "secret-pat-value" not in str(state)
 
 
 async def test_run_review_updates_message_on_error_paths(monkeypatch):

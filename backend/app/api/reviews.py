@@ -14,6 +14,7 @@ from starlette.background import BackgroundTask
 
 from app.analyzer.android_analyzer import analyze_project, gather_code_context
 from app.analyzer.compile_checker import check_compile_warnings
+from app.analyzer.devops_client import fetch_repo_zip, parse_repo_url
 from app.analyzer.excel_handler import (
     aggregate_category_scores,
     compute_total_score_pct,
@@ -89,20 +90,44 @@ def _merge_compile_result_into_category_1(sub_results: dict, compile_sub_result:
 
 @router.post("/api/reviews")
 async def create_review(
-    androidZip: UploadFile = File(...),
+    androidZip: UploadFile | None = File(None),
     excelTemplate: UploadFile = File(...),
     llmProvider: str = Form("azure"),
     ollamaModel: str | None = Form(None),
     compileCheckMode: str = Form("compiler"),
     platform: str = Form("Android"),
+    devopsRepoUrl: str | None = Form(None),
+    devopsPat: str | None = Form(None),
+    devopsBranch: str | None = Form(None),
 ):
     review_id = str(uuid.uuid4())
     work_dir = Path(tempfile.mkdtemp(prefix=f"review_{review_id}_"))
     zip_path = work_dir / "android.zip"
     template_path = work_dir / "template.xlsx"
 
+    has_zip = androidZip is not None
+    has_devops = bool(devopsRepoUrl) and bool(devopsPat)
+
+    if has_zip and has_devops:
+        input_error = "Provide either a project zip file or an Azure DevOps repo URL + PAT, not both."
+    elif not has_zip and not has_devops:
+        input_error = "Provide either a project zip file or an Azure DevOps repo URL + PAT, not neither."
+    else:
+        input_error = None
+
+    if input_error:
+        shutil.rmtree(work_dir, ignore_errors=True)
+        state = _new_review_state()
+        state["status"] = "error"
+        state["phase"] = "error"
+        state["message"] = "Review failed"
+        state["error"] = input_error
+        _reviews[review_id] = state
+        return {"review_id": review_id, "status": "error"}
+
     try:
-        zip_path.write_bytes(await androidZip.read())
+        if has_zip:
+            zip_path.write_bytes(await androidZip.read())
         template_path.write_bytes(await excelTemplate.read())
     except Exception as exc:
         logger.exception("Review %s failed while saving uploads", review_id)
@@ -115,9 +140,14 @@ async def create_review(
         _reviews[review_id] = state
         return {"review_id": review_id, "status": "error"}
 
-    zip_valid = (androidZip.filename or "").endswith(".zip")
+    zip_valid = (androidZip.filename or "").endswith(".zip") if has_zip else True
     template_valid = (excelTemplate.filename or "").endswith(".xlsx")
-    project_name = Path(androidZip.filename).stem if androidZip.filename else "Unknown Project"
+
+    if has_zip:
+        project_name = Path(androidZip.filename).stem if androidZip.filename else "Unknown Project"
+    else:
+        parsed = parse_repo_url(devopsRepoUrl)
+        project_name = parsed["repository"] if parsed else "Unknown Project"
 
     state = _new_review_state()
     state["project_name"] = project_name
@@ -126,6 +156,7 @@ async def create_review(
         _run_review(
             review_id, work_dir, zip_path, template_path, zip_valid, template_valid, project_name,
             llmProvider, ollamaModel, compileCheckMode, platform,
+            devopsRepoUrl, devopsPat, devopsBranch,
         )
     )
     return {"review_id": review_id, "status": "processing"}
@@ -143,6 +174,9 @@ async def _run_review(
     ollama_model: str | None = None,
     compile_check_mode: str = "compiler",
     platform: str = "Android",
+    devops_repo_url: str | None = None,
+    devops_pat: str | None = None,
+    devops_branch: str | None = None,
 ) -> None:
     state = _reviews[review_id]
     extract_dir = work_dir / "extracted"
@@ -154,6 +188,20 @@ async def _run_review(
             state["message"] = "Review failed"
             state["error"] = "androidZip must be a .zip file and excelTemplate must be a .xlsx file"
             return
+
+        if devops_repo_url and devops_pat:
+            t_fetch = time.monotonic()
+            state["phase"] = "fetching"
+            state["message"] = "Fetching repository from Azure DevOps..."
+            fetch_result = await fetch_repo_zip(devops_repo_url, devops_pat, devops_branch)
+            if fetch_result["status"] != "ok":
+                state["status"] = "error"
+                state["phase"] = "error"
+                state["message"] = "Review failed"
+                state["error"] = fetch_result["message"]
+                return
+            zip_path.write_bytes(fetch_result["content"])
+            stats["fetch_time_ms"] = int((time.monotonic() - t_fetch) * 1000)
 
         t0 = time.monotonic()
         state["phase"] = "extracting"
