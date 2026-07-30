@@ -10,7 +10,7 @@ SECRET_PATTERNS = {
     "firebase_key": re.compile(r'"key"\s*:\s*"AIza[0-9a-zA-Z_\-]{35}"'),
 }
 
-SCAN_EXTENSIONS = {".java", ".kt", ".xml", ".properties", ".gradle", ".kts"}
+SCAN_EXTENSIONS = {".java", ".kt", ".xml", ".properties", ".gradle", ".kts", ".swift", ".m", ".h", ".mm", ".plist"}
 
 
 def scan_file(file_path: Path) -> list:
