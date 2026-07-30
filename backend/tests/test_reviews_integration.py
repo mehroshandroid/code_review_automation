@@ -214,3 +214,51 @@ async def test_full_review_pipeline_static_mode_scores_1_4_via_stub_llm(monkeypa
         assert sub_1_4["description"] == "No compile-time warnings"
         assert sub_1_4["score"] == 1
         assert "placeholder score" in sub_1_4["remark"]
+
+
+async def test_full_review_pipeline_from_devops_source(monkeypatch):
+    monkeypatch.delenv("AZURE_OPENAI_KEY", raising=False)
+
+    async def fake_fetch_repo_zip(repo_url, pat, branch=None):
+        return {"status": "ok", "content": _build_zip_bytes(), "message": None}
+
+    async def fake_check_compile_warnings(zip_path_arg):
+        return {"status": "ok", "warning_count": 0, "issues": []}
+
+    monkeypatch.setattr(reviews_module, "fetch_repo_zip", fake_fetch_repo_zip)
+    monkeypatch.setattr(reviews_module, "check_compile_warnings", fake_check_compile_warnings)
+
+    with TestClient(app) as client:
+        create_response = client.post(
+            "/api/reviews",
+            files={
+                "excelTemplate": (
+                    "template.xlsx", _build_xlsx_bytes(),
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                ),
+            },
+            data={
+                "devopsRepoUrl": "https://dev.azure.com/myorg/MyProject/_git/my-repo",
+                "devopsPat": "fake-pat",
+            },
+        )
+        assert create_response.status_code == 200
+        review_id = create_response.json()["review_id"]
+
+        final_state = None
+        for _ in range(50):
+            progress_response = client.get(f"/api/reviews/{review_id}/progress")
+            body = progress_response.json()
+            if body["status"] in ("completed", "error"):
+                final_state = body
+                break
+            time.sleep(0.05)
+
+        assert final_state is not None, "review did not finish in time"
+        assert final_state["status"] == "completed"
+        assert final_state["project_name"] == "my-repo"
+        assert final_state["compile_status"] == "ok"
+
+        category_1 = next(c for c in final_state["category_scores"] if c["id"] == "1")
+        sub_1_1 = next(s for s in category_1["sub_criteria"] if s["id"] == "1.1")
+        assert sub_1_1["score"] == 1
