@@ -18,7 +18,7 @@ from app.analyzer.devops_client import fetch_repo_zip, parse_repo_url
 from app.analyzer.excel_handler import (
     aggregate_category_scores,
     compute_total_score_pct,
-    extract_sub_criteria_descriptions,
+    discover_structure,
     generate_review_excel,
 )
 from app.analyzer.llm_client import generate_general_remarks, score_category
@@ -26,14 +26,6 @@ from app.utils.logger import get_logger
 
 router = APIRouter()
 logger = get_logger(__name__)
-
-CATEGORIES = {
-    "1": {"name": "Code naming conventions / Code Structure", "sub_criteria": ["1.1", "1.2", "1.3", "1.4", "1.5", "1.6"]},
-    "2": {"name": "Reliability, Security & Observability", "sub_criteria": ["2.1", "2.2", "2.3", "2.4"]},
-    "3": {"name": "Delivery Discipline & Architecture", "sub_criteria": ["3.1", "3.2", "3.3", "3.4"]},
-    "4": {"name": "AI Usage & Code Ownership", "sub_criteria": ["4.1", "4.2", "4.3"]},
-    "6": {"name": "Safe & Integrated AI Code", "sub_criteria": ["6.1", "6.2", "6.3"]},
-}
 
 _reviews: dict = {}
 
@@ -52,18 +44,7 @@ def _new_review_state() -> dict:
         "secrets_found": [],
         "total_score_pct": None,
         "project_name": None,
-        "category_scores": [
-            {
-                "id": category_id,
-                "name": category["name"],
-                "percent_points": None,
-                "sub_criteria": [
-                    {"id": sub_id, "description": None, "score": None, "remark": None}
-                    for sub_id in category["sub_criteria"]
-                ],
-            }
-            for category_id, category in CATEGORIES.items()
-        ],
+        "category_scores": [],
         "code_context": None,
         "prompt_log": [],
         "lint_issues": [],
@@ -83,9 +64,9 @@ def _compile_result_to_sub_score(compile_result: dict) -> dict:
     return {"score": 0, "remark": f"{warning_count} Lint warning(s)/error(s) found."}
 
 
-def _merge_compile_result_into_category_1(sub_results: dict, compile_sub_result: dict) -> dict:
+def _merge_compile_result_into_category_1(sub_results: dict, compile_sub_result: dict, categories: dict) -> dict:
     merged = {**sub_results, "1.4": compile_sub_result}
-    return {sub_id: merged[sub_id] for sub_id in CATEGORIES["1"]["sub_criteria"]}
+    return {sub_id: merged[sub_id] for sub_id in categories["1"]["sub_criteria"]}
 
 
 @router.post("/api/reviews")
@@ -228,45 +209,57 @@ async def _run_review(
         code_context = gather_code_context(extract_dir)
         state["code_context"] = code_context
         template_ws = load_workbook(template_path).active
-        sub_criteria_descriptions = extract_sub_criteria_descriptions(template_ws, CATEGORIES)
-        for category_entry in state["category_scores"]:
-            for sub_entry in category_entry["sub_criteria"]:
-                sub_entry["description"] = sub_criteria_descriptions.get(sub_entry["id"])
+        categories, sub_criteria_descriptions = discover_structure(template_ws)
+        state["category_scores"] = [
+            {
+                "id": category_id,
+                "name": category["name"],
+                "percent_points": None,
+                "sub_criteria": [
+                    {"id": sub_id, "description": sub_criteria_descriptions.get(sub_id), "score": None, "remark": None}
+                    for sub_id in category["sub_criteria"]
+                ],
+            }
+            for category_id, category in categories.items()
+        ]
         stats["analysis_time_ms"] = int((time.monotonic() - t1) * 1000)
         state["progress"] = 35
 
         t1b = time.monotonic()
         state["phase"] = "compiling"
-        if compile_check_mode == "static":
-            state["message"] = "Skipping compiler check (static analysis mode)..."
-            state["lint_issues"] = []
-            state["compile_status"] = "skipped"
-            compile_sub_result = None
-        else:
+        if platform == "Android" and compile_check_mode != "static":
             state["message"] = "Compiling and running Lint checks..."
             compile_result = await check_compile_warnings(zip_path)
             state["lint_issues"] = compile_result["issues"]
             state["compile_status"] = compile_result["status"]
             compile_sub_result = _compile_result_to_sub_score(compile_result)
+        else:
+            state["message"] = (
+                "Skipping compiler check (static analysis mode)..." if platform == "Android"
+                else "Skipping compiler check (not applicable to this platform)..."
+            )
+            state["lint_issues"] = []
+            state["compile_status"] = "skipped" if platform == "Android" else None
+            compile_sub_result = None
         stats["compile_time_ms"] = int((time.monotonic() - t1b) * 1000)
         state["progress"] = 55
 
         t2 = time.monotonic()
         state["phase"] = "scoring"
         scores_by_category = {}
-        category_count = len(CATEGORIES)
-        for index, (category_id, category) in enumerate(CATEGORIES.items()):
+        category_count = len(categories)
+        for index, (category_id, category) in enumerate(categories.items()):
             state["message"] = f"Evaluating {category['name']}..."
             llm_sub_criteria = (
                 [sub_id for sub_id in category["sub_criteria"] if sub_id != "1.4"]
-                if category_id == "1" and compile_check_mode == "compiler" else category["sub_criteria"]
+                if category_id == "1" and platform == "Android" and compile_check_mode == "compiler" else category["sub_criteria"]
             )
             sub_results, prompt_info = await score_category(
                 llm_provider, category["name"], llm_sub_criteria, sub_criteria_descriptions, code_context,
                 model=ollama_model, platform=platform,
             )
-            if category_id == "1" and compile_check_mode == "compiler":
-                sub_results = _merge_compile_result_into_category_1(sub_results, compile_sub_result)
+            if category_id == "1" and platform == "Android" and compile_check_mode == "compiler":
+                sub_results = _merge_compile_result_into_category_1(sub_results, compile_sub_result, categories)
             scores_by_category[category_id] = aggregate_category_scores(sub_results)
             sub_scores = scores_by_category[category_id]["sub_scores"]
             for sub_entry in state["category_scores"][index]["sub_criteria"]:
