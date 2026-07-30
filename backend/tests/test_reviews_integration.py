@@ -273,11 +273,14 @@ async def test_full_review_pipeline_from_devops_source(monkeypatch):
         assert sub_1_1["score"] == 1
 
 
-async def test_full_review_pipeline_non_android_platform_skips_compile_check(monkeypatch):
+async def test_full_review_pipeline_unsupported_platform_skips_compile_check(monkeypatch):
+    # Android and iOS both have their own compile-check path now; a
+    # platform with neither (e.g. .NET, not yet supported) must still get
+    # compile_status=None ("not applicable"), not attempt either checker.
     monkeypatch.delenv("AZURE_OPENAI_KEY", raising=False)
 
     async def _fail_if_called(zip_path_arg):
-        raise AssertionError("check_compile_warnings must not be called for a non-Android platform")
+        raise AssertionError("check_compile_warnings must not be called for an unsupported platform")
 
     monkeypatch.setattr(reviews_module, "check_compile_warnings", _fail_if_called)
 
@@ -285,14 +288,14 @@ async def test_full_review_pipeline_non_android_platform_skips_compile_check(mon
         create_response = client.post(
             "/api/reviews",
             files={
-                "androidZip": ("project.zip", _build_ios_zip_bytes(), "application/zip"),
+                "androidZip": ("project.zip", _build_zip_bytes(), "application/zip"),
                 "excelTemplate": (
                     "template.xlsx",
                     _build_xlsx_bytes(),
                     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 ),
             },
-            data={"platform": "iOS"},
+            data={"platform": ".NET"},
         )
         assert create_response.status_code == 200
         review_id = create_response.json()["review_id"]
@@ -348,7 +351,10 @@ async def test_full_review_pipeline_for_a_real_ios_project(monkeypatch):
 
         assert final_state is not None, "review did not finish in time"
         assert final_state["status"] == "completed"
-        assert final_state["compile_status"] is None
+        # No mac_build_agent is reachable in this test environment, so the
+        # compile-check gracefully reports "unavailable" -- same fallback
+        # Android's own compiler service gets when it can't be reached.
+        assert final_state["compile_status"] == "unavailable"
 
         category_1 = next(c for c in final_state["category_scores"] if c["id"] == "1")
         sub_1_1 = next(s for s in category_1["sub_criteria"] if s["id"] == "1.1")

@@ -667,12 +667,15 @@ async def test_run_review_removes_work_dir_on_unexpected_exception(monkeypatch):
     assert not work_dir.exists()
 
 
-async def test_run_review_non_android_platform_skips_compile_check_entirely(monkeypatch):
-    review_id = "non-android-compile-check-skip"
+async def test_run_review_unsupported_platform_skips_compile_check_entirely(monkeypatch):
+    # Android and iOS both have their own compile-check path now; a
+    # platform with neither (e.g. .NET, not yet supported) must still get
+    # compile_status=None ("not applicable"), not attempt either checker.
+    review_id = "unsupported-platform-compile-check-skip"
     work_dir = Path(tempfile.mkdtemp(prefix=f"review_{review_id}_"))
     zip_path = work_dir / "android.zip"
     template_path = work_dir / "template.xlsx"
-    zip_path.write_bytes(_build_ios_zip_bytes())
+    zip_path.write_bytes(_build_zip_bytes())
     template_path.write_bytes(_build_xlsx_bytes())
 
     _reviews[review_id] = _new_review_state()
@@ -697,12 +700,15 @@ async def test_run_review_non_android_platform_skips_compile_check_entirely(monk
 
     await _run_review(
         review_id, work_dir, zip_path, template_path, zip_valid=True, template_valid=True, project_name="Test",
-        platform="iOS",
+        platform=".NET",
     )
 
     assert compile_check_called == []
     # "1.4" is scored by the LLM like every other sub-criterion -- no exclusion.
     assert "1.4" in captured_sub_criteria["Code naming conventions / Code Structure"]
+
+    state = _reviews[review_id]
+    assert state["compile_status"] is None
 
     state = _reviews[review_id]
     assert state["compile_status"] is None
@@ -741,3 +747,95 @@ async def test_run_review_uses_ios_analyzer_for_ios_platform(monkeypatch):
     state = _reviews[review_id]
     assert state["status"] == "completed"
     assert "AppDelegate.swift" in state["code_context"]
+
+
+async def test_run_review_scores_1_4_from_ios_build_check_and_excludes_it_from_the_llm(monkeypatch):
+    review_id = "ios-build-check-1-4"
+    work_dir = Path(tempfile.mkdtemp(prefix=f"review_{review_id}_"))
+    zip_path = work_dir / "android.zip"
+    template_path = work_dir / "template.xlsx"
+    zip_path.write_bytes(_build_ios_zip_bytes())
+    template_path.write_bytes(_build_xlsx_bytes())
+
+    _reviews[review_id] = _new_review_state()
+
+    captured_sub_criteria = {}
+
+    async def fake_score_category(provider, category_name, sub_criteria, descriptions, code_snippets, model=None, platform="Android"):
+        captured_sub_criteria[category_name] = list(sub_criteria)
+        sub_results = {sub_id: {"score": 1, "remark": ""} for sub_id in sub_criteria}
+        prompt_info = {"label": category_name, "prompt_text": "stub", "tokens": {
+            "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "cached_tokens": 0,
+        }}
+        return sub_results, prompt_info
+
+    async def fake_check_ios_build_warnings(zip_path_arg):
+        return {
+            "status": "ok", "warning_count": 2,
+            "issues": [{"severity": "Warning", "message": "m", "file": "f.swift", "line": 1}],
+        }
+
+    monkeypatch.setattr(reviews_module, "score_category", fake_score_category)
+    monkeypatch.setattr(reviews_module, "check_ios_build_warnings", fake_check_ios_build_warnings)
+
+    await _run_review(
+        review_id, work_dir, zip_path, template_path, zip_valid=True, template_valid=True, project_name="Test",
+        platform="iOS",
+    )
+
+    # "1.4" must never be sent to the LLM -- it's scored deterministically.
+    assert "1.4" not in captured_sub_criteria["Code naming conventions / Code Structure"]
+
+    state = _reviews[review_id]
+    assert state["compile_status"] == "ok"
+    assert state["lint_issues"] == [{"severity": "Warning", "message": "m", "file": "f.swift", "line": 1}]
+
+    category_1 = next(c for c in state["category_scores"] if c["id"] == "1")
+    sub_1_4 = next(s for s in category_1["sub_criteria"] if s["id"] == "1.4")
+    assert sub_1_4["score"] == 0
+    assert sub_1_4["remark"] == "2 Lint warning(s)/error(s) found."
+
+
+async def test_run_review_ios_static_mode_skips_build_check_and_scores_1_4_via_llm(monkeypatch):
+    review_id = "ios-static-mode-check"
+    work_dir = Path(tempfile.mkdtemp(prefix=f"review_{review_id}_"))
+    zip_path = work_dir / "android.zip"
+    template_path = work_dir / "template.xlsx"
+    zip_path.write_bytes(_build_ios_zip_bytes())
+    template_path.write_bytes(_build_xlsx_bytes())
+
+    _reviews[review_id] = _new_review_state()
+
+    build_check_called = []
+    captured_sub_criteria = {}
+
+    async def fake_check_ios_build_warnings(zip_path_arg):
+        build_check_called.append(True)
+        return {"status": "ok", "warning_count": 0, "issues": []}
+
+    async def fake_score_category(provider, category_name, sub_criteria, descriptions, code_snippets, model=None, platform="Android"):
+        captured_sub_criteria[category_name] = list(sub_criteria)
+        sub_results = {sub_id: {"score": 1, "remark": "stub"} for sub_id in sub_criteria}
+        prompt_info = {"label": category_name, "prompt_text": "stub", "tokens": {
+            "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "cached_tokens": 0,
+        }}
+        return sub_results, prompt_info
+
+    monkeypatch.setattr(reviews_module, "check_ios_build_warnings", fake_check_ios_build_warnings)
+    monkeypatch.setattr(reviews_module, "score_category", fake_score_category)
+
+    await _run_review(
+        review_id, work_dir, zip_path, template_path, zip_valid=True, template_valid=True, project_name="Test",
+        platform="iOS", compile_check_mode="static",
+    )
+
+    assert build_check_called == []
+    assert "1.4" in captured_sub_criteria["Code naming conventions / Code Structure"]
+
+    state = _reviews[review_id]
+    assert state["compile_status"] == "skipped"
+    assert state["lint_issues"] == []
+    category_1 = next(c for c in state["category_scores"] if c["id"] == "1")
+    sub_1_4 = next(s for s in category_1["sub_criteria"] if s["id"] == "1.4")
+    assert sub_1_4["score"] == 1
+    assert sub_1_4["remark"] == "stub"
