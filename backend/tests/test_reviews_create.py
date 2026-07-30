@@ -22,6 +22,15 @@ def _build_zip_bytes() -> bytes:
     return buffer.getvalue()
 
 
+def _build_ios_zip_bytes() -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as zf:
+        zf.writestr("MyApp.xcodeproj/project.pbxproj", "buildSettings = { SWIFT_VERSION = 5.9; };")
+        zf.writestr("Info.plist", "<plist></plist>")
+        zf.writestr("MyApp/AppDelegate.swift", "class AppDelegate {}")
+    return buffer.getvalue()
+
+
 def _build_xlsx_bytes() -> bytes:
     buffer = io.BytesIO()
     wb = Workbook()
@@ -347,7 +356,7 @@ async def test_run_review_passes_platform_through_to_scoring_calls(monkeypatch):
     work_dir = Path(tempfile.mkdtemp(prefix=f"review_{review_id}_"))
     zip_path = work_dir / "android.zip"
     template_path = work_dir / "template.xlsx"
-    zip_path.write_bytes(_build_zip_bytes())
+    zip_path.write_bytes(_build_ios_zip_bytes())
     template_path.write_bytes(_build_xlsx_bytes())
 
     _reviews[review_id] = _new_review_state()
@@ -621,7 +630,7 @@ async def test_run_review_updates_message_on_error_paths(monkeypatch):
     def _boom(*args, **kwargs):
         raise RuntimeError("simulated crash")
 
-    monkeypatch.setattr(reviews_module, "analyze_project", _boom)
+    monkeypatch.setattr(reviews_module.android_analyzer, "analyze_project", _boom)
 
     await _run_review(
         review_id, work_dir, zip_path, template_path, zip_valid=True, template_valid=True, project_name="Test"
@@ -643,7 +652,7 @@ async def test_run_review_removes_work_dir_on_unexpected_exception(monkeypatch):
     def _boom(*args, **kwargs):
         raise RuntimeError("simulated analysis crash")
 
-    monkeypatch.setattr(reviews_module, "analyze_project", _boom)
+    monkeypatch.setattr(reviews_module.android_analyzer, "analyze_project", _boom)
 
     await _run_review(
         review_id, work_dir, zip_path, template_path, zip_valid=True, template_valid=True, project_name="Test"
@@ -661,7 +670,7 @@ async def test_run_review_non_android_platform_skips_compile_check_entirely(monk
     work_dir = Path(tempfile.mkdtemp(prefix=f"review_{review_id}_"))
     zip_path = work_dir / "android.zip"
     template_path = work_dir / "template.xlsx"
-    zip_path.write_bytes(_build_zip_bytes())
+    zip_path.write_bytes(_build_ios_zip_bytes())
     template_path.write_bytes(_build_xlsx_bytes())
 
     _reviews[review_id] = _new_review_state()
@@ -698,3 +707,35 @@ async def test_run_review_non_android_platform_skips_compile_check_entirely(monk
     assert state["lint_issues"] == []
     sub_1_4 = next(s for s in state["category_scores"][0]["sub_criteria"] if s["id"] == "1.4")
     assert sub_1_4["score"] == 1
+
+
+async def test_run_review_uses_ios_analyzer_for_ios_platform(monkeypatch):
+    # Forces the real (Azure) LLM client's own built-in stub mode for both
+    # score_category and generate_general_remarks -- neither is monkeypatched
+    # here, so without this, a real AZURE_OPENAI_KEY (loaded from the repo's
+    # .env by main.py's load_dotenv() at import time) would trigger a real,
+    # slow network call instead of the deterministic stub path.
+    monkeypatch.delenv("AZURE_OPENAI_KEY", raising=False)
+    review_id = "ios-analyzer-dispatch-check"
+    work_dir = Path(tempfile.mkdtemp(prefix=f"review_{review_id}_"))
+    zip_path = work_dir / "android.zip"
+    template_path = work_dir / "template.xlsx"
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as zf:
+        zf.writestr("MyApp.xcodeproj/project.pbxproj", "buildSettings = { SWIFT_VERSION = 5.9; };")
+        zf.writestr("Info.plist", "<plist></plist>")
+        zf.writestr("MyApp/AppDelegate.swift", "class AppDelegate {}")
+    zip_path.write_bytes(buffer.getvalue())
+    template_path.write_bytes(_build_xlsx_bytes())
+
+    _reviews[review_id] = _new_review_state()
+
+    await _run_review(
+        review_id, work_dir, zip_path, template_path, zip_valid=True, template_valid=True, project_name="MyApp",
+        platform="iOS",
+    )
+
+    state = _reviews[review_id]
+    assert state["status"] == "completed"
+    assert "AppDelegate.swift" in state["code_context"]

@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse
 from openpyxl import load_workbook
 from starlette.background import BackgroundTask
 
-from app.analyzer.android_analyzer import analyze_project, gather_code_context
+from app.analyzer import android_analyzer, ios_analyzer
 from app.analyzer.compile_checker import check_compile_warnings
 from app.analyzer.devops_client import fetch_repo_zip, parse_repo_url
 from app.analyzer.excel_handler import (
@@ -196,7 +196,8 @@ async def _run_review(
         t1 = time.monotonic()
         state["phase"] = "analyzing"
         state["message"] = "Analyzing project structure..."
-        analysis = analyze_project(extract_dir)
+        analyzer = ios_analyzer if platform == "iOS" else android_analyzer
+        analysis = analyzer.analyze_project(extract_dir)
         if analysis.fatal_error:
             state["status"] = "error"
             state["phase"] = "error"
@@ -206,7 +207,7 @@ async def _run_review(
         state["warnings"] = analysis.structure_warnings + [w["issue"] for w in analysis.version_warnings]
         state["test_coverage"] = analysis.test_coverage
         state["secrets_found"] = analysis.secrets_found
-        code_context = gather_code_context(extract_dir)
+        code_context = analyzer.gather_code_context(extract_dir)
         state["code_context"] = code_context
         template_ws = load_workbook(template_path).active
         categories, sub_criteria_descriptions = discover_structure(template_ws)

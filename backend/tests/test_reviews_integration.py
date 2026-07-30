@@ -30,6 +30,15 @@ def _build_zip_bytes() -> bytes:
     return buffer.getvalue()
 
 
+def _build_ios_zip_bytes() -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as zf:
+        zf.writestr("MyApp.xcodeproj/project.pbxproj", "buildSettings = { IPHONEOS_DEPLOYMENT_TARGET = 17.0; SWIFT_VERSION = 5.9; };")
+        zf.writestr("Info.plist", "<plist></plist>")
+        zf.writestr("MyApp/AppDelegate.swift", "class AppDelegate {}")
+    return buffer.getvalue()
+
+
 def _build_xlsx_bytes() -> bytes:
     """Mirrors the real production template's layout (samplefiles/SampleCodeReview.xlsx):
     a title row, a 'Clause' header row, category rows carrying pre-existing rollup
@@ -276,7 +285,7 @@ async def test_full_review_pipeline_non_android_platform_skips_compile_check(mon
         create_response = client.post(
             "/api/reviews",
             files={
-                "androidZip": ("project.zip", _build_zip_bytes(), "application/zip"),
+                "androidZip": ("project.zip", _build_ios_zip_bytes(), "application/zip"),
                 "excelTemplate": (
                     "template.xlsx",
                     _build_xlsx_bytes(),
@@ -308,3 +317,39 @@ async def test_full_review_pipeline_non_android_platform_skips_compile_check(mon
         # scored by the (stub-mode) LLM like every other sub-criterion.
         assert sub_1_4["score"] == 1
         assert "placeholder score" in sub_1_4["remark"]
+
+
+async def test_full_review_pipeline_for_a_real_ios_project(monkeypatch):
+    monkeypatch.delenv("AZURE_OPENAI_KEY", raising=False)
+
+    with TestClient(app) as client:
+        create_response = client.post(
+            "/api/reviews",
+            files={
+                "androidZip": ("MyApp.zip", _build_ios_zip_bytes(), "application/zip"),
+                "excelTemplate": (
+                    "template.xlsx", _build_xlsx_bytes(),
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                ),
+            },
+            data={"platform": "iOS"},
+        )
+        assert create_response.status_code == 200
+        review_id = create_response.json()["review_id"]
+
+        final_state = None
+        for _ in range(50):
+            progress_response = client.get(f"/api/reviews/{review_id}/progress")
+            body = progress_response.json()
+            if body["status"] in ("completed", "error"):
+                final_state = body
+                break
+            time.sleep(0.05)
+
+        assert final_state is not None, "review did not finish in time"
+        assert final_state["status"] == "completed"
+        assert final_state["compile_status"] is None
+
+        category_1 = next(c for c in final_state["category_scores"] if c["id"] == "1")
+        sub_1_1 = next(s for s in category_1["sub_criteria"] if s["id"] == "1.1")
+        assert sub_1_1["score"] == 1
