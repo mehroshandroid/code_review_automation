@@ -14,9 +14,12 @@ services:
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
       - OLLAMA_MODEL=qwen2.5-coder:7b
       # mac_build_agent runs natively on the host Mac (never containerized --
-      # Linux containers never have Xcode), started manually the same way
-      # Ollama is: `uvicorn main:app --port 8100` from mac_build_agent/.
-      - IOS_BUILD_AGENT_URL=http://host.docker.internal:8100
+      # Linux containers never have Xcode, and native Gradle/Lint here
+      # avoids the amd64 emulation the Dockerized `compiler` service needs
+      # on Apple Silicon), started manually the same way Ollama is:
+      # `uvicorn main:app --port 8100` from mac_build_agent/. Serves both
+      # iOS (/lint) and Android local mode (/android-lint).
+      - MAC_BUILD_AGENT_URL=http://host.docker.internal:8100
     depends_on:
       - compiler
     networks:
