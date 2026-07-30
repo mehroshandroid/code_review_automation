@@ -51,3 +51,27 @@ def compare_versions(gradle_info: dict) -> list:
         )
 
     return warnings
+
+
+IOS_LATEST_VERSIONS = {
+    "deployment_target": (17, 0),
+    "swift_version": (5, 9),
+}
+
+
+def compare_ios_versions(build_info: dict) -> list:
+    warnings = []
+
+    deployment_target = _parse_version_tuple(build_info.get("deployment_target"))
+    if deployment_target is not None and deployment_target < IOS_LATEST_VERSIONS["deployment_target"]:
+        warnings.append(
+            {"issue": f"iOS deployment target {build_info.get('deployment_target')} is outdated, latest is 17.0+"}
+        )
+
+    swift_version = _parse_version_tuple(build_info.get("swift_version"))
+    if swift_version is not None and swift_version < IOS_LATEST_VERSIONS["swift_version"]:
+        warnings.append(
+            {"issue": f"Swift version {build_info.get('swift_version')} is outdated, latest is 5.9+"}
+        )
+
+    return warnings

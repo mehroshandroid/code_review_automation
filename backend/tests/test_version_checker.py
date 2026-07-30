@@ -1,4 +1,4 @@
-from app.analyzer.version_checker import compare_versions
+from app.analyzer.version_checker import compare_ios_versions, compare_versions
 
 
 def test_flags_outdated_versions():
@@ -56,6 +56,25 @@ def test_malformed_float_version_value_does_not_crash():
     # Should not raise AttributeError, should return empty list (value skipped)
     result = compare_versions(gradle_info)
     assert result == []
+
+
+def test_ios_flags_outdated_versions():
+    build_info = {"deployment_target": "14.0", "swift_version": "5.5"}
+    warnings = compare_ios_versions(build_info)
+    issues = [w["issue"] for w in warnings]
+    assert any("deployment target 14.0" in i for i in issues)
+    assert any("Swift version 5.5" in i for i in issues)
+    assert len(warnings) == 2
+
+
+def test_ios_no_warnings_when_up_to_date():
+    build_info = {"deployment_target": "17.0", "swift_version": "5.9"}
+    assert compare_ios_versions(build_info) == []
+
+
+def test_ios_missing_values_are_skipped_not_flagged():
+    build_info = {"deployment_target": None, "swift_version": None}
+    assert compare_ios_versions(build_info) == []
 
 
 def test_malformed_mixed_types_does_not_crash():
