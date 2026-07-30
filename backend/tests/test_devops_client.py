@@ -1,0 +1,116 @@
+import httpx
+import pytest
+
+from app.analyzer import devops_client
+
+
+def test_parse_repo_url_extracts_org_project_repo():
+    result = devops_client.parse_repo_url("https://dev.azure.com/myorg/MyProject/_git/my-repo")
+    assert result == {"organization": "myorg", "project": "MyProject", "repository": "my-repo"}
+
+
+def test_parse_repo_url_accepts_trailing_slash():
+    result = devops_client.parse_repo_url("https://dev.azure.com/myorg/MyProject/_git/my-repo/")
+    assert result == {"organization": "myorg", "project": "MyProject", "repository": "my-repo"}
+
+
+def test_parse_repo_url_returns_none_for_unrecognized_url():
+    assert devops_client.parse_repo_url("https://github.com/myorg/my-repo") is None
+    assert devops_client.parse_repo_url("https://myorg.visualstudio.com/MyProject/_git/my-repo") is None
+    assert devops_client.parse_repo_url("not a url") is None
+
+
+@pytest.mark.asyncio
+async def test_fetch_repo_zip_returns_invalid_url_status_without_making_a_request(monkeypatch):
+    called = []
+
+    async def fake_get(self, url, auth=None):
+        called.append(url)
+        raise AssertionError("should not be called for an invalid URL")
+
+    monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
+
+    result = await devops_client.fetch_repo_zip("not a url", "fake-pat")
+
+    assert result == {"status": "invalid_url", "content": None, "message": "Not a recognized Azure DevOps repo URL."}
+    assert called == []
+
+
+@pytest.mark.asyncio
+async def test_fetch_repo_zip_success_returns_zip_bytes(monkeypatch):
+    captured = {}
+
+    async def fake_get(self, url, auth=None):
+        captured["url"] = url
+        captured["auth"] = auth
+        request = httpx.Request("GET", url)
+        return httpx.Response(status_code=200, content=b"PK\x03\x04fakezipbytes", request=request)
+
+    monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
+
+    result = await devops_client.fetch_repo_zip("https://dev.azure.com/myorg/MyProject/_git/my-repo", "fake-pat")
+
+    assert result == {"status": "ok", "content": b"PK\x03\x04fakezipbytes", "message": None}
+    assert captured["url"] == (
+        "https://dev.azure.com/myorg/MyProject/_apis/git/repositories/my-repo/items"
+        "?path=/&download=true&$format=zip&api-version=7.0&recursionLevel=full"
+    )
+    assert captured["auth"] == ("", "fake-pat")
+
+
+@pytest.mark.asyncio
+async def test_fetch_repo_zip_appends_branch_when_provided(monkeypatch):
+    captured = {}
+
+    async def fake_get(self, url, auth=None):
+        captured["url"] = url
+        request = httpx.Request("GET", url)
+        return httpx.Response(status_code=200, content=b"zipbytes", request=request)
+
+    monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
+
+    await devops_client.fetch_repo_zip(
+        "https://dev.azure.com/myorg/MyProject/_git/my-repo", "fake-pat", branch="release/1.0"
+    )
+
+    assert captured["url"].endswith("&versionDescriptor.version=release/1.0")
+
+
+@pytest.mark.asyncio
+async def test_fetch_repo_zip_returns_unauthorized_on_401(monkeypatch):
+    async def fake_get(self, url, auth=None):
+        request = httpx.Request("GET", url)
+        return httpx.Response(status_code=401, content=b"", request=request)
+
+    monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
+
+    result = await devops_client.fetch_repo_zip("https://dev.azure.com/myorg/MyProject/_git/my-repo", "bad-pat")
+
+    assert result == {"status": "unauthorized", "content": None, "message": "Invalid PAT or insufficient permissions."}
+
+
+@pytest.mark.asyncio
+async def test_fetch_repo_zip_returns_not_found_on_404(monkeypatch):
+    async def fake_get(self, url, auth=None):
+        request = httpx.Request("GET", url)
+        return httpx.Response(status_code=404, content=b"", request=request)
+
+    monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
+
+    result = await devops_client.fetch_repo_zip(
+        "https://dev.azure.com/myorg/MyProject/_git/nonexistent-repo", "fake-pat"
+    )
+
+    assert result == {"status": "not_found", "content": None, "message": "Repository or branch not found."}
+
+
+@pytest.mark.asyncio
+async def test_fetch_repo_zip_returns_error_on_network_failure(monkeypatch):
+    async def fake_get(self, url, auth=None):
+        raise httpx.ConnectError("connection refused", request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
+
+    result = await devops_client.fetch_repo_zip("https://dev.azure.com/myorg/MyProject/_git/my-repo", "fake-pat")
+
+    assert result == {"status": "error", "content": None, "message": "Could not reach Azure DevOps."}
