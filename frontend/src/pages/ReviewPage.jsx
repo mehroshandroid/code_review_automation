@@ -8,6 +8,6 @@ export default function ReviewPage() {
   const platform = PLATFORMS.find((p) => p.id === platformId);
 
   if (!platform) return <Navigate to="/" replace />;
-  if (platform.id === "android") return <AndroidReviewFlow platform={platform} />;
+  if (platform.available) return <AndroidReviewFlow platform={platform} />;
   return <PlaceholderReviewFlow platform={platform} />;
 }

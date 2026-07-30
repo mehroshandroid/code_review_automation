@@ -135,6 +135,17 @@ test("disables the start button until repo URL, PAT, and template are all provid
   expect(screen.getByRole("button", { name: /start review/i })).toBeEnabled();
 });
 
+test("defaults the zip picker label to Android when no platformLabel is given", () => {
+  render(<UploadForm onSubmit={jest.fn()} disabled={false} />);
+  expect(screen.getByLabelText(/android project/i)).toBeInTheDocument();
+});
+
+test("uses the given platformLabel for the zip picker label", () => {
+  render(<UploadForm onSubmit={jest.fn()} disabled={false} platformLabel="iOS" />);
+  expect(screen.getByLabelText(/ios project/i)).toBeInTheDocument();
+  expect(screen.queryByLabelText(/android project/i)).not.toBeInTheDocument();
+});
+
 test("calls onSubmit with the DevOps fields (and a null androidZip) in DevOps mode", async () => {
   const user = userEvent.setup();
   const onSubmit = jest.fn();

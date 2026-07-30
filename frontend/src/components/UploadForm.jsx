@@ -3,7 +3,7 @@ import CornerMarks from "./CornerMarks";
 import { FileIcon, ArrowRightIcon } from "../icons";
 import { getCompileCheckMode, setCompileCheckMode } from "../services/compileCheckModeStorage";
 
-export default function UploadForm({ onSubmit, disabled, disabledLabel = "Starting review…", showCompileCheckToggle = false }) {
+export default function UploadForm({ onSubmit, disabled, disabledLabel = "Starting review…", showCompileCheckToggle = false, platformLabel = "Android" }) {
   const [sourceMode, setSourceMode] = useState("upload"); // upload | devops
   const [androidZip, setAndroidZip] = useState(null);
   const [excelTemplate, setExcelTemplate] = useState(null);
@@ -75,7 +75,7 @@ export default function UploadForm({ onSubmit, disabled, disabledLabel = "Starti
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "var(--space-4)", marginTop: "var(--space-5)" }}>
         {sourceMode === "upload" ? (
           <div className="field">
-            <label htmlFor="androidZip">Android project (.zip)</label>
+            <label htmlFor="androidZip">{platformLabel} project (.zip)</label>
             <label className="input" style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", cursor: "pointer" }}>
               <FileIcon />
               {androidZip ? <span>{androidZip.name}</span> : <span style={{ opacity: 0.55 }}>Choose ZIP file…</span>}

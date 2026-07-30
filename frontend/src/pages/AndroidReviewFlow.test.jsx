@@ -38,7 +38,7 @@ function renderFlow() {
 async function uploadValidFiles(user) {
   const zip = buildFile("project.zip", "application/zip");
   const xlsx = buildFile("template.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-  await user.upload(screen.getByLabelText(/android project/i), zip);
+  await user.upload(screen.getByLabelText(/project \(\.zip\)/i), zip);
   await user.upload(screen.getByLabelText(/scoring template/i), xlsx);
   await user.click(screen.getByRole("button", { name: /start review/i }));
 }
@@ -237,6 +237,17 @@ test("sends the persisted compile-check mode when starting a review", async () =
   });
 
   expect(createReview).toHaveBeenCalledWith(expect.anything(), expect.anything(), "azure", null, "static", "Android", null, null, null);
+});
+
+test("shows the given platform's label in the header and zip picker before any project is uploaded", () => {
+  render(
+    <MemoryRouter>
+      <AndroidReviewFlow platform={{ id: "ios", label: "iOS" }} />
+    </MemoryRouter>
+  );
+  expect(screen.getByRole("heading", { name: "iOS Code Review Automation" })).toBeInTheDocument();
+  expect(screen.getByText(/upload your iOS project/i)).toBeInTheDocument();
+  expect(screen.getByLabelText(/ios project/i)).toBeInTheDocument();
 });
 
 test("sends the platform label from a custom platform prop instead of the default", async () => {
