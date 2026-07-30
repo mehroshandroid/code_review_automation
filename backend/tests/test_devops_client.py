@@ -168,6 +168,25 @@ async def test_fetch_repo_zip_includes_the_actual_status_code_for_unexpected_res
 
 
 @pytest.mark.asyncio
+async def test_fetch_repo_zip_includes_azure_devops_own_error_text_when_present(monkeypatch):
+    async def fake_get(self, url, auth=None):
+        request = httpx.Request("GET", url)
+        return httpx.Response(
+            status_code=400,
+            content=b'{"message": "TF401019: The Git repository does not contain any commits."}',
+            request=request,
+        )
+
+    monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
+
+    result = await devops_client.fetch_repo_zip("https://dev.azure.com/myorg/MyProject/_git/my-repo", "fake-pat")
+
+    assert result["status"] == "error"
+    assert "400" in result["message"]
+    assert "TF401019" in result["message"]
+
+
+@pytest.mark.asyncio
 async def test_fetch_repo_zip_returns_error_on_network_failure(monkeypatch):
     async def fake_get(self, url, auth=None):
         raise httpx.ConnectError("connection refused", request=httpx.Request("GET", url))

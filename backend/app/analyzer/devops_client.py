@@ -1,3 +1,4 @@
+import json
 import re
 
 import httpx
@@ -18,6 +19,18 @@ def parse_repo_url(url: str) -> dict | None:
         return None
     username, organization, project, repository = match.groups()
     return {"organization": organization, "project": project, "repository": repository, "username": username}
+
+
+def _extract_error_detail(response: httpx.Response) -> str:
+    """Pulls Azure DevOps's own error text out of a non-2xx response body
+    (it returns {"message": "TF....: ..."} on most API errors), truncated
+    so an unexpectedly large body can't bloat the review's error state.
+    """
+    try:
+        message = json.loads(response.text).get("message", "")
+    except (ValueError, AttributeError):
+        message = response.text
+    return message.strip()[:300]
 
 
 async def fetch_repo_zip(repo_url: str, pat: str, branch: str | None = None) -> dict:
@@ -50,9 +63,11 @@ async def fetch_repo_zip(repo_url: str, pat: str, branch: str | None = None) -> 
         response.raise_for_status()
         return {"status": "ok", "content": response.content, "message": None}
     except httpx.HTTPStatusError as exc:
+        detail = _extract_error_detail(exc.response)
+        detail_suffix = f" {detail}" if detail else ""
         return {
             "status": "error", "content": None,
-            "message": f"Azure DevOps returned an unexpected response (HTTP {exc.response.status_code}).",
+            "message": f"Azure DevOps returned an unexpected response (HTTP {exc.response.status_code}).{detail_suffix}",
         }
     except httpx.HTTPError:
         return {"status": "error", "content": None, "message": "Could not reach Azure DevOps."}
