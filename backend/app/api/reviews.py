@@ -13,6 +13,7 @@ from openpyxl import load_workbook
 from starlette.background import BackgroundTask
 
 from app.analyzer import android_analyzer, ios_analyzer
+from app.analyzer.android_local_checker import check_android_local_warnings
 from app.analyzer.compile_checker import check_compile_warnings
 from app.analyzer.devops_client import fetch_repo_zip, parse_repo_url
 from app.analyzer.ios_build_checker import check_ios_build_warnings
@@ -233,7 +234,12 @@ async def _run_review(
         state["phase"] = "compiling"
         if platform in ("Android", "iOS") and compile_check_mode != "static":
             state["message"] = "Compiling and running Lint checks..."
-            checker = check_ios_build_warnings if platform == "iOS" else check_compile_warnings
+            if platform == "iOS":
+                checker = check_ios_build_warnings
+            elif compile_check_mode == "local":
+                checker = check_android_local_warnings
+            else:
+                checker = check_compile_warnings
             compile_result = await checker(zip_path)
             state["lint_issues"] = compile_result["issues"]
             state["compile_status"] = compile_result["status"]
@@ -257,14 +263,14 @@ async def _run_review(
             state["message"] = f"Evaluating {category['name']}..."
             llm_sub_criteria = (
                 [sub_id for sub_id in category["sub_criteria"] if sub_id != "1.4"]
-                if category_id == "1" and platform in ("Android", "iOS") and compile_check_mode == "compiler"
+                if category_id == "1" and platform in ("Android", "iOS") and compile_check_mode != "static"
                 else category["sub_criteria"]
             )
             sub_results, prompt_info = await score_category(
                 llm_provider, category["name"], llm_sub_criteria, sub_criteria_descriptions, code_context,
                 model=ollama_model, platform=platform,
             )
-            if category_id == "1" and platform in ("Android", "iOS") and compile_check_mode == "compiler":
+            if category_id == "1" and platform in ("Android", "iOS") and compile_check_mode != "static":
                 sub_results = _merge_compile_result_into_category_1(sub_results, compile_sub_result, categories)
             scores_by_category[category_id] = aggregate_category_scores(sub_results)
             sub_scores = scores_by_category[category_id]["sub_scores"]

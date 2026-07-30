@@ -1,7 +1,7 @@
 import httpx
 import pytest
 
-from app.analyzer import ios_build_checker
+from app.analyzer import android_local_checker
 
 
 @pytest.mark.asyncio
@@ -23,7 +23,7 @@ async def test_returns_parsed_result_on_success(monkeypatch, tmp_path):
 
     monkeypatch.setattr(httpx.AsyncClient, "post", fake_post)
 
-    result = await ios_build_checker.check_ios_build_warnings(zip_path)
+    result = await android_local_checker.check_android_local_warnings(zip_path)
 
     assert result == {
         "status": "ok",
@@ -33,22 +33,7 @@ async def test_returns_parsed_result_on_success(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_returns_unavailable_on_connection_error(monkeypatch, tmp_path):
-    zip_path = tmp_path / "project.zip"
-    zip_path.write_bytes(b"fake zip bytes")
-
-    async def fake_post(self, url, files=None):
-        raise httpx.ConnectError("connection refused", request=httpx.Request("POST", url))
-
-    monkeypatch.setattr(httpx.AsyncClient, "post", fake_post)
-
-    result = await ios_build_checker.check_ios_build_warnings(zip_path)
-
-    assert result == {"status": "unavailable", "warning_count": None, "issues": []}
-
-
-@pytest.mark.asyncio
-async def test_uses_mac_build_agent_url_env_var_and_the_lint_path(monkeypatch, tmp_path):
+async def test_uses_mac_build_agent_url_env_var_and_the_android_lint_path(monkeypatch, tmp_path):
     monkeypatch.setenv("MAC_BUILD_AGENT_URL", "http://fake-agent:9000")
     zip_path = tmp_path / "project.zip"
     zip_path.write_bytes(b"fake zip bytes")
@@ -61,9 +46,24 @@ async def test_uses_mac_build_agent_url_env_var_and_the_lint_path(monkeypatch, t
 
     monkeypatch.setattr(httpx.AsyncClient, "post", fake_post)
 
-    await ios_build_checker.check_ios_build_warnings(zip_path)
+    await android_local_checker.check_android_local_warnings(zip_path)
 
-    assert captured["url"] == "http://fake-agent:9000/lint"
+    assert captured["url"] == "http://fake-agent:9000/android-lint"
+
+
+@pytest.mark.asyncio
+async def test_returns_unavailable_on_connection_error(monkeypatch, tmp_path):
+    zip_path = tmp_path / "project.zip"
+    zip_path.write_bytes(b"fake zip bytes")
+
+    async def fake_post(self, url, files=None):
+        raise httpx.ConnectError("connection refused", request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", fake_post)
+
+    result = await android_local_checker.check_android_local_warnings(zip_path)
+
+    assert result == {"status": "unavailable", "warning_count": None, "issues": []}
 
 
 @pytest.mark.asyncio
@@ -77,6 +77,6 @@ async def test_returns_unavailable_on_non_2xx_response(monkeypatch, tmp_path):
 
     monkeypatch.setattr(httpx.AsyncClient, "post", fake_post)
 
-    result = await ios_build_checker.check_ios_build_warnings(zip_path)
+    result = await android_local_checker.check_android_local_warnings(zip_path)
 
     assert result == {"status": "unavailable", "warning_count": None, "issues": []}
