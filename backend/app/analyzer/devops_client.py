@@ -43,11 +43,16 @@ async def fetch_repo_zip(repo_url: str, pat: str, branch: str | None = None) -> 
     try:
         async with httpx.AsyncClient(timeout=60.0) as client:
             response = await client.get(url, auth=(parsed["username"] or "", pat))
-        if response.status_code == 401:
+        if response.status_code in (401, 403):
             return {"status": "unauthorized", "content": None, "message": "Invalid PAT or insufficient permissions."}
         if response.status_code == 404:
             return {"status": "not_found", "content": None, "message": "Repository or branch not found."}
         response.raise_for_status()
         return {"status": "ok", "content": response.content, "message": None}
+    except httpx.HTTPStatusError as exc:
+        return {
+            "status": "error", "content": None,
+            "message": f"Azure DevOps returned an unexpected response (HTTP {exc.response.status_code}).",
+        }
     except httpx.HTTPError:
         return {"status": "error", "content": None, "message": "Could not reach Azure DevOps."}

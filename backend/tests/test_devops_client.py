@@ -138,6 +138,36 @@ async def test_fetch_repo_zip_returns_not_found_on_404(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_fetch_repo_zip_returns_unauthorized_on_403(monkeypatch):
+    # Azure DevOps commonly returns 403 (not 401) when a PAT / alternate
+    # credential lacks the required scope, rather than being simply invalid.
+    async def fake_get(self, url, auth=None):
+        request = httpx.Request("GET", url)
+        return httpx.Response(status_code=403, content=b"", request=request)
+
+    monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
+
+    result = await devops_client.fetch_repo_zip("https://dev.azure.com/myorg/MyProject/_git/my-repo", "scoped-pat")
+
+    assert result == {"status": "unauthorized", "content": None, "message": "Invalid PAT or insufficient permissions."}
+
+
+@pytest.mark.asyncio
+async def test_fetch_repo_zip_includes_the_actual_status_code_for_unexpected_responses(monkeypatch):
+    async def fake_get(self, url, auth=None):
+        request = httpx.Request("GET", url)
+        return httpx.Response(status_code=500, content=b"", request=request)
+
+    monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
+
+    result = await devops_client.fetch_repo_zip("https://dev.azure.com/myorg/MyProject/_git/my-repo", "fake-pat")
+
+    assert result["status"] == "error"
+    assert result["content"] is None
+    assert "500" in result["message"]
+
+
+@pytest.mark.asyncio
 async def test_fetch_repo_zip_returns_error_on_network_failure(monkeypatch):
     async def fake_get(self, url, auth=None):
         raise httpx.ConnectError("connection refused", request=httpx.Request("GET", url))
