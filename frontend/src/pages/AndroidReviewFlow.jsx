@@ -22,7 +22,7 @@ export default function AndroidReviewFlow({ platform = { id: "android", label: "
   const [errorMessage, setErrorMessage] = useState("");
   const [bottomView, setBottomView] = useState("report"); // report | debug
 
-  const handleUpload = useCallback(async (androidZip, excelTemplate) => {
+  const handleUpload = useCallback(async ({ androidZip, excelTemplate, devopsRepoUrl, devopsPat, devopsBranch }) => {
     setState("uploading");
     setErrorMessage("");
     try {
@@ -33,7 +33,8 @@ export default function AndroidReviewFlow({ platform = { id: "android", label: "
       const compileCheckMode = getCompileCheckMode();
 
       const result = await createReview(
-        androidZip, excelTemplate, effectiveProvider, effectiveModel, compileCheckMode, platform.label
+        androidZip, excelTemplate, effectiveProvider, effectiveModel, compileCheckMode, platform.label,
+        devopsRepoUrl, devopsPat, devopsBranch
       );
       if (result.status === "error") {
         setErrorMessage(result.error || "Upload failed");
