@@ -5,7 +5,7 @@ import { CheckCircleIcon, SpinnerIcon, CircleIcon } from "../icons";
 
 const POLL_INTERVAL_MS = 2000;
 
-const STEPS = [
+const BASE_STEPS = [
   { phase: "extracting", label: "Extracting archive" },
   { phase: "analyzing", label: "Analyzing code" },
   { phase: "compiling", label: "Compiling & linting" },
@@ -13,9 +13,11 @@ const STEPS = [
   { phase: "generating", label: "Generating report" },
 ];
 
-function stepIndexForPhase(phase) {
-  if (phase === "completed" || phase === "error") return STEPS.length;
-  return STEPS.findIndex((step) => step.phase === phase);
+const FETCHING_STEP = { phase: "fetching", label: "Downloading code from repository" };
+
+function stepIndexForPhase(steps, phase) {
+  if (phase === "completed" || phase === "error") return steps.length;
+  return steps.findIndex((step) => step.phase === phase);
 }
 
 export default function ProgressTracker({ reviewId, onUpdate }) {
@@ -46,7 +48,8 @@ export default function ProgressTracker({ reviewId, onUpdate }) {
 
   const phase = progressData?.phase ?? "pending";
   const message = progressData?.message ?? "";
-  const currentIndex = stepIndexForPhase(phase);
+  const steps = progressData?.source === "devops" ? [FETCHING_STEP, ...BASE_STEPS] : BASE_STEPS;
+  const currentIndex = stepIndexForPhase(steps, phase);
 
   return (
     <div className="card blueprint elev-md" style={{ padding: "var(--space-6)" }}>
@@ -54,8 +57,8 @@ export default function ProgressTracker({ reviewId, onUpdate }) {
       <div className="card-kicker">Step 2 of 2</div>
       <div className="card-title" style={{ fontSize: 20 }}>Reviewing your project</div>
       <div style={{ display: "grid", gap: "var(--space-3)", marginTop: "var(--space-5)" }}>
-        {STEPS.map((step, index) => {
-          const done = currentIndex > index || currentIndex === STEPS.length;
+        {steps.map((step, index) => {
+          const done = currentIndex > index || currentIndex === steps.length;
           const active = index === currentIndex;
           return (
             <div key={step.phase} style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", padding: "var(--space-2) 0" }}>
