@@ -31,6 +31,18 @@ def _build_ios_zip_bytes() -> bytes:
     return buffer.getvalue()
 
 
+def _build_dotnet_zip_bytes() -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as zf:
+        zf.writestr("MyApp.sln", "stub")
+        zf.writestr(
+            "MyApp/MyApp.csproj",
+            "<Project><PropertyGroup><TargetFramework>net8.0</TargetFramework></PropertyGroup></Project>",
+        )
+        zf.writestr("MyApp/Program.cs", "class Program {}")
+    return buffer.getvalue()
+
+
 def _build_xlsx_bytes() -> bytes:
     buffer = io.BytesIO()
     wb = Workbook()
@@ -902,16 +914,7 @@ async def test_run_review_uses_dotnet_analyzer_for_dotnet_platform(monkeypatch):
     work_dir = Path(tempfile.mkdtemp(prefix=f"review_{review_id}_"))
     zip_path = work_dir / "android.zip"
     template_path = work_dir / "template.xlsx"
-
-    buffer = io.BytesIO()
-    with zipfile.ZipFile(buffer, "w") as zf:
-        zf.writestr("MyApp.sln", "stub")
-        zf.writestr(
-            "MyApp/MyApp.csproj",
-            "<Project><PropertyGroup><TargetFramework>net8.0</TargetFramework></PropertyGroup></Project>",
-        )
-        zf.writestr("MyApp/Program.cs", "class Program {}")
-    zip_path.write_bytes(buffer.getvalue())
+    zip_path.write_bytes(_build_dotnet_zip_bytes())
     template_path.write_bytes(_build_xlsx_bytes())
 
     _reviews[review_id] = _new_review_state()
@@ -924,6 +927,99 @@ async def test_run_review_uses_dotnet_analyzer_for_dotnet_platform(monkeypatch):
     state = _reviews[review_id]
     assert state["status"] == "completed"
     assert "Program.cs" in state["code_context"]
-    # No compile-check support for .NET yet -- "not applicable", same as
-    # every other platform without one.
-    assert state["compile_status"] is None
+    # No dotnet-compiler service reachable in this test environment, so the
+    # compile-check gracefully reports "unavailable" -- same fallback every
+    # other checker gets when its service can't be reached.
+    assert state["compile_status"] == "unavailable"
+
+
+async def test_run_review_scores_1_4_from_dotnet_build_check_and_excludes_it_from_the_llm(monkeypatch):
+    review_id = "dotnet-build-check-1-4"
+    work_dir = Path(tempfile.mkdtemp(prefix=f"review_{review_id}_"))
+    zip_path = work_dir / "android.zip"
+    template_path = work_dir / "template.xlsx"
+    zip_path.write_bytes(_build_dotnet_zip_bytes())
+    template_path.write_bytes(_build_xlsx_bytes())
+
+    _reviews[review_id] = _new_review_state()
+
+    captured_sub_criteria = {}
+
+    async def fake_score_category(provider, category_name, sub_criteria, descriptions, code_snippets, model=None, platform="Android"):
+        captured_sub_criteria[category_name] = list(sub_criteria)
+        sub_results = {sub_id: {"score": 1, "remark": ""} for sub_id in sub_criteria}
+        prompt_info = {"label": category_name, "prompt_text": "stub", "tokens": {
+            "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "cached_tokens": 0,
+        }}
+        return sub_results, prompt_info
+
+    async def fake_check_dotnet_build_warnings(zip_path_arg):
+        return {
+            "status": "ok", "warning_count": 2,
+            "issues": [{"severity": "Warning", "message": "m", "file": "f.cs", "line": 1}],
+        }
+
+    monkeypatch.setattr(reviews_module, "score_category", fake_score_category)
+    monkeypatch.setattr(reviews_module, "check_dotnet_build_warnings", fake_check_dotnet_build_warnings)
+
+    await _run_review(
+        review_id, work_dir, zip_path, template_path, zip_valid=True, template_valid=True, project_name="Test",
+        platform=".NET",
+    )
+
+    # "1.4" must never be sent to the LLM -- it's scored deterministically.
+    assert "1.4" not in captured_sub_criteria["Code naming conventions / Code Structure"]
+
+    state = _reviews[review_id]
+    assert state["compile_status"] == "ok"
+    assert state["lint_issues"] == [{"severity": "Warning", "message": "m", "file": "f.cs", "line": 1}]
+
+    category_1 = next(c for c in state["category_scores"] if c["id"] == "1")
+    sub_1_4 = next(s for s in category_1["sub_criteria"] if s["id"] == "1.4")
+    assert sub_1_4["score"] == 0
+    assert sub_1_4["remark"] == "2 Lint warning(s)/error(s) found."
+
+
+async def test_run_review_dotnet_static_mode_skips_build_check_and_scores_1_4_via_llm(monkeypatch):
+    review_id = "dotnet-static-mode-check"
+    work_dir = Path(tempfile.mkdtemp(prefix=f"review_{review_id}_"))
+    zip_path = work_dir / "android.zip"
+    template_path = work_dir / "template.xlsx"
+    zip_path.write_bytes(_build_dotnet_zip_bytes())
+    template_path.write_bytes(_build_xlsx_bytes())
+
+    _reviews[review_id] = _new_review_state()
+
+    build_check_called = []
+    captured_sub_criteria = {}
+
+    async def fake_check_dotnet_build_warnings(zip_path_arg):
+        build_check_called.append(True)
+        return {"status": "ok", "warning_count": 0, "issues": []}
+
+    async def fake_score_category(provider, category_name, sub_criteria, descriptions, code_snippets, model=None, platform="Android"):
+        captured_sub_criteria[category_name] = list(sub_criteria)
+        sub_results = {sub_id: {"score": 1, "remark": "stub"} for sub_id in sub_criteria}
+        prompt_info = {"label": category_name, "prompt_text": "stub", "tokens": {
+            "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "cached_tokens": 0,
+        }}
+        return sub_results, prompt_info
+
+    monkeypatch.setattr(reviews_module, "check_dotnet_build_warnings", fake_check_dotnet_build_warnings)
+    monkeypatch.setattr(reviews_module, "score_category", fake_score_category)
+
+    await _run_review(
+        review_id, work_dir, zip_path, template_path, zip_valid=True, template_valid=True, project_name="Test",
+        platform=".NET", compile_check_mode="static",
+    )
+
+    assert build_check_called == []
+    assert "1.4" in captured_sub_criteria["Code naming conventions / Code Structure"]
+
+    state = _reviews[review_id]
+    assert state["compile_status"] == "skipped"
+    assert state["lint_issues"] == []
+    category_1 = next(c for c in state["category_scores"] if c["id"] == "1")
+    sub_1_4 = next(s for s in category_1["sub_criteria"] if s["id"] == "1.4")
+    assert sub_1_4["score"] == 1
+    assert sub_1_4["remark"] == "stub"

@@ -16,6 +16,7 @@ from app.analyzer import android_analyzer, dotnet_analyzer, ios_analyzer
 from app.analyzer.android_local_checker import check_android_local_warnings
 from app.analyzer.compile_checker import check_compile_warnings
 from app.analyzer.devops_client import fetch_repo_zip, parse_repo_url
+from app.analyzer.dotnet_compile_checker import check_dotnet_build_warnings
 from app.analyzer.ios_build_checker import check_ios_build_warnings
 from app.analyzer.excel_handler import (
     aggregate_category_scores,
@@ -237,10 +238,12 @@ async def _run_review(
 
         t1b = time.monotonic()
         state["phase"] = "compiling"
-        if platform in ("Android", "iOS") and compile_check_mode != "static":
+        if platform in ("Android", "iOS", ".NET") and compile_check_mode != "static":
             state["message"] = "Compiling and running Lint checks..."
             if platform == "iOS":
                 checker = check_ios_build_warnings
+            elif platform == ".NET":
+                checker = check_dotnet_build_warnings
             elif compile_check_mode == "local":
                 checker = check_android_local_warnings
             else:
@@ -251,11 +254,11 @@ async def _run_review(
             compile_sub_result = _compile_result_to_sub_score(compile_result)
         else:
             state["message"] = (
-                "Skipping compiler check (static analysis mode)..." if platform in ("Android", "iOS")
+                "Skipping compiler check (static analysis mode)..." if platform in ("Android", "iOS", ".NET")
                 else "Skipping compiler check (not applicable to this platform)..."
             )
             state["lint_issues"] = []
-            state["compile_status"] = "skipped" if platform in ("Android", "iOS") else None
+            state["compile_status"] = "skipped" if platform in ("Android", "iOS", ".NET") else None
             compile_sub_result = None
         stats["compile_time_ms"] = int((time.monotonic() - t1b) * 1000)
         state["progress"] = 55
@@ -268,14 +271,14 @@ async def _run_review(
             state["message"] = f"Evaluating {category['name']}..."
             llm_sub_criteria = (
                 [sub_id for sub_id in category["sub_criteria"] if sub_id != "1.4"]
-                if category_id == "1" and platform in ("Android", "iOS") and compile_check_mode != "static"
+                if category_id == "1" and platform in ("Android", "iOS", ".NET") and compile_check_mode != "static"
                 else category["sub_criteria"]
             )
             sub_results, prompt_info = await score_category(
                 llm_provider, category["name"], llm_sub_criteria, sub_criteria_descriptions, code_context,
                 model=ollama_model, platform=platform,
             )
-            if category_id == "1" and platform in ("Android", "iOS") and compile_check_mode != "static":
+            if category_id == "1" and platform in ("Android", "iOS", ".NET") and compile_check_mode != "static":
                 sub_results = _merge_compile_result_into_category_1(sub_results, compile_sub_result, categories)
             scores_by_category[category_id] = aggregate_category_scores(sub_results)
             sub_scores = scores_by_category[category_id]["sub_scores"]
