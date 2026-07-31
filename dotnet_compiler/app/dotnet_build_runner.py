@@ -75,20 +75,33 @@ async def _run_subprocess(command: list, cwd: Path, timeout_seconds: float) -> d
 
 
 async def run_build(project_dir: Path) -> dict:
-    """Runs `dotnet build <path> --nologo -nodeReuse:false` against
-    whichever .sln/.csproj is found under project_dir (see find_project).
-    -nodeReuse:false is required, not optional: MSBuild defaults to keeping
-    background worker processes alive after a build finishes to speed up
-    the *next* build -- fine for a single developer machine, but this
-    container handles many review requests over its lifetime (it isn't
-    restarted per request), so leaving node reuse on would accumulate
-    worker processes/memory across reviews. Does not raise on a non-zero
-    exit code -- the caller decides success/failure from parsed diagnostics,
-    not the exit code, same as every other runner this session. Returns
+    """Runs `dotnet build <path> --nologo -nodeReuse:false
+    -p:UseSharedCompilation=false` against whichever .sln/.csproj is found
+    under project_dir (see find_project). Both flags are required, not
+    optional -- they disable two *separate* background-process mechanisms
+    that MSBuild/Roslyn keep alive by default to speed up the next build,
+    fine on a single developer machine but not in this container, which
+    handles many review requests over its lifetime (it isn't restarted per
+    request):
+    -nodeReuse:false stops MSBuild's own out-of-process build worker nodes
+    from persisting. -p:UseSharedCompilation=false stops Roslyn's separate
+    VBCSCompiler shared-compilation server from persisting -- confirmed
+    necessary against a real build where, with only -nodeReuse:false set,
+    the subprocess's stdout/stderr pipes stayed open (and this function
+    stayed blocked) for exactly 10 minutes *after* `dotnet build` had
+    already finished and printed its last output line, because a lingering
+    VBCSCompiler grandchild process had inherited those pipes and only
+    closed them once its own idle-shutdown timer expired.
+    Does not raise on a non-zero exit code -- the caller decides
+    success/failure from parsed diagnostics, not the exit code, same as
+    every other runner this session. Returns
     {"returncode": int|None, "stdout": str, "stderr": str}."""
     project_path = find_project(project_dir)
     if project_path is None:
         return {"returncode": None, "stdout": "", "stderr": "No .sln or .csproj found."}
 
-    command = ["dotnet", "build", str(project_path), "--nologo", "-nodeReuse:false"]
+    command = [
+        "dotnet", "build", str(project_path), "--nologo",
+        "-nodeReuse:false", "-p:UseSharedCompilation=false",
+    ]
     return await _run_subprocess(command, project_path.parent, BUILD_TIMEOUT_SECONDS)
