@@ -62,6 +62,71 @@ test("shows warning and secret counts as outline tags", () => {
   expect(screen.getByText("1 secrets")).toBeInTheDocument();
 });
 
+test("renders the warnings and secrets tags as plain, non-clickable spans when both counts are 0", () => {
+  render(<StatsDisplay {...baseProps} />);
+  expect(screen.getByText("0 warnings").tagName).toBe("SPAN");
+  expect(screen.getByText("0 secrets").tagName).toBe("SPAN");
+});
+
+test("clicking the warnings tag opens a dialog listing every warning", async () => {
+  const user = userEvent.setup();
+  render(
+    <StatsDisplay
+      {...baseProps}
+      warnings={["Missing AndroidManifest.xml", "Unused dependency: guava"]}
+    />
+  );
+
+  expect(screen.queryByText("Missing AndroidManifest.xml")).not.toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "2 warnings" }));
+
+  expect(screen.getByText("Missing AndroidManifest.xml")).toBeInTheDocument();
+  expect(screen.getByText("Unused dependency: guava")).toBeInTheDocument();
+});
+
+test("clicking the secrets tag opens a dialog listing every secret as file:line (pattern)", async () => {
+  const user = userEvent.setup();
+  render(
+    <StatsDisplay
+      {...baseProps}
+      secretsFound={[{ file: "Constants.java", line: 42, pattern: "api_key" }]}
+    />
+  );
+
+  await user.click(screen.getByRole("button", { name: "1 secrets" }));
+
+  expect(screen.getByText("Constants.java:42 (api_key)")).toBeInTheDocument();
+});
+
+test("closes the warnings dialog when Close is clicked", async () => {
+  const user = userEvent.setup();
+  render(<StatsDisplay {...baseProps} warnings={["Missing AndroidManifest.xml"]} />);
+
+  await user.click(screen.getByRole("button", { name: "1 warnings" }));
+  expect(screen.getByText("Missing AndroidManifest.xml")).toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: /^close$/i }));
+  expect(screen.queryByText("Missing AndroidManifest.xml")).not.toBeInTheDocument();
+});
+
+test("only one dialog is open at a time -- opening secrets while warnings is open replaces it", async () => {
+  const user = userEvent.setup();
+  render(
+    <StatsDisplay
+      {...baseProps}
+      warnings={["Missing AndroidManifest.xml"]}
+      secretsFound={[{ file: "Constants.java", line: 42, pattern: "api_key" }]}
+    />
+  );
+
+  await user.click(screen.getByRole("button", { name: "1 warnings" }));
+  expect(screen.getByText("Missing AndroidManifest.xml")).toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: "1 secrets" }));
+  expect(screen.queryByText("Missing AndroidManifest.xml")).not.toBeInTheDocument();
+  expect(screen.getByText("Constants.java:42 (api_key)")).toBeInTheDocument();
+});
+
 test("renders a download link pointing at the constructed download URL", () => {
   render(<StatsDisplay {...baseProps} />);
   const link = screen.getByRole("link", { name: /download populated workbook/i });

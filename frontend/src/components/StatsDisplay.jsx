@@ -16,9 +16,21 @@ const TIMING_ROWS = [
   { key: "total_time_ms", label: "Total" },
 ];
 
+const TAG_BUTTON_RESET = {
+  border: "none",
+  background: "none",
+  padding: 0,
+  cursor: "pointer",
+  font: "inherit",
+  letterSpacing: "inherit",
+};
+
 export default function StatsDisplay({ totalScorePct, warnings, secretsFound, stats, downloadUrl, onReset }) {
-  const [showPerf, setShowPerf] = useState(false);
+  const [activeDialog, setActiveDialog] = useState(null);
   const rows = TIMING_ROWS.filter((row) => stats[row.key] !== undefined);
+
+  const hasWarnings = warnings.length > 0;
+  const hasSecrets = secretsFound.length > 0;
 
   return (
     <div>
@@ -31,8 +43,30 @@ export default function StatsDisplay({ totalScorePct, warnings, secretsFound, st
           {totalScorePct !== null && totalScorePct !== undefined && (
             <span className="tag tag-accent">Total {totalScorePct}%</span>
           )}
-          <span className="tag tag-outline">{warnings.length} warnings</span>
-          <span className="tag tag-outline">{secretsFound.length} secrets</span>
+          {hasWarnings ? (
+            <button
+              type="button"
+              className="tag tag-outline"
+              style={TAG_BUTTON_RESET}
+              onClick={() => setActiveDialog("warnings")}
+            >
+              {warnings.length} warnings
+            </button>
+          ) : (
+            <span className="tag tag-outline">{warnings.length} warnings</span>
+          )}
+          {hasSecrets ? (
+            <button
+              type="button"
+              className="tag tag-outline"
+              style={TAG_BUTTON_RESET}
+              onClick={() => setActiveDialog("secrets")}
+            >
+              {secretsFound.length} secrets
+            </button>
+          ) : (
+            <span className="tag tag-outline">{secretsFound.length} secrets</span>
+          )}
         </div>
         <a
           href={getDownloadUrl(downloadUrl)}
@@ -48,14 +82,14 @@ export default function StatsDisplay({ totalScorePct, warnings, secretsFound, st
           type="button"
           className="btn"
           style={{ marginTop: "var(--space-3)" }}
-          onClick={() => setShowPerf(true)}
+          onClick={() => setActiveDialog("performance")}
         >
           Performance breakdown
         </button>
       </div>
 
-      {showPerf && (
-        <div className="dialog-backdrop" onClick={() => setShowPerf(false)}>
+      {activeDialog === "performance" && (
+        <div className="dialog-backdrop" onClick={() => setActiveDialog(null)}>
           <div className="dialog" onClick={(event) => event.stopPropagation()}>
             <div className="dialog-title">Performance breakdown</div>
             <table className="table dialog-body">
@@ -70,7 +104,39 @@ export default function StatsDisplay({ totalScorePct, warnings, secretsFound, st
               </tbody>
             </table>
             <div className="dialog-actions">
-              <button type="button" className="btn" onClick={() => setShowPerf(false)}>Close</button>
+              <button type="button" className="btn" onClick={() => setActiveDialog(null)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeDialog === "warnings" && (
+        <div className="dialog-backdrop" onClick={() => setActiveDialog(null)}>
+          <div className="dialog" onClick={(event) => event.stopPropagation()}>
+            <div className="dialog-title">Warnings</div>
+            <ul className="dialog-body" style={{ paddingLeft: "1.1em", fontSize: 13 }}>
+              {warnings.map((warning, index) => (
+                <li key={index}>{warning}</li>
+              ))}
+            </ul>
+            <div className="dialog-actions">
+              <button type="button" className="btn" onClick={() => setActiveDialog(null)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeDialog === "secrets" && (
+        <div className="dialog-backdrop" onClick={() => setActiveDialog(null)}>
+          <div className="dialog" onClick={(event) => event.stopPropagation()}>
+            <div className="dialog-title">Secrets found</div>
+            <ul className="dialog-body" style={{ paddingLeft: "1.1em", fontSize: 13 }}>
+              {secretsFound.map((secret, index) => (
+                <li key={index}>{secret.file}:{secret.line} ({secret.pattern})</li>
+              ))}
+            </ul>
+            <div className="dialog-actions">
+              <button type="button" className="btn" onClick={() => setActiveDialog(null)}>Close</button>
             </div>
           </div>
         </div>
