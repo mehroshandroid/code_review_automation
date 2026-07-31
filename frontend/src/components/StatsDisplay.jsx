@@ -16,13 +16,15 @@ const TIMING_ROWS = [
   { key: "total_time_ms", label: "Total" },
 ];
 
+// Only resets the button-specific UA defaults that would otherwise show
+// through (native border/background chrome, OS UI font-family) --
+// deliberately leaves padding/font-size/letter-spacing alone so the
+// button still picks up .tag's own values, same as the plain-span version.
 const TAG_BUTTON_RESET = {
   border: "none",
   background: "none",
-  padding: 0,
+  fontFamily: "inherit",
   cursor: "pointer",
-  font: "inherit",
-  letterSpacing: "inherit",
 };
 
 export default function StatsDisplay({ totalScorePct, warnings, secretsFound, stats, downloadUrl, onReset }) {
