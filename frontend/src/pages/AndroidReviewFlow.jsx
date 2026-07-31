@@ -84,9 +84,19 @@ export default function AndroidReviewFlow({ platform = { id: "android", label: "
 
       <main style={{ maxWidth: isRunningOrDone ? 1440 : 920, margin: "0 auto", padding: "var(--space-8) var(--space-4) var(--space-10)" }}>
         <header style={{ marginBottom: "var(--space-6)" }}>
-          <h1 style={{ fontFamily: "var(--font-heading)", fontSize: 38, lineHeight: 1.1, margin: "0 0 var(--space-2)" }}>
-            {progressData?.project_name || `${platform.label} Code Review Automation`}
-          </h1>
+          <div style={{ display: "flex", alignItems: "baseline", gap: "var(--space-3)", flexWrap: "wrap", marginBottom: "var(--space-2)" }}>
+            <h1 style={{ fontFamily: "var(--font-heading)", fontSize: 38, lineHeight: 1.1, margin: 0 }}>
+              {progressData?.project_name || `${platform.label} Code Review Automation`}
+            </h1>
+            {reviewMeta && (
+              <ReviewMetaBar
+                llmProvider={reviewMeta.llmProvider}
+                llmModel={reviewMeta.llmModel}
+                source={reviewMeta.source}
+                compileCheckMode={reviewMeta.compileCheckMode}
+              />
+            )}
+          </div>
           <p style={{ margin: 0, opacity: 0.7, maxWidth: "60ch" }}>
             Upload your {platform.label} project and a scoring template. The reviewer analyzes structure, security,
             tests and dependency versions, scores each category with AI, and hands back a populated workbook.
@@ -104,14 +114,6 @@ export default function AndroidReviewFlow({ platform = { id: "android", label: "
 
         {isRunningOrDone && reviewId && (
           <>
-            {reviewMeta && (
-              <ReviewMetaBar
-                llmProvider={reviewMeta.llmProvider}
-                llmModel={reviewMeta.llmModel}
-                source={reviewMeta.source}
-                compileCheckMode={reviewMeta.compileCheckMode}
-              />
-            )}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "var(--space-5)" }}>
               <div>
                 {state === "polling" && (

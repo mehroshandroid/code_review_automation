@@ -10,8 +10,10 @@ export default function ReviewMetaBar({ llmProvider, llmModel, source, compileCh
   const compileCheckLabel = COMPILE_CHECK_LABELS[compileCheckMode] || "Static";
 
   return (
-    <p className="card-body" style={{ margin: "0 0 var(--space-5)", opacity: 0.75, fontSize: 13 }}>
-      {llmLabel} · {sourceLabel} · Compile-check: {compileCheckLabel}
-    </p>
+    <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap", alignItems: "center" }}>
+      <span className="tag tag-outline">{llmLabel}</span>
+      <span className="tag tag-outline">{sourceLabel}</span>
+      <span className="tag tag-outline">Compile-check: {compileCheckLabel}</span>
+    </div>
   );
 }
