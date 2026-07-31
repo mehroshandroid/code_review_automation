@@ -84,6 +84,17 @@ test("clicking the warnings tag opens a dialog listing every warning", async () 
   expect(screen.getByText("Unused dependency: guava")).toBeInTheDocument();
 });
 
+test("renders every item in a large warnings list -- the dialog scrolls, it doesn't truncate", async () => {
+  const user = userEvent.setup();
+  const manyWarnings = Array.from({ length: 250 }, (_, index) => `Warning #${index + 1}`);
+  render(<StatsDisplay {...baseProps} warnings={manyWarnings} />);
+
+  await user.click(screen.getByRole("button", { name: "250 warnings" }));
+
+  expect(screen.getByText("Warning #1")).toBeInTheDocument();
+  expect(screen.getByText("Warning #250")).toBeInTheDocument();
+});
+
 test("clicking the secrets tag opens a dialog listing every secret as file:line (pattern)", async () => {
   const user = userEvent.setup();
   render(
