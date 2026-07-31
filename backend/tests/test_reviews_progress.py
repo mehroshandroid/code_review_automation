@@ -39,6 +39,7 @@ def test_progress_reflects_stored_state():
         ],
         "lint_issues": [{"severity": "Warning", "message": "m", "file": "f.java", "line": 1}],
         "compile_status": "ok",
+        "source": "devops",
     }
     response = client.get("/api/reviews/fixed-id/progress")
     assert response.status_code == 200
@@ -67,6 +68,7 @@ def test_progress_reflects_stored_state():
     ]
     assert body["lint_issues"] == [{"severity": "Warning", "message": "m", "file": "f.java", "line": 1}]
     assert body["compile_status"] == "ok"
+    assert body["source"] == "devops"
 
 
 def test_progress_defaults_detection_fields_when_absent():
@@ -91,6 +93,7 @@ def test_progress_defaults_detection_fields_when_absent():
     assert body["prompt_log"] == []
     assert body["lint_issues"] == []
     assert body["compile_status"] is None
+    assert body["source"] is None
 
 
 def test_progress_includes_download_url_when_completed():

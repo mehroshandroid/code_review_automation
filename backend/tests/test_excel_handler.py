@@ -7,7 +7,7 @@ from openpyxl.styles import Font
 from app.analyzer.excel_handler import (
     aggregate_category_scores,
     compute_total_score_pct,
-    extract_sub_criteria_descriptions,
+    discover_structure,
     generate_review_excel,
     populate_metadata,
     populate_scores,
@@ -30,7 +30,7 @@ def _build_template(path: Path) -> None:
     for cell in ws[2]:
         cell.font = Font(bold=True)
 
-    ws.append([1, "Code naming conventions / Code Structure", 1, "=AVERAGE(D3:D4)", "=D3*C3", "=E3/C3", None])
+    ws.append([1, "Code naming conventions / Code Structure", 1, "=AVERAGE(D4:D5)", "=D3*C3", "=E3/C3", None])
     ws.append([None, "Clear and consistent naming", None, None, None, None, None])
     ws.append([1.2, "Clean structure and formatting", None, None, None, None, None])
     ws.append([None, None, None, None, None, None, None])
@@ -105,7 +105,7 @@ def test_populate_scores_writes_sub_row_scores_positionally(tmp_path: Path):
 
     # Category row's own rollup formulas are untouched (never written to).
     category_row = ws[3]
-    assert category_row[3].value == "=AVERAGE(D3:D4)"
+    assert category_row[3].value == "=AVERAGE(D4:D5)"
     assert category_row[4].value == "=D3*C3"
     assert category_row[5].value == "=E3/C3"
 
@@ -380,40 +380,44 @@ def test_populate_scores_against_the_real_sample_template(tmp_path: Path):
     assert ws["C40"].value == datetime.datetime(2026, 7, 24)
 
 
-def test_extract_sub_criteria_descriptions_reads_positionally(tmp_path: Path):
+
+
+def test_discover_structure_reads_categories_and_descriptions_positionally(tmp_path: Path):
     template_path = tmp_path / "template.xlsx"
     _build_template(template_path)
     ws = load_workbook(template_path).active
 
-    categories = {"1": {"name": "Code Structure", "sub_criteria": ["1.1", "1.2"]}}
-    descriptions = extract_sub_criteria_descriptions(ws, categories)
+    categories, descriptions = discover_structure(ws)
 
-    # First sub-row's id cell is blank in _build_template, but its description
-    # is still read correctly since matching is positional, not id-based.
+    assert categories == {
+        "1": {"name": "Code naming conventions / Code Structure", "sub_criteria": ["1.1", "1.2"]},
+    }
     assert descriptions == {
         "1.1": "Clear and consistent naming",
         "1.2": "Clean structure and formatting",
     }
 
 
-def test_extract_sub_criteria_descriptions_against_the_real_sample_template():
-    """Grounds the fix for the reported bug: the LLM prompt only sent bare ids
-    like "2.4", never their actual meaning, causing remarks unrelated to the
-    real criterion (e.g. a keystore-storage criterion getting an EventBus
-    remark). This locks in that the exact real wording is extracted for
-    every category, including the mislabeled category 4 rows.
+def test_discover_structure_against_the_real_sample_template():
+    """Proves discover_structure reproduces, purely by parsing the sheet, the
+    exact same category/sub-criteria structure the old hardcoded CATEGORIES
+    dict encoded for this template -- including category 4's positionally-
+    synthesized ids despite its rows being labeled 4.2/4.3/4.3 in the sheet's
+    own id column.
     """
     ws = load_workbook(FIXTURES_DIR / "SampleCodeReview.xlsx").active
-    categories = {
-        "1": {"name": "x", "sub_criteria": ["1.1", "1.2", "1.3", "1.4", "1.5", "1.6"]},
-        "2": {"name": "x", "sub_criteria": ["2.1", "2.2", "2.3", "2.4"]},
-        "4": {"name": "x", "sub_criteria": ["4.1", "4.2", "4.3"]},
-    }
-    descriptions = extract_sub_criteria_descriptions(ws, categories)
 
+    categories, descriptions = discover_structure(ws)
+
+    assert categories == {
+        "1": {"name": "Code naming conventions/ Code Structure", "sub_criteria": ["1.1", "1.2", "1.3", "1.4", "1.5", "1.6"]},
+        "2": {"name": "Reliability, Security & Observability", "sub_criteria": ["2.1", "2.2", "2.3", "2.4"]},
+        "3": {"name": "Delivery Discipline & Architecture", "sub_criteria": ["3.1", "3.2", "3.3", "3.4"]},
+        "4": {"name": "AI Usage & Code Ownership", "sub_criteria": ["4.1", "4.2", "4.3"]},
+        "6": {"name": "Safe & Integrated AI Code", "sub_criteria": ["6.1", "6.2", "6.3"]},
+    }
     assert descriptions["1.1"] == "Clear and consistent naming conventions"
+    assert descriptions["1.4"] == "No compile-time warnings"
     assert descriptions["2.4"] == "Keystore information should be stored in env. Or gradle"
-    # Category 4's rows are labeled 4.2/4.3/4.3 in the real file, but
-    # positional matching still assigns the right description to 4.1/4.2/4.3.
     assert descriptions["4.1"] == "AI usage declared in PR comments along with tool name  (e.g., Copilot, ChatGPT, Azure OpenAI)"
     assert descriptions["4.3"] == "No unexplained or uncommented complex logic, No blind copy-paste"

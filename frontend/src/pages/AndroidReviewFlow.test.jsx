@@ -38,7 +38,7 @@ function renderFlow() {
 async function uploadValidFiles(user) {
   const zip = buildFile("project.zip", "application/zip");
   const xlsx = buildFile("template.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-  await user.upload(screen.getByLabelText(/android project/i), zip);
+  await user.upload(screen.getByLabelText(/project \(\.zip\)/i), zip);
   await user.upload(screen.getByLabelText(/scoring template/i), xlsx);
   await user.click(screen.getByRole("button", { name: /start review/i }));
 }
@@ -187,7 +187,7 @@ test("sends the selected Ollama provider and model when available", async () => 
     await Promise.resolve();
   });
 
-  expect(createReview).toHaveBeenCalledWith(expect.anything(), expect.anything(), "ollama", "qwen2.5-coder:7b", "compiler", "Android");
+  expect(createReview).toHaveBeenCalledWith(expect.anything(), expect.anything(), "ollama", "qwen2.5-coder:7b", "compiler", "Android", null, null, null);
 });
 
 test("falls back to Azure when Ollama is selected but no models are installed", async () => {
@@ -209,12 +209,13 @@ test("falls back to Azure when Ollama is selected but no models are installed", 
     await Promise.resolve();
   });
 
-  expect(createReview).toHaveBeenCalledWith(expect.anything(), expect.anything(), "azure", null, "compiler", "Android");
+  expect(createReview).toHaveBeenCalledWith(expect.anything(), expect.anything(), "azure", null, "compiler", "Android", null, null, null);
 });
 
 test("shows the compile-check mode toggle", () => {
   renderFlow();
-  expect(screen.getByRole("button", { name: "Compile-time lint" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Compile-time lint (Docker)" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Compile-time lint (local)" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Static file analysis" })).toBeInTheDocument();
 });
 
@@ -236,7 +237,40 @@ test("sends the persisted compile-check mode when starting a review", async () =
     await Promise.resolve();
   });
 
-  expect(createReview).toHaveBeenCalledWith(expect.anything(), expect.anything(), "azure", null, "static", "Android");
+  expect(createReview).toHaveBeenCalledWith(expect.anything(), expect.anything(), "azure", null, "static", "Android", null, null, null);
+});
+
+test("shows the given platform's label in the header and zip picker before any project is uploaded", () => {
+  render(
+    <MemoryRouter>
+      <AndroidReviewFlow platform={{ id: "ios", label: "iOS" }} />
+    </MemoryRouter>
+  );
+  expect(screen.getByRole("heading", { name: "iOS Code Review Automation" })).toBeInTheDocument();
+  expect(screen.getByText(/upload your iOS project/i)).toBeInTheDocument();
+  expect(screen.getByLabelText(/ios project/i)).toBeInTheDocument();
+});
+
+test("shows a meta bar summarizing LLM provider, source, and compile-check mode once the review starts", async () => {
+  const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+  createReview.mockResolvedValue({ review_id: "abc-123", status: "processing" });
+  getProgress.mockResolvedValue({
+    status: "processing", phase: "extracting", progress: 20, message: "Extracting...",
+    stats: {}, download_url: null, error: null, warnings: [], test_coverage: null, secrets_found: [],
+    total_score_pct: null, project_name: null, category_scores: [], code_context: null, prompt_log: [],
+    lint_issues: [], compile_status: null, source: "upload",
+  });
+
+  renderFlow();
+  await act(async () => {
+    await uploadValidFiles(user);
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+
+  expect(screen.getByText(/Azure OpenAI/)).toBeInTheDocument();
+  expect(screen.getByText(/Uploaded ZIP/)).toBeInTheDocument();
+  expect(screen.getByText(/Compile-check: Docker/)).toBeInTheDocument();
 });
 
 test("sends the platform label from a custom platform prop instead of the default", async () => {
@@ -260,5 +294,34 @@ test("sends the platform label from a custom platform prop instead of the defaul
     await Promise.resolve();
   });
 
-  expect(createReview).toHaveBeenCalledWith(expect.anything(), expect.anything(), "azure", null, "compiler", "AndroidCustom");
+  expect(createReview).toHaveBeenCalledWith(expect.anything(), expect.anything(), "azure", null, "compiler", "AndroidCustom", null, null, null);
+});
+
+test("sends devops fields through to createReview when starting a review in DevOps mode", async () => {
+  const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+  createReview.mockResolvedValue({ review_id: "abc-123", status: "processing" });
+  getProgress.mockResolvedValue({
+    status: "processing", phase: "fetching", progress: 0, message: "Fetching...",
+    stats: {}, download_url: null, error: null, warnings: [], test_coverage: null, secrets_found: [],
+    total_score_pct: null, project_name: null, category_scores: [], code_context: null, prompt_log: [],
+    lint_issues: [], compile_status: null,
+  });
+
+  renderFlow();
+  await user.click(screen.getByRole("button", { name: /clone from azure devops/i }));
+  await user.type(screen.getByLabelText(/repo url/i), "https://dev.azure.com/myorg/MyProject/_git/my-repo");
+  await user.type(screen.getByLabelText(/personal access token/i), "fake-pat");
+  const xlsx = buildFile("template.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  await user.upload(screen.getByLabelText(/scoring template/i), xlsx);
+
+  await act(async () => {
+    await user.click(screen.getByRole("button", { name: /start review/i }));
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+
+  expect(createReview).toHaveBeenCalledWith(
+    null, xlsx, "azure", null, "compiler", "Android",
+    "https://dev.azure.com/myorg/MyProject/_git/my-repo", "fake-pat", null
+  );
 });

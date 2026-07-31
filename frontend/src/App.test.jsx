@@ -21,9 +21,21 @@ test("renders the Android review flow at /review/android", () => {
   expect(screen.getByRole("button", { name: /start review/i })).toBeInTheDocument();
 });
 
-test("renders a placeholder banner for a not-yet-available platform", () => {
+test("renders the real review flow at /review/ios now that iOS is available", () => {
   renderAt("/review/ios");
-  expect(screen.getByText("iOS support is on the way")).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "iOS Code Review Automation" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /start review/i })).toBeInTheDocument();
+});
+
+test("renders the real review flow at /review/dotnet now that .NET is available", () => {
+  renderAt("/review/dotnet");
+  expect(screen.getByRole("heading", { name: ".NET Code Review Automation" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /start review/i })).toBeInTheDocument();
+});
+
+test("renders a placeholder banner for a not-yet-available platform", () => {
+  renderAt("/review/web");
+  expect(screen.getByText("Web (React) support is on the way")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Coming soon" })).toBeDisabled();
 });
 

@@ -12,12 +12,16 @@ from fastapi.responses import FileResponse
 from openpyxl import load_workbook
 from starlette.background import BackgroundTask
 
-from app.analyzer.android_analyzer import analyze_project, gather_code_context
+from app.analyzer import android_analyzer, dotnet_analyzer, ios_analyzer
+from app.analyzer.android_local_checker import check_android_local_warnings
 from app.analyzer.compile_checker import check_compile_warnings
+from app.analyzer.devops_client import fetch_repo_zip, parse_repo_url
+from app.analyzer.dotnet_compile_checker import check_dotnet_build_warnings
+from app.analyzer.ios_build_checker import check_ios_build_warnings
 from app.analyzer.excel_handler import (
     aggregate_category_scores,
     compute_total_score_pct,
-    extract_sub_criteria_descriptions,
+    discover_structure,
     generate_review_excel,
 )
 from app.analyzer.llm_client import generate_general_remarks, score_category
@@ -25,14 +29,6 @@ from app.utils.logger import get_logger
 
 router = APIRouter()
 logger = get_logger(__name__)
-
-CATEGORIES = {
-    "1": {"name": "Code naming conventions / Code Structure", "sub_criteria": ["1.1", "1.2", "1.3", "1.4", "1.5", "1.6"]},
-    "2": {"name": "Reliability, Security & Observability", "sub_criteria": ["2.1", "2.2", "2.3", "2.4"]},
-    "3": {"name": "Delivery Discipline & Architecture", "sub_criteria": ["3.1", "3.2", "3.3", "3.4"]},
-    "4": {"name": "AI Usage & Code Ownership", "sub_criteria": ["4.1", "4.2", "4.3"]},
-    "6": {"name": "Safe & Integrated AI Code", "sub_criteria": ["6.1", "6.2", "6.3"]},
-}
 
 _reviews: dict = {}
 
@@ -51,22 +47,12 @@ def _new_review_state() -> dict:
         "secrets_found": [],
         "total_score_pct": None,
         "project_name": None,
-        "category_scores": [
-            {
-                "id": category_id,
-                "name": category["name"],
-                "percent_points": None,
-                "sub_criteria": [
-                    {"id": sub_id, "description": None, "score": None, "remark": None}
-                    for sub_id in category["sub_criteria"]
-                ],
-            }
-            for category_id, category in CATEGORIES.items()
-        ],
+        "category_scores": [],
         "code_context": None,
         "prompt_log": [],
         "lint_issues": [],
         "compile_status": None,
+        "source": None,
     }
 
 
@@ -82,27 +68,51 @@ def _compile_result_to_sub_score(compile_result: dict) -> dict:
     return {"score": 0, "remark": f"{warning_count} Lint warning(s)/error(s) found."}
 
 
-def _merge_compile_result_into_category_1(sub_results: dict, compile_sub_result: dict) -> dict:
+def _merge_compile_result_into_category_1(sub_results: dict, compile_sub_result: dict, categories: dict) -> dict:
     merged = {**sub_results, "1.4": compile_sub_result}
-    return {sub_id: merged[sub_id] for sub_id in CATEGORIES["1"]["sub_criteria"]}
+    return {sub_id: merged[sub_id] for sub_id in categories["1"]["sub_criteria"]}
 
 
 @router.post("/api/reviews")
 async def create_review(
-    androidZip: UploadFile = File(...),
+    androidZip: UploadFile | None = File(None),
     excelTemplate: UploadFile = File(...),
     llmProvider: str = Form("azure"),
     ollamaModel: str | None = Form(None),
     compileCheckMode: str = Form("compiler"),
     platform: str = Form("Android"),
+    devopsRepoUrl: str | None = Form(None),
+    devopsPat: str | None = Form(None),
+    devopsBranch: str | None = Form(None),
 ):
     review_id = str(uuid.uuid4())
     work_dir = Path(tempfile.mkdtemp(prefix=f"review_{review_id}_"))
     zip_path = work_dir / "android.zip"
     template_path = work_dir / "template.xlsx"
 
+    has_zip = androidZip is not None
+    has_devops = bool(devopsRepoUrl) and bool(devopsPat)
+
+    if has_zip and has_devops:
+        input_error = "Provide either a project zip file or an Azure DevOps repo URL + PAT, not both."
+    elif not has_zip and not has_devops:
+        input_error = "Provide either a project zip file or an Azure DevOps repo URL + PAT, not neither."
+    else:
+        input_error = None
+
+    if input_error:
+        shutil.rmtree(work_dir, ignore_errors=True)
+        state = _new_review_state()
+        state["status"] = "error"
+        state["phase"] = "error"
+        state["message"] = "Review failed"
+        state["error"] = input_error
+        _reviews[review_id] = state
+        return {"review_id": review_id, "status": "error"}
+
     try:
-        zip_path.write_bytes(await androidZip.read())
+        if has_zip:
+            zip_path.write_bytes(await androidZip.read())
         template_path.write_bytes(await excelTemplate.read())
     except Exception as exc:
         logger.exception("Review %s failed while saving uploads", review_id)
@@ -115,17 +125,24 @@ async def create_review(
         _reviews[review_id] = state
         return {"review_id": review_id, "status": "error"}
 
-    zip_valid = (androidZip.filename or "").endswith(".zip")
+    zip_valid = (androidZip.filename or "").endswith(".zip") if has_zip else True
     template_valid = (excelTemplate.filename or "").endswith(".xlsx")
-    project_name = Path(androidZip.filename).stem if androidZip.filename else "Unknown Project"
+
+    if has_zip:
+        project_name = Path(androidZip.filename).stem if androidZip.filename else "Unknown Project"
+    else:
+        parsed = parse_repo_url(devopsRepoUrl)
+        project_name = parsed["repository"] if parsed else "Unknown Project"
 
     state = _new_review_state()
     state["project_name"] = project_name
+    state["source"] = "devops" if has_devops else "upload"
     _reviews[review_id] = state
     asyncio.create_task(
         _run_review(
             review_id, work_dir, zip_path, template_path, zip_valid, template_valid, project_name,
             llmProvider, ollamaModel, compileCheckMode, platform,
+            devopsRepoUrl, devopsPat, devopsBranch,
         )
     )
     return {"review_id": review_id, "status": "processing"}
@@ -143,6 +160,9 @@ async def _run_review(
     ollama_model: str | None = None,
     compile_check_mode: str = "compiler",
     platform: str = "Android",
+    devops_repo_url: str | None = None,
+    devops_pat: str | None = None,
+    devops_branch: str | None = None,
 ) -> None:
     state = _reviews[review_id]
     extract_dir = work_dir / "extracted"
@@ -154,6 +174,20 @@ async def _run_review(
             state["message"] = "Review failed"
             state["error"] = "androidZip must be a .zip file and excelTemplate must be a .xlsx file"
             return
+
+        if devops_repo_url and devops_pat:
+            t_fetch = time.monotonic()
+            state["phase"] = "fetching"
+            state["message"] = "Fetching repository from Azure DevOps..."
+            fetch_result = await fetch_repo_zip(devops_repo_url, devops_pat, devops_branch)
+            if fetch_result["status"] != "ok":
+                state["status"] = "error"
+                state["phase"] = "error"
+                state["message"] = "Review failed"
+                state["error"] = fetch_result["message"]
+                return
+            zip_path.write_bytes(fetch_result["content"])
+            stats["fetch_time_ms"] = int((time.monotonic() - t_fetch) * 1000)
 
         t0 = time.monotonic()
         state["phase"] = "extracting"
@@ -167,7 +201,13 @@ async def _run_review(
         t1 = time.monotonic()
         state["phase"] = "analyzing"
         state["message"] = "Analyzing project structure..."
-        analysis = analyze_project(extract_dir)
+        if platform == "iOS":
+            analyzer = ios_analyzer
+        elif platform == ".NET":
+            analyzer = dotnet_analyzer
+        else:
+            analyzer = android_analyzer
+        analysis = analyzer.analyze_project(extract_dir)
         if analysis.fatal_error:
             state["status"] = "error"
             state["phase"] = "error"
@@ -177,48 +217,69 @@ async def _run_review(
         state["warnings"] = analysis.structure_warnings + [w["issue"] for w in analysis.version_warnings]
         state["test_coverage"] = analysis.test_coverage
         state["secrets_found"] = analysis.secrets_found
-        code_context = gather_code_context(extract_dir)
+        code_context = analyzer.gather_code_context(extract_dir)
         state["code_context"] = code_context
         template_ws = load_workbook(template_path).active
-        sub_criteria_descriptions = extract_sub_criteria_descriptions(template_ws, CATEGORIES)
-        for category_entry in state["category_scores"]:
-            for sub_entry in category_entry["sub_criteria"]:
-                sub_entry["description"] = sub_criteria_descriptions.get(sub_entry["id"])
+        categories, sub_criteria_descriptions = discover_structure(template_ws)
+        state["category_scores"] = [
+            {
+                "id": category_id,
+                "name": category["name"],
+                "percent_points": None,
+                "sub_criteria": [
+                    {"id": sub_id, "description": sub_criteria_descriptions.get(sub_id), "score": None, "remark": None}
+                    for sub_id in category["sub_criteria"]
+                ],
+            }
+            for category_id, category in categories.items()
+        ]
         stats["analysis_time_ms"] = int((time.monotonic() - t1) * 1000)
         state["progress"] = 35
 
         t1b = time.monotonic()
         state["phase"] = "compiling"
-        if compile_check_mode == "static":
-            state["message"] = "Skipping compiler check (static analysis mode)..."
-            state["lint_issues"] = []
-            state["compile_status"] = "skipped"
-            compile_sub_result = None
-        else:
+        if platform in ("Android", "iOS", ".NET") and compile_check_mode != "static":
             state["message"] = "Compiling and running Lint checks..."
-            compile_result = await check_compile_warnings(zip_path)
+            if platform == "iOS":
+                checker = check_ios_build_warnings
+            elif platform == ".NET":
+                checker = check_dotnet_build_warnings
+            elif compile_check_mode == "local":
+                checker = check_android_local_warnings
+            else:
+                checker = check_compile_warnings
+            compile_result = await checker(zip_path)
             state["lint_issues"] = compile_result["issues"]
             state["compile_status"] = compile_result["status"]
             compile_sub_result = _compile_result_to_sub_score(compile_result)
+        else:
+            state["message"] = (
+                "Skipping compiler check (static analysis mode)..." if platform in ("Android", "iOS", ".NET")
+                else "Skipping compiler check (not applicable to this platform)..."
+            )
+            state["lint_issues"] = []
+            state["compile_status"] = "skipped" if platform in ("Android", "iOS", ".NET") else None
+            compile_sub_result = None
         stats["compile_time_ms"] = int((time.monotonic() - t1b) * 1000)
         state["progress"] = 55
 
         t2 = time.monotonic()
         state["phase"] = "scoring"
         scores_by_category = {}
-        category_count = len(CATEGORIES)
-        for index, (category_id, category) in enumerate(CATEGORIES.items()):
+        category_count = len(categories)
+        for index, (category_id, category) in enumerate(categories.items()):
             state["message"] = f"Evaluating {category['name']}..."
             llm_sub_criteria = (
                 [sub_id for sub_id in category["sub_criteria"] if sub_id != "1.4"]
-                if category_id == "1" and compile_check_mode == "compiler" else category["sub_criteria"]
+                if category_id == "1" and platform in ("Android", "iOS", ".NET") and compile_check_mode != "static"
+                else category["sub_criteria"]
             )
             sub_results, prompt_info = await score_category(
                 llm_provider, category["name"], llm_sub_criteria, sub_criteria_descriptions, code_context,
                 model=ollama_model, platform=platform,
             )
-            if category_id == "1" and compile_check_mode == "compiler":
-                sub_results = _merge_compile_result_into_category_1(sub_results, compile_sub_result)
+            if category_id == "1" and platform in ("Android", "iOS", ".NET") and compile_check_mode != "static":
+                sub_results = _merge_compile_result_into_category_1(sub_results, compile_sub_result, categories)
             scores_by_category[category_id] = aggregate_category_scores(sub_results)
             sub_scores = scores_by_category[category_id]["sub_scores"]
             for sub_entry in state["category_scores"][index]["sub_criteria"]:
@@ -297,6 +358,7 @@ async def get_progress(review_id: str):
         "prompt_log": state.get("prompt_log", []),
         "lint_issues": state.get("lint_issues", []),
         "compile_status": state.get("compile_status"),
+        "source": state.get("source"),
     }
 
 

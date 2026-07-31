@@ -7,6 +7,7 @@ import LlmUsageStats from "../components/LlmUsageStats";
 import PromptDebugLog from "../components/PromptDebugLog";
 import ReportTable from "../components/ReportTable";
 import StatsDisplay from "../components/StatsDisplay";
+import ReviewMetaBar from "../components/ReviewMetaBar";
 import CornerMarks from "../components/CornerMarks";
 import TopNav from "../components/TopNav";
 import { createReview, getOllamaModels } from "../services/api";
@@ -21,8 +22,9 @@ export default function AndroidReviewFlow({ platform = { id: "android", label: "
   const [progressData, setProgressData] = useState(null);
   const [errorMessage, setErrorMessage] = useState("");
   const [bottomView, setBottomView] = useState("report"); // report | debug
+  const [reviewMeta, setReviewMeta] = useState(null); // { llmProvider, llmModel, source, compileCheckMode }
 
-  const handleUpload = useCallback(async (androidZip, excelTemplate) => {
+  const handleUpload = useCallback(async ({ androidZip, excelTemplate, devopsRepoUrl, devopsPat, devopsBranch }) => {
     setState("uploading");
     setErrorMessage("");
     try {
@@ -31,9 +33,16 @@ export default function AndroidReviewFlow({ platform = { id: "android", label: "
       const effectiveProvider = storedProvider === "ollama" && models.length === 0 ? "azure" : storedProvider;
       const effectiveModel = effectiveProvider === "ollama" ? getOllamaModel() : null;
       const compileCheckMode = getCompileCheckMode();
+      setReviewMeta({
+        llmProvider: effectiveProvider,
+        llmModel: effectiveModel,
+        source: devopsRepoUrl ? "devops" : "upload",
+        compileCheckMode,
+      });
 
       const result = await createReview(
-        androidZip, excelTemplate, effectiveProvider, effectiveModel, compileCheckMode, platform.label
+        androidZip, excelTemplate, effectiveProvider, effectiveModel, compileCheckMode, platform.label,
+        devopsRepoUrl, devopsPat, devopsBranch
       );
       if (result.status === "error") {
         setErrorMessage(result.error || "Upload failed");
@@ -63,6 +72,7 @@ export default function AndroidReviewFlow({ platform = { id: "android", label: "
     setReviewId(null);
     setProgressData(null);
     setErrorMessage("");
+    setReviewMeta(null);
   }
 
   const isRunningOrDone = state === "polling" || state === "completed";
@@ -74,17 +84,32 @@ export default function AndroidReviewFlow({ platform = { id: "android", label: "
 
       <main style={{ maxWidth: isRunningOrDone ? 1440 : 920, margin: "0 auto", padding: "var(--space-8) var(--space-4) var(--space-10)" }}>
         <header style={{ marginBottom: "var(--space-6)" }}>
-          <h1 style={{ fontFamily: "var(--font-heading)", fontSize: 38, lineHeight: 1.1, margin: "0 0 var(--space-2)" }}>
-            {progressData?.project_name || "Android Code Review Automation"}
-          </h1>
+          <div style={{ display: "flex", alignItems: "baseline", gap: "var(--space-3)", flexWrap: "wrap", marginBottom: "var(--space-2)" }}>
+            <h1 style={{ fontFamily: "var(--font-heading)", fontSize: 38, lineHeight: 1.1, margin: 0 }}>
+              {progressData?.project_name || `${platform.label} Code Review Automation`}
+            </h1>
+            {reviewMeta && (
+              <ReviewMetaBar
+                llmProvider={reviewMeta.llmProvider}
+                llmModel={reviewMeta.llmModel}
+                source={reviewMeta.source}
+                compileCheckMode={reviewMeta.compileCheckMode}
+              />
+            )}
+          </div>
           <p style={{ margin: 0, opacity: 0.7, maxWidth: "60ch" }}>
-            Upload an Android project and a scoring template. The reviewer analyzes structure, security, tests and
-            dependency versions, scores each category with AI, and hands back a populated workbook.
+            Upload your {platform.label} project and a scoring template. The reviewer analyzes structure, security,
+            tests and dependency versions, scores each category with AI, and hands back a populated workbook.
           </p>
         </header>
 
         {(state === "idle" || state === "uploading") && (
-          <UploadForm onSubmit={handleUpload} disabled={state === "uploading"} showCompileCheckToggle />
+          <UploadForm
+            onSubmit={handleUpload}
+            disabled={state === "uploading"}
+            showCompileCheckToggle
+            platformLabel={platform.label}
+          />
         )}
 
         {isRunningOrDone && reviewId && (

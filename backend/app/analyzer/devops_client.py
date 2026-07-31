@@ -1,0 +1,73 @@
+import json
+import re
+
+import httpx
+
+REPO_URL_RE = re.compile(r"^https://(?:([^@/]+)@)?dev\.azure\.com/([^/]+)/([^/]+)/_git/([^/]+)/?$")
+
+
+def parse_repo_url(url: str) -> dict | None:
+    """Extracts {organization, project, repository, username} from an Azure
+    DevOps repo URL of the form https://dev.azure.com/{org}/{project}/_git/{repo},
+    optionally with a username embedded as https://{username}@dev.azure.com/...
+    (the form Azure DevOps's own "Clone" button and "Generate Git Credentials"
+    flow both produce). username is None when the URL has no embedded
+    username. Returns None if the URL doesn't match this shape at all.
+    """
+    match = REPO_URL_RE.match(url.strip())
+    if not match:
+        return None
+    username, organization, project, repository = match.groups()
+    return {"organization": organization, "project": project, "repository": repository, "username": username}
+
+
+def _extract_error_detail(response: httpx.Response) -> str:
+    """Pulls Azure DevOps's own error text out of a non-2xx response body
+    (it returns {"message": "TF....: ..."} on most API errors), truncated
+    so an unexpectedly large body can't bloat the review's error state.
+    """
+    try:
+        message = json.loads(response.text).get("message", "")
+    except (ValueError, AttributeError):
+        message = response.text
+    return message.strip()[:300]
+
+
+async def fetch_repo_zip(repo_url: str, pat: str, branch: str | None = None) -> dict:
+    """Downloads the given Azure DevOps repo (optionally at a specific branch)
+    as a zip archive via one authenticated GET to the Items REST API -- no
+    git binary needed. Returns {"status": "ok"|"invalid_url"|"unauthorized"|
+    "not_found"|"error", "content": bytes|None, "message": str|None}. The PAT
+    is used only for this one request's Basic auth header -- it never appears
+    in the return value, in an exception message, or in a log line.
+    """
+    parsed = parse_repo_url(repo_url)
+    if parsed is None:
+        return {"status": "invalid_url", "content": None, "message": "Not a recognized Azure DevOps repo URL."}
+
+    url = (
+        f"https://dev.azure.com/{parsed['organization']}/{parsed['project']}"
+        f"/_apis/git/repositories/{parsed['repository']}/items"
+        "?scopePath=/&download=true&$format=zip&api-version=7.0&recursionLevel=full"
+    )
+    if branch:
+        url += f"&versionDescriptor.version={branch}"
+
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.get(url, auth=(parsed["username"] or "", pat))
+        if response.status_code in (401, 403):
+            return {"status": "unauthorized", "content": None, "message": "Invalid PAT or insufficient permissions."}
+        if response.status_code == 404:
+            return {"status": "not_found", "content": None, "message": "Repository or branch not found."}
+        response.raise_for_status()
+        return {"status": "ok", "content": response.content, "message": None}
+    except httpx.HTTPStatusError as exc:
+        detail = _extract_error_detail(exc.response)
+        detail_suffix = f" {detail}" if detail else ""
+        return {
+            "status": "error", "content": None,
+            "message": f"Azure DevOps returned an unexpected response (HTTP {exc.response.status_code}).{detail_suffix}",
+        }
+    except httpx.HTTPError:
+        return {"status": "error", "content": None, "message": "Could not reach Azure DevOps."}

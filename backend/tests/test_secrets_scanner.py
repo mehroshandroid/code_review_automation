@@ -33,6 +33,33 @@ def test_no_findings_in_clean_code(tmp_path: Path):
     assert scan_directory(tmp_path) == []
 
 
+def test_finds_secret_in_swift_file(tmp_path: Path):
+    swift_file = tmp_path / "Constants.swift"
+    swift_file.write_text('let apiKey = "ab12cd34ef56gh78ij90kl12mn34op56"\n')
+    findings = scan_directory(tmp_path)
+    assert len(findings) == 1
+    assert findings[0]["file"] == str(swift_file)
+    assert findings[0]["pattern"] == "api_key"
+
+
+def test_finds_secret_in_appsettings_json(tmp_path: Path):
+    json_file = tmp_path / "appsettings.json"
+    json_file.write_text('{"ApiKey": "ab12cd34ef56gh78ij90kl12mn34op56"}\n')
+    findings = scan_directory(tmp_path)
+    assert len(findings) == 1
+    assert findings[0]["file"] == str(json_file)
+    assert findings[0]["pattern"] == "api_key"
+
+
+def test_finds_secret_in_csharp_file(tmp_path: Path):
+    cs_file = tmp_path / "Constants.cs"
+    cs_file.write_text('public const string ApiKey = "ab12cd34ef56gh78ij90kl12mn34op56";\n')
+    findings = scan_directory(tmp_path)
+    assert len(findings) == 1
+    assert findings[0]["file"] == str(cs_file)
+    assert findings[0]["pattern"] == "api_key"
+
+
 def test_ignores_non_source_extensions(tmp_path: Path):
     binary_like = tmp_path / "notes.txt"
     binary_like.write_text('api_key = "ab12cd34ef56gh78ij90kl12mn34op56"\n')

@@ -78,6 +78,35 @@ test("polls again after 2000ms while status is processing", async () => {
   expect(getProgress).toHaveBeenCalledTimes(2);
 });
 
+test("does not show a downloading step for an upload-sourced review", async () => {
+  getProgress.mockResolvedValue({
+    status: "processing", phase: "extracting", progress: 20, message: "Extracting project files...",
+    stats: {}, download_url: null, error: null, warnings: [], test_coverage: null, secrets_found: [],
+    total_score_pct: null, source: "upload",
+  });
+  render(<ProgressTracker reviewId="abc-123" onUpdate={jest.fn()} />);
+  await act(async () => {
+    await Promise.resolve();
+  });
+
+  expect(screen.queryByText("Downloading code from repository")).not.toBeInTheDocument();
+});
+
+test("shows a downloading step with the live message while fetching for a devops-sourced review", async () => {
+  getProgress.mockResolvedValue({
+    status: "processing", phase: "fetching", progress: 0, message: "Fetching repository from Azure DevOps...",
+    stats: {}, download_url: null, error: null, warnings: [], test_coverage: null, secrets_found: [],
+    total_score_pct: null, source: "devops",
+  });
+  render(<ProgressTracker reviewId="abc-123" onUpdate={jest.fn()} />);
+  await act(async () => {
+    await Promise.resolve();
+  });
+
+  expect(screen.getByText("Downloading code from repository")).toBeInTheDocument();
+  expect(screen.getByText("Fetching repository from Azure DevOps...")).toBeInTheDocument();
+});
+
 test("stops polling once status is completed", async () => {
   getProgress.mockResolvedValue({
     status: "completed", phase: "completed", progress: 100, message: "Done",

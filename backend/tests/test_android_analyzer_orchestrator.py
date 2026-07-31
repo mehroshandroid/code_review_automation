@@ -22,7 +22,7 @@ def test_analyze_project_aggregates_all_findings(tmp_path: Path):
     result = analyze_project(project_dir)
 
     assert result.fatal_error is None
-    assert result.gradle_info["compile_sdk"] == 30
+    assert result.build_info["compile_sdk"] == 30
     assert result.source_stats["java_count"] == 1
     assert result.test_coverage is None
     assert any("compileSdkVersion 30" in w["issue"] for w in result.version_warnings)
@@ -51,9 +51,9 @@ def test_analyze_project_handles_directory_named_build_gradle(tmp_path: Path):
     # Should complete without error
     assert result is not None
     assert result.fatal_error is None
-    # gradle_info should have empty values since the gradle_content was empty
-    assert result.gradle_info["compile_sdk"] is None
-    assert result.gradle_info["target_sdk"] is None
-    assert result.gradle_info["gradle_version"] is None
-    assert result.gradle_info["kotlin_version"] is None
-    assert result.gradle_info["dependencies"] == []
+    # build_info should have empty values since the gradle_content was empty
+    assert result.build_info["compile_sdk"] is None
+    assert result.build_info["target_sdk"] is None
+    assert result.build_info["gradle_version"] is None
+    assert result.build_info["kotlin_version"] is None
+    assert result.build_info["dependencies"] == []
