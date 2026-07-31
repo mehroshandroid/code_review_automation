@@ -11,6 +11,7 @@ services:
       - OPENAI_DEPLOYMENT_NAME=${OPENAI_DEPLOYMENT_NAME:-}
       - AZURE_OPENAI_KEY=${AZURE_OPENAI_KEY:-}
       - COMPILER_SERVICE_URL=http://compiler:8000
+      - DOTNET_COMPILER_SERVICE_URL=http://dotnet-compiler:8000
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
       - OLLAMA_MODEL=qwen2.5-coder:7b
       # mac_build_agent runs natively on the host Mac (never containerized --
@@ -22,6 +23,7 @@ services:
       - MAC_BUILD_AGENT_URL=http://host.docker.internal:8100
     depends_on:
       - compiler
+      - dotnet-compiler
     networks:
       - review-network
 
@@ -46,6 +48,17 @@ services:
     networks:
       - review-network
 
+  dotnet-compiler:
+    build: ./dotnet_compiler
+    volumes:
+      # Persists the NuGet package cache across container recreations --
+      # same rationale as compiler's gradle-cache -- the image only bakes
+      # in the .NET SDK itself, so a project's own package dependencies
+      # would otherwise re-download from nuget.org from scratch every time.
+      - nuget-cache:/root/.nuget/packages
+    networks:
+      - review-network
+
   frontend:
     build:
       context: ./frontend
@@ -64,3 +77,4 @@ networks:
 
 volumes:
   gradle-cache:
+  nuget-cache:
