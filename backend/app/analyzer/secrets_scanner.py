@@ -2,15 +2,21 @@ import re
 from pathlib import Path
 
 SECRET_PATTERNS = {
-    "api_key": re.compile(r'api[_-]?key\s*[:=]\s*["\']?[a-zA-Z0-9_\-]{20,}["\']?', re.IGNORECASE),
+    # The optional ["\']? right after the key name handles JSON's quoted-key
+    # convention (e.g. appsettings.json's "ApiKey": "...") in addition to the
+    # unquoted Java/Kotlin/Groovy style (API_KEY = "...") already supported.
+    "api_key": re.compile(r'api[_-]?key["\']?\s*[:=]\s*["\']?[a-zA-Z0-9_\-]{20,}["\']?', re.IGNORECASE),
     "aws_secret": re.compile(
-        r'aws[_-]?secret[_-]?(access[_-]?)?key\s*[:=]\s*["\']?[a-zA-Z0-9/+=]{20,}["\']?', re.IGNORECASE
+        r'aws[_-]?secret[_-]?(access[_-]?)?key["\']?\s*[:=]\s*["\']?[a-zA-Z0-9/+=]{20,}["\']?', re.IGNORECASE
     ),
-    "generic_token": re.compile(r'(token|secret|password)\s*[:=]\s*["\'][a-zA-Z0-9_\-]{20,}["\']', re.IGNORECASE),
+    "generic_token": re.compile(r'(token|secret|password)["\']?\s*[:=]\s*["\'][a-zA-Z0-9_\-]{20,}["\']', re.IGNORECASE),
     "firebase_key": re.compile(r'"key"\s*:\s*"AIza[0-9a-zA-Z_\-]{35}"'),
 }
 
-SCAN_EXTENSIONS = {".java", ".kt", ".xml", ".properties", ".gradle", ".kts", ".swift", ".m", ".h", ".mm", ".plist"}
+SCAN_EXTENSIONS = {
+    ".java", ".kt", ".xml", ".properties", ".gradle", ".kts", ".swift", ".m", ".h", ".mm", ".plist",
+    ".cs", ".config", ".json",
+}
 
 
 def scan_file(file_path: Path) -> list:
