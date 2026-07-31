@@ -668,9 +668,11 @@ async def test_run_review_removes_work_dir_on_unexpected_exception(monkeypatch):
 
 
 async def test_run_review_unsupported_platform_skips_compile_check_entirely(monkeypatch):
-    # Android and iOS both have their own compile-check path now; a
-    # platform with neither (e.g. .NET, not yet supported) must still get
-    # compile_status=None ("not applicable"), not attempt either checker.
+    # Android, iOS, and .NET all have their own analyzer/compile-check
+    # story now; a platform with none of those (e.g. Web (React), not yet
+    # supported) must still get compile_status=None ("not applicable"),
+    # not attempt either checker, and fall back to android_analyzer for
+    # its (unused-for-scoring) structural analysis pass.
     review_id = "unsupported-platform-compile-check-skip"
     work_dir = Path(tempfile.mkdtemp(prefix=f"review_{review_id}_"))
     zip_path = work_dir / "android.zip"
@@ -700,7 +702,7 @@ async def test_run_review_unsupported_platform_skips_compile_check_entirely(monk
 
     await _run_review(
         review_id, work_dir, zip_path, template_path, zip_valid=True, template_valid=True, project_name="Test",
-        platform=".NET",
+        platform="Web (React)",
     )
 
     assert compile_check_called == []
@@ -892,3 +894,36 @@ async def test_run_review_android_local_mode_uses_local_checker_not_docker(monke
     sub_1_4 = next(s for s in category_1["sub_criteria"] if s["id"] == "1.4")
     assert sub_1_4["score"] == 0
     assert sub_1_4["remark"] == "2 Lint warning(s)/error(s) found."
+
+
+async def test_run_review_uses_dotnet_analyzer_for_dotnet_platform(monkeypatch):
+    monkeypatch.delenv("AZURE_OPENAI_KEY", raising=False)
+    review_id = "dotnet-analyzer-dispatch-check"
+    work_dir = Path(tempfile.mkdtemp(prefix=f"review_{review_id}_"))
+    zip_path = work_dir / "android.zip"
+    template_path = work_dir / "template.xlsx"
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as zf:
+        zf.writestr("MyApp.sln", "stub")
+        zf.writestr(
+            "MyApp/MyApp.csproj",
+            "<Project><PropertyGroup><TargetFramework>net8.0</TargetFramework></PropertyGroup></Project>",
+        )
+        zf.writestr("MyApp/Program.cs", "class Program {}")
+    zip_path.write_bytes(buffer.getvalue())
+    template_path.write_bytes(_build_xlsx_bytes())
+
+    _reviews[review_id] = _new_review_state()
+
+    await _run_review(
+        review_id, work_dir, zip_path, template_path, zip_valid=True, template_valid=True, project_name="MyApp",
+        platform=".NET",
+    )
+
+    state = _reviews[review_id]
+    assert state["status"] == "completed"
+    assert "Program.cs" in state["code_context"]
+    # No compile-check support for .NET yet -- "not applicable", same as
+    # every other platform without one.
+    assert state["compile_status"] is None

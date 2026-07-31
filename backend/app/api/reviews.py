@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse
 from openpyxl import load_workbook
 from starlette.background import BackgroundTask
 
-from app.analyzer import android_analyzer, ios_analyzer
+from app.analyzer import android_analyzer, dotnet_analyzer, ios_analyzer
 from app.analyzer.android_local_checker import check_android_local_warnings
 from app.analyzer.compile_checker import check_compile_warnings
 from app.analyzer.devops_client import fetch_repo_zip, parse_repo_url
@@ -200,7 +200,12 @@ async def _run_review(
         t1 = time.monotonic()
         state["phase"] = "analyzing"
         state["message"] = "Analyzing project structure..."
-        analyzer = ios_analyzer if platform == "iOS" else android_analyzer
+        if platform == "iOS":
+            analyzer = ios_analyzer
+        elif platform == ".NET":
+            analyzer = dotnet_analyzer
+        else:
+            analyzer = android_analyzer
         analysis = analyzer.analyze_project(extract_dir)
         if analysis.fatal_error:
             state["status"] = "error"

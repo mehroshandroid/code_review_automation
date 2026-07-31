@@ -274,9 +274,11 @@ async def test_full_review_pipeline_from_devops_source(monkeypatch):
 
 
 async def test_full_review_pipeline_unsupported_platform_skips_compile_check(monkeypatch):
-    # Android and iOS both have their own compile-check path now; a
-    # platform with neither (e.g. .NET, not yet supported) must still get
-    # compile_status=None ("not applicable"), not attempt either checker.
+    # Android, iOS, and .NET all have their own analyzer/compile-check
+    # story now; a platform with none of those (e.g. Web (React), not yet
+    # supported) must still get compile_status=None ("not applicable"),
+    # not attempt either checker, and fall back to android_analyzer for
+    # its (unused-for-scoring) structural analysis pass.
     monkeypatch.delenv("AZURE_OPENAI_KEY", raising=False)
 
     async def _fail_if_called(zip_path_arg):
@@ -295,7 +297,7 @@ async def test_full_review_pipeline_unsupported_platform_skips_compile_check(mon
                     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 ),
             },
-            data={"platform": ".NET"},
+            data={"platform": "Web (React)"},
         )
         assert create_response.status_code == 200
         review_id = create_response.json()["review_id"]
