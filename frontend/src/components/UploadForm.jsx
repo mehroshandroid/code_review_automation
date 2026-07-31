@@ -155,7 +155,7 @@ export default function UploadForm({ onSubmit, disabled, disabledLabel = "Starti
               disabled={disabled}
               onClick={() => handleSelectMode("compiler")}
             >
-              {platformLabel === "Android" ? "Compile-time lint (Docker)" : "Compile-time lint"}
+              {platformLabel === "Android" || platformLabel === ".NET" ? "Compile-time lint (Docker)" : "Compile-time lint"}
             </button>
             {platformLabel === "Android" && (
               <button

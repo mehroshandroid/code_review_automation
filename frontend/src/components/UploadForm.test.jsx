@@ -100,6 +100,12 @@ test("does not show the local build option, or the (Docker) suffix, for a non-An
   expect(screen.queryByRole("button", { name: "Compile-time lint (local)" })).not.toBeInTheDocument();
 });
 
+test("shows the (Docker) suffix but not the local build option for .NET", () => {
+  render(<UploadForm onSubmit={jest.fn()} disabled={false} showCompileCheckToggle platformLabel=".NET" />);
+  expect(screen.getByRole("button", { name: "Compile-time lint (Docker)" })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Compile-time lint (local)" })).not.toBeInTheDocument();
+});
+
 test("selecting Static file analysis persists the choice and highlights it", async () => {
   const user = userEvent.setup();
   render(<UploadForm onSubmit={jest.fn()} disabled={false} showCompileCheckToggle />);
