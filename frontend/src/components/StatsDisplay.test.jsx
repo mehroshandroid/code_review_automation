@@ -6,6 +6,7 @@ const baseProps = {
   totalScorePct: 78,
   warnings: [],
   secretsFound: [],
+  lintIssues: [],
   stats: {},
   downloadUrl: "/api/reviews/abc-123/download",
   onReset: () => {},
@@ -82,6 +83,38 @@ test("clicking the warnings tag opens a dialog listing every warning", async () 
 
   expect(screen.getByText("Missing AndroidManifest.xml")).toBeInTheDocument();
   expect(screen.getByText("Unused dependency: guava")).toBeInTheDocument();
+});
+
+test("combines structural warnings and lint issues into one warnings count and popup", async () => {
+  const user = userEvent.setup();
+  render(
+    <StatsDisplay
+      {...baseProps}
+      warnings={["Missing AndroidManifest.xml"]}
+      lintIssues={[{ severity: "Warning", message: "Possible null reference", file: "Program.cs", line: 15 }]}
+    />
+  );
+
+  // 1 structural warning + 1 lint issue -- shown as one combined count, not two separate tags.
+  await user.click(screen.getByRole("button", { name: "2 warnings" }));
+
+  expect(screen.getByText("Missing AndroidManifest.xml")).toBeInTheDocument();
+  expect(screen.getByText("Program.cs:15 (Warning): Possible null reference")).toBeInTheDocument();
+});
+
+test("counts only lint issues toward the warnings tag when there are no structural warnings", async () => {
+  const user = userEvent.setup();
+  render(
+    <StatsDisplay
+      {...baseProps}
+      lintIssues={[
+        { severity: "Warning", message: "Possible null reference", file: "Program.cs", line: 15 },
+        { severity: "Error", message: "Unresolved reference", file: "Startup.cs", line: 3 },
+      ]}
+    />
+  );
+
+  expect(screen.getByRole("button", { name: "2 warnings" })).toBeInTheDocument();
 });
 
 test("renders every item in a large warnings list -- the dialog scrolls, it doesn't truncate", async () => {

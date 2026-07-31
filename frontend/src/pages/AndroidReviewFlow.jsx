@@ -136,6 +136,7 @@ export default function AndroidReviewFlow({ platform = { id: "android", label: "
                       totalScorePct={progressData.total_score_pct}
                       warnings={progressData.warnings}
                       secretsFound={progressData.secrets_found}
+                      lintIssues={progressData.lint_issues}
                       stats={progressData.stats}
                       downloadUrl={progressData.download_url}
                       onReset={handleReset}

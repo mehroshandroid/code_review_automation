@@ -27,11 +27,16 @@ const TAG_BUTTON_RESET = {
   cursor: "pointer",
 };
 
-export default function StatsDisplay({ totalScorePct, warnings, secretsFound, stats, downloadUrl, onReset }) {
+export default function StatsDisplay({ totalScorePct, warnings, secretsFound, lintIssues, stats, downloadUrl, onReset }) {
   const [activeDialog, setActiveDialog] = useState(null);
   const rows = TIMING_ROWS.filter((row) => stats[row.key] !== undefined);
 
-  const hasWarnings = warnings.length > 0;
+  // Structural warnings and compile-time lint issues are both just
+  // "warnings" from the user's perspective, so they're combined into one
+  // count and one popup here rather than split across two tags.
+  const lintIssuesList = lintIssues || [];
+  const warningsCount = warnings.length + lintIssuesList.length;
+  const hasWarnings = warningsCount > 0;
   const hasSecrets = secretsFound.length > 0;
 
   return (
@@ -52,10 +57,10 @@ export default function StatsDisplay({ totalScorePct, warnings, secretsFound, st
               style={TAG_BUTTON_RESET}
               onClick={() => setActiveDialog("warnings")}
             >
-              {warnings.length} warnings
+              {warningsCount} warnings
             </button>
           ) : (
-            <span className="tag tag-outline">{warnings.length} warnings</span>
+            <span className="tag tag-outline">{warningsCount} warnings</span>
           )}
           {hasSecrets ? (
             <button
@@ -118,7 +123,10 @@ export default function StatsDisplay({ totalScorePct, warnings, secretsFound, st
             <div className="dialog-title">Warnings</div>
             <ul className="dialog-body" style={{ paddingLeft: "1.1em", fontSize: 13 }}>
               {warnings.map((warning, index) => (
-                <li key={index}>{warning}</li>
+                <li key={`structural-${index}`}>{warning}</li>
+              ))}
+              {lintIssuesList.map((issue, index) => (
+                <li key={`lint-${index}`}>{issue.file}:{issue.line} ({issue.severity}): {issue.message}</li>
               ))}
             </ul>
             <div className="dialog-actions">
