@@ -75,3 +75,20 @@ def compare_ios_versions(build_info: dict) -> list:
         )
 
     return warnings
+
+
+DOTNET_LATEST_VERSIONS = {
+    "target_framework": (8, 0),
+}
+
+
+def compare_dotnet_versions(build_info: dict) -> list:
+    warnings = []
+
+    target_framework = _parse_version_tuple(build_info.get("target_framework"))
+    if target_framework is not None and target_framework < DOTNET_LATEST_VERSIONS["target_framework"]:
+        warnings.append(
+            {"issue": f"Target framework {build_info.get('target_framework')} is outdated, latest is net8.0+"}
+        )
+
+    return warnings
