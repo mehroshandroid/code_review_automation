@@ -14,7 +14,11 @@ from app.analyzer.llm_prompts import (
 
 DEFAULT_OLLAMA_BASE_URL = "http://host.docker.internal:11434"
 DEFAULT_OLLAMA_MODEL = "qwen2.5-coder:7b"
-TIMEOUT_SECONDS = 120.0
+# Local hardware varies a lot more than a hosted API -- a 7B model on a
+# laptop CPU/GPU can genuinely take several minutes for a category with a
+# large code-context prompt, especially on a cold start.
+TIMEOUT_SECONDS = 300.0
+MAX_ATTEMPTS = 2
 
 
 def _base_url() -> str:
@@ -42,14 +46,19 @@ def _extract_usage(response) -> dict:
 
 
 async def _post(payload: dict):
+    # A single retry on a transient connection error or timeout -- a local
+    # model occasionally running slow for one request shouldn't permanently
+    # zero out that category's score (see MAX_ATTEMPTS usage below).
     url = f"{_base_url()}/v1/chat/completions"
-    try:
-        async with httpx.AsyncClient(timeout=TIMEOUT_SECONDS) as client:
-            response = await client.post(url, json=payload)
-            response.raise_for_status()
-            return response
-    except (httpx.HTTPError, OSError):
-        return None
+    for attempt in range(MAX_ATTEMPTS):
+        try:
+            async with httpx.AsyncClient(timeout=TIMEOUT_SECONDS) as client:
+                response = await client.post(url, json=payload)
+                response.raise_for_status()
+                return response
+        except (httpx.HTTPError, OSError):
+            if attempt == MAX_ATTEMPTS - 1:
+                return None
 
 
 async def score_category(

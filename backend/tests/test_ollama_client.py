@@ -93,8 +93,10 @@ async def test_score_category_defaults_platform_to_android(monkeypatch):
 @pytest.mark.asyncio
 async def test_score_category_falls_back_on_connection_error(monkeypatch):
     monkeypatch.setenv("OLLAMA_BASE_URL", "http://fake-ollama:11434")
+    call_count = {"n": 0}
 
     async def fake_post(self, url, json=None):
+        call_count["n"] += 1
         raise httpx.ConnectError("connection refused", request=httpx.Request("POST", url))
 
     monkeypatch.setattr(httpx.AsyncClient, "post", fake_post)
@@ -108,6 +110,34 @@ async def test_score_category_falls_back_on_connection_error(monkeypatch):
     assert prompt_info["tokens"] == {
         "prompt_tokens": None, "completion_tokens": None, "total_tokens": None, "cached_tokens": None,
     }
+    # Falls back only after a retry -- not on the very first failure.
+    assert call_count["n"] == 2
+
+
+@pytest.mark.asyncio
+async def test_score_category_retries_once_after_a_transient_timeout_before_falling_back(monkeypatch):
+    # A local LLM occasionally taking longer than TIMEOUT_SECONDS for one
+    # category (slower hardware, a bigger prompt, model cold-start) used to
+    # silently score that category None forever -- indistinguishable from
+    # "not scored yet" in the UI. A single retry recovers from exactly this
+    # kind of transient, one-off timeout instead of giving up immediately.
+    monkeypatch.setenv("OLLAMA_BASE_URL", "http://fake-ollama:11434")
+    call_count = {"n": 0}
+
+    async def fake_post(self, url, json=None):
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            raise httpx.ConnectTimeout("timed out", request=httpx.Request("POST", url))
+        content = '{"1.1": {"score": 1, "remark": "Recovered after retry"}}'
+        request = httpx.Request("POST", url)
+        return httpx.Response(status_code=200, json={"choices": [{"message": {"content": content}}]}, request=request)
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", fake_post)
+
+    result, _ = await ollama_client.score_category("Code Structure", ["1.1"], {}, "code here")
+
+    assert result == {"1.1": {"score": 1, "remark": "Recovered after retry"}}
+    assert call_count["n"] == 2
 
 
 @pytest.mark.asyncio
