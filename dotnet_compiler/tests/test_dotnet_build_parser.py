@@ -38,3 +38,30 @@ def test_count_warnings_only_counts_warning_and_error_severity():
         {"severity": "Error", "message": "b", "file": "f", "line": 2},
     ]
     assert count_warnings(issues) == 2
+
+
+def test_parse_build_output_deduplicates_diagnostics_dotnet_build_echoes_twice():
+    # Real `dotnet build` output prints each diagnostic once inline during
+    # compilation, then again in the end-of-build summary section -- the
+    # same line, verbatim, twice. Without deduplication this doubles every
+    # real warning/error count.
+    build_output = """
+Restore complete (1.2s)
+/src/MyApp/Program.cs(10,5): warning CS0168: The variable 'e' is declared but never used [/src/MyApp/MyApp.csproj]
+Build succeeded.
+
+/src/MyApp/Program.cs(10,5): warning CS0168: The variable 'e' is declared but never used [/src/MyApp/MyApp.csproj]
+    1 Warning(s)
+    0 Error(s)
+"""
+
+    issues = parse_build_output(build_output)
+
+    assert issues == [
+        {
+            "severity": "Warning",
+            "message": "The variable 'e' is declared but never used",
+            "file": "/src/MyApp/Program.cs",
+            "line": 10,
+        },
+    ]
