@@ -26,9 +26,14 @@ test("routes an available non-Android platform (iOS) to the real review flow too
   expect(screen.getByTestId("real-flow")).toHaveTextContent("iOS");
 });
 
-test("routes an unavailable platform to the placeholder", () => {
+test("routes an available non-Android platform (.NET) to the real review flow too", () => {
   renderAt("/review/dotnet");
-  expect(screen.getByTestId("placeholder-flow")).toHaveTextContent(".NET");
+  expect(screen.getByTestId("real-flow")).toHaveTextContent(".NET");
+});
+
+test("routes an unavailable platform to the placeholder", () => {
+  renderAt("/review/web");
+  expect(screen.getByTestId("placeholder-flow")).toHaveTextContent("Web (React)");
 });
 
 test("redirects to home for an unknown platform id", () => {
