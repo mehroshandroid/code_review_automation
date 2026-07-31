@@ -7,6 +7,7 @@ import LlmUsageStats from "../components/LlmUsageStats";
 import PromptDebugLog from "../components/PromptDebugLog";
 import ReportTable from "../components/ReportTable";
 import StatsDisplay from "../components/StatsDisplay";
+import ReviewMetaBar from "../components/ReviewMetaBar";
 import CornerMarks from "../components/CornerMarks";
 import TopNav from "../components/TopNav";
 import { createReview, getOllamaModels } from "../services/api";
@@ -21,6 +22,7 @@ export default function AndroidReviewFlow({ platform = { id: "android", label: "
   const [progressData, setProgressData] = useState(null);
   const [errorMessage, setErrorMessage] = useState("");
   const [bottomView, setBottomView] = useState("report"); // report | debug
+  const [reviewMeta, setReviewMeta] = useState(null); // { llmProvider, llmModel, source, compileCheckMode }
 
   const handleUpload = useCallback(async ({ androidZip, excelTemplate, devopsRepoUrl, devopsPat, devopsBranch }) => {
     setState("uploading");
@@ -31,6 +33,12 @@ export default function AndroidReviewFlow({ platform = { id: "android", label: "
       const effectiveProvider = storedProvider === "ollama" && models.length === 0 ? "azure" : storedProvider;
       const effectiveModel = effectiveProvider === "ollama" ? getOllamaModel() : null;
       const compileCheckMode = getCompileCheckMode();
+      setReviewMeta({
+        llmProvider: effectiveProvider,
+        llmModel: effectiveModel,
+        source: devopsRepoUrl ? "devops" : "upload",
+        compileCheckMode,
+      });
 
       const result = await createReview(
         androidZip, excelTemplate, effectiveProvider, effectiveModel, compileCheckMode, platform.label,
@@ -64,6 +72,7 @@ export default function AndroidReviewFlow({ platform = { id: "android", label: "
     setReviewId(null);
     setProgressData(null);
     setErrorMessage("");
+    setReviewMeta(null);
   }
 
   const isRunningOrDone = state === "polling" || state === "completed";
@@ -95,6 +104,14 @@ export default function AndroidReviewFlow({ platform = { id: "android", label: "
 
         {isRunningOrDone && reviewId && (
           <>
+            {reviewMeta && (
+              <ReviewMetaBar
+                llmProvider={reviewMeta.llmProvider}
+                llmModel={reviewMeta.llmModel}
+                source={reviewMeta.source}
+                compileCheckMode={reviewMeta.compileCheckMode}
+              />
+            )}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "var(--space-5)" }}>
               <div>
                 {state === "polling" && (

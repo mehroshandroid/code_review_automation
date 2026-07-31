@@ -251,6 +251,28 @@ test("shows the given platform's label in the header and zip picker before any p
   expect(screen.getByLabelText(/ios project/i)).toBeInTheDocument();
 });
 
+test("shows a meta bar summarizing LLM provider, source, and compile-check mode once the review starts", async () => {
+  const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+  createReview.mockResolvedValue({ review_id: "abc-123", status: "processing" });
+  getProgress.mockResolvedValue({
+    status: "processing", phase: "extracting", progress: 20, message: "Extracting...",
+    stats: {}, download_url: null, error: null, warnings: [], test_coverage: null, secrets_found: [],
+    total_score_pct: null, project_name: null, category_scores: [], code_context: null, prompt_log: [],
+    lint_issues: [], compile_status: null, source: "upload",
+  });
+
+  renderFlow();
+  await act(async () => {
+    await uploadValidFiles(user);
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+
+  expect(screen.getByText(/Azure OpenAI/)).toBeInTheDocument();
+  expect(screen.getByText(/Uploaded ZIP/)).toBeInTheDocument();
+  expect(screen.getByText(/Compile-check: Docker/)).toBeInTheDocument();
+});
+
 test("sends the platform label from a custom platform prop instead of the default", async () => {
   const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
   createReview.mockResolvedValue({ review_id: "abc-123", status: "processing" });
