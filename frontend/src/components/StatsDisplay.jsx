@@ -1,5 +1,4 @@
 import { useState } from "react";
-import CornerMarks from "./CornerMarks";
 import { DownloadIcon } from "../icons";
 import { getDownloadUrl } from "../services/api";
 
@@ -41,10 +40,9 @@ export default function StatsDisplay({ totalScorePct, warnings, secretsFound, li
 
   return (
     <div>
-      <div className="card blueprint elev-md" style={{ padding: "var(--space-6)" }}>
-        <CornerMarks />
+      <div className="card elev-md" style={{ padding: 32 }}>
         <div className="card-kicker">Complete</div>
-        <div className="card-title" style={{ fontSize: 20 }}>Review ready</div>
+        <div className="card-title" style={{ fontSize: 22 }}>Review ready</div>
         <p className="card-body">Scores were written into your template with the original formatting preserved.</p>
         <div style={{ display: "flex", gap: "var(--space-3)", marginTop: "var(--space-4)", flexWrap: "wrap" }}>
           {totalScorePct !== null && totalScorePct !== undefined && (
@@ -78,17 +76,16 @@ export default function StatsDisplay({ totalScorePct, warnings, secretsFound, li
         <a
           href={getDownloadUrl(downloadUrl)}
           download
-          className="btn btn-primary btn-block blueprint"
+          className="btn btn-primary btn-block"
           style={{ marginTop: "var(--space-5)" }}
         >
-          <CornerMarks />
           Download populated workbook
           <DownloadIcon />
         </a>
         <button
           type="button"
-          className="btn"
-          style={{ marginTop: "var(--space-3)" }}
+          className="btn btn-block"
+          style={{ marginTop: "var(--space-3)", color: "var(--color-accent)" }}
           onClick={() => setActiveDialog("performance")}
         >
           Performance breakdown

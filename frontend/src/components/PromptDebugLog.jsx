@@ -1,5 +1,4 @@
 import { useState } from "react";
-import CornerMarks from "./CornerMarks";
 
 function tokenSummary(tokens) {
   if (!tokens) return "";
@@ -16,17 +15,15 @@ export default function PromptDebugLog({ codeContext, promptLog }) {
   const [codeOpen, setCodeOpen] = useState(false);
 
   return (
-    <div className="card blueprint" style={{ padding: "var(--space-4)", maxHeight: 420, overflowY: "auto" }}>
-      <CornerMarks />
-      <div className="card-kicker">Debug</div>
-      <div className="card-title" style={{ fontSize: 20 }}>Prompts &amp; token usage</div>
+    <div className="card" style={{ padding: 20, maxHeight: 420, overflowY: "auto" }}>
+      <div className="card-title" style={{ fontSize: 18 }}>Prompts &amp; token usage</div>
 
       <button
         type="button"
-        className="card-body"
         style={{
           textAlign: "left", background: "none", border: "none", padding: 0,
-          cursor: "pointer", font: "inherit", marginTop: "var(--space-3)",
+          cursor: "pointer", font: "inherit", fontSize: 13, color: "var(--color-accent)",
+          marginTop: "var(--space-3)",
         }}
         onClick={() => setCodeOpen((open) => !open)}
       >

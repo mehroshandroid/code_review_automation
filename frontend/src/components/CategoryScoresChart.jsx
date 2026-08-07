@@ -1,5 +1,4 @@
 import { Bar, BarChart, Cell, LabelList, Tooltip, XAxis, YAxis } from "recharts";
-import CornerMarks from "./CornerMarks";
 
 const ROW_HEIGHT = 40;
 const CHART_WIDTH = 820;
@@ -25,9 +24,9 @@ function CategoryTooltip({ active, payload }) {
   if (!active || !payload || !payload.length) return null;
   const entry = payload[0].payload;
   return (
-    <div className="card blueprint" style={{ padding: "var(--space-2) var(--space-3)", background: "var(--color-bg)" }}>
+    <div className="card elev-sm" style={{ padding: "var(--space-2) var(--space-3)" }}>
       <div style={{ fontSize: 12, fontWeight: 600 }}>{entry.name}</div>
-      <div style={{ fontSize: 12 }}>{isPending(entry) ? "Not yet scored" : `${entry.percent_points}%`}</div>
+      <div style={{ fontSize: 12, color: "var(--color-text-muted)" }}>{isPending(entry) ? "Not yet scored" : `${entry.percent_points}%`}</div>
     </div>
   );
 }
@@ -36,9 +35,8 @@ export default function CategoryScoresChart({ categoryScores }) {
   const data = categoryScores.map((entry) => ({ ...entry, value: entry.percent_points ?? 0 }));
 
   return (
-    <div className="card blueprint" style={{ padding: "var(--space-4)" }}>
-      <CornerMarks />
-      <div className="card-kicker">Category scores</div>
+    <div className="card card-subtle" style={{ padding: 20 }}>
+      <div className="card-kicker-muted" style={{ marginBottom: "var(--space-3)" }}>Category scores</div>
       <BarChart
         width={CHART_WIDTH}
         height={data.length * ROW_HEIGHT + CHART_MARGIN.top + CHART_MARGIN.bottom}
@@ -56,7 +54,7 @@ export default function CategoryScoresChart({ categoryScores }) {
           {data.map((entry) => (
             <Cell
               key={entry.id}
-              fill={isPending(entry) ? "color-mix(in srgb, var(--color-text) 10%, transparent)" : "var(--color-accent)"}
+              fill={isPending(entry) ? "var(--color-divider)" : "var(--color-accent)"}
             />
           ))}
           <LabelList content={(props) => <ValueLabel {...props} data={data} />} />

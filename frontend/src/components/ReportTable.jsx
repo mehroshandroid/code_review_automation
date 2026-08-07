@@ -1,5 +1,3 @@
-import CornerMarks from "./CornerMarks";
-
 function scoreLabel(score) {
   if (score === 1) return "Meets";
   if (score === 0) return "Fails";
@@ -8,11 +6,10 @@ function scoreLabel(score) {
 
 export default function ReportTable({ categoryScores }) {
   return (
-    <div style={{ display: "grid", gap: "var(--space-6)" }}>
+    <div style={{ display: "grid", gap: "var(--space-4)" }}>
       {categoryScores.map((category) => (
-        <div key={category.id} className="card blueprint" style={{ padding: "var(--space-4)" }}>
-          <CornerMarks />
-          <div className="card-title" style={{ fontSize: 17, display: "flex", alignItems: "center", gap: "var(--space-3)" }}>
+        <div key={category.id} className="card" style={{ padding: 20 }}>
+          <div className="card-title" style={{ fontSize: 16, display: "flex", alignItems: "center", gap: "var(--space-3)" }}>
             {category.name}
             {category.percent_points !== null && category.percent_points !== undefined && (
               <span className="tag tag-accent">{category.percent_points}%</span>

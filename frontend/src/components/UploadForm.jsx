@@ -1,5 +1,4 @@
 import { useState } from "react";
-import CornerMarks from "./CornerMarks";
 import { FileIcon, ArrowRightIcon } from "../icons";
 import { getCompileCheckMode, setCompileCheckMode } from "../services/compileCheckModeStorage";
 
@@ -47,8 +46,7 @@ export default function UploadForm({ onSubmit, disabled, disabledLabel = "Starti
     !!excelTemplate && (sourceMode === "upload" ? !!androidZip : !!devopsRepoUrl && !!devopsPat);
 
   return (
-    <form onSubmit={handleSubmit} className="card blueprint elev-md" style={{ padding: "var(--space-6)" }}>
-      <CornerMarks />
+    <form onSubmit={handleSubmit} className="card elev-md" style={{ padding: 32 }}>
       <div className="card-kicker">Step 1 of 2</div>
       <div className="card-title" style={{ fontSize: 20 }}>Upload project files</div>
       <p className="card-body">Both a project source and a template are required to start a review.</p>
@@ -76,9 +74,9 @@ export default function UploadForm({ onSubmit, disabled, disabledLabel = "Starti
         {sourceMode === "upload" ? (
           <div className="field">
             <label htmlFor="androidZip">{platformLabel} project (.zip)</label>
-            <label className="input" style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", cursor: "pointer" }}>
+            <label className="dropzone">
               <FileIcon />
-              {androidZip ? <span>{androidZip.name}</span> : <span style={{ opacity: 0.55 }}>Choose ZIP file…</span>}
+              {androidZip ? <span style={{ fontSize: 14 }}>{androidZip.name}</span> : <span style={{ fontSize: 14, color: "var(--color-text-faint)" }}>Choose ZIP file…</span>}
               <input
                 id="androidZip"
                 type="file"
@@ -130,9 +128,9 @@ export default function UploadForm({ onSubmit, disabled, disabledLabel = "Starti
         )}
         <div className="field">
           <label htmlFor="excelTemplate">Scoring template (.xlsx)</label>
-          <label className="input" style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", cursor: "pointer" }}>
+          <label className="dropzone">
             <FileIcon />
-            {excelTemplate ? <span>{excelTemplate.name}</span> : <span style={{ opacity: 0.55 }}>Choose Excel file…</span>}
+            {excelTemplate ? <span style={{ fontSize: 14 }}>{excelTemplate.name}</span> : <span style={{ fontSize: 14, color: "var(--color-text-faint)" }}>Choose Excel file…</span>}
             <input
               id="excelTemplate"
               type="file"
@@ -179,15 +177,14 @@ export default function UploadForm({ onSubmit, disabled, disabledLabel = "Starti
         </div>
       )}
 
-      {validationError && <p className="card-body" style={{ color: "#b3261e" }}>{validationError}</p>}
+      {validationError && <p className="card-body" style={{ color: "var(--color-brand-coral)" }}>{validationError}</p>}
 
       <button
         type="submit"
-        className="btn btn-primary btn-block blueprint"
+        className="btn btn-primary btn-block"
         style={{ marginTop: "var(--space-5)" }}
         disabled={disabled || !canStart}
       >
-        <CornerMarks />
         {disabled ? disabledLabel : "Start review"}
         <ArrowRightIcon />
       </button>

@@ -1,23 +1,21 @@
 import { useState } from "react";
-import CornerMarks from "./CornerMarks";
 
 function FindingCard({ kicker, value, caption, expandable, expanded, onToggle, children }) {
   return (
-    <div className="card blueprint" style={{ padding: "var(--space-4)" }}>
-      <CornerMarks />
-      <div className="card-kicker">{kicker}</div>
-      <div className="card-title" style={{ fontSize: 32 }}>{value}</div>
+    <div className="card card-subtle" style={{ borderRadius: 14, padding: 18 }}>
+      <div className="card-kicker-muted">{kicker}</div>
+      <div style={{ fontFamily: "var(--font-heading)", fontWeight: "var(--font-heading-weight)", fontSize: 28, margin: "6px 0" }}>{value}</div>
       {expandable ? (
         <button
           type="button"
           className="card-body"
-          style={{ textAlign: "left", background: "none", border: "none", padding: 0, cursor: "pointer", font: "inherit" }}
+          style={{ textAlign: "left", background: "none", border: "none", padding: 0, cursor: "pointer", font: "inherit", fontSize: 13 }}
           onClick={onToggle}
         >
           {caption}
         </button>
       ) : (
-        <p className="card-body">{caption}</p>
+        <p className="card-body" style={{ fontSize: 13 }}>{caption}</p>
       )}
       {expanded && children}
     </div>
@@ -68,7 +66,7 @@ export default function FindingsPanel({ warnings, testCoverage, secretsFound, li
         expanded={warningsOpen}
         onToggle={() => setWarningsOpen((open) => !open)}
       >
-        <ul style={{ margin: "var(--space-2) 0 0", paddingLeft: "1.1em", fontSize: 13 }}>
+        <ul style={{ margin: "8px 0 0", paddingLeft: 18, fontSize: 12, color: "var(--color-text-muted)" }}>
           {warnings.map((warning, index) => (
             <li key={index}>{warning}</li>
           ))}
@@ -90,7 +88,7 @@ export default function FindingsPanel({ warnings, testCoverage, secretsFound, li
         expanded={secretsOpen}
         onToggle={() => setSecretsOpen((open) => !open)}
       >
-        <ul style={{ margin: "var(--space-2) 0 0", paddingLeft: "1.1em", fontSize: 13 }}>
+        <ul style={{ margin: "8px 0 0", paddingLeft: 18, fontSize: 12, color: "var(--color-text-muted)" }}>
           {secretsFound.map((secret, index) => (
             <li key={index}>{secret.file}:{secret.line} ({secret.pattern})</li>
           ))}
@@ -105,7 +103,7 @@ export default function FindingsPanel({ warnings, testCoverage, secretsFound, li
         expanded={lintOpen}
         onToggle={() => setLintOpen((open) => !open)}
       >
-        <ul style={{ margin: "var(--space-2) 0 0", paddingLeft: "1.1em", fontSize: 13 }}>
+        <ul style={{ margin: "8px 0 0", paddingLeft: 18, fontSize: 12, color: "var(--color-text-muted)" }}>
           {(lintIssues || []).map((issue, index) => (
             <li key={index}>{issue.file}:{issue.line} ({issue.severity}): {issue.message}</li>
           ))}

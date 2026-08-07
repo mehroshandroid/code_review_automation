@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { getProgress } from "../services/api";
-import CornerMarks from "./CornerMarks";
 import { CheckCircleIcon, SpinnerIcon, CircleIcon } from "../icons";
 
 const POLL_INTERVAL_MS = 2000;
@@ -52,21 +51,20 @@ export default function ProgressTracker({ reviewId, onUpdate }) {
   const currentIndex = stepIndexForPhase(steps, phase);
 
   return (
-    <div className="card blueprint elev-md" style={{ padding: "var(--space-6)" }}>
-      <CornerMarks />
+    <div className="card elev-md" style={{ padding: 32 }}>
       <div className="card-kicker">Step 2 of 2</div>
-      <div className="card-title" style={{ fontSize: 20 }}>Reviewing your project</div>
-      <div style={{ display: "grid", gap: "var(--space-3)", marginTop: "var(--space-5)" }}>
+      <div className="card-title" style={{ fontSize: 22 }}>Reviewing your project</div>
+      <div style={{ display: "grid", gap: 4, marginTop: "var(--space-5)" }}>
         {steps.map((step, index) => {
           const done = currentIndex > index || currentIndex === steps.length;
           const active = index === currentIndex;
           return (
-            <div key={step.phase} style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", padding: "var(--space-2) 0" }}>
+            <div key={step.phase} style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", padding: "10px 0" }}>
               {done && <CheckCircleIcon />}
               {active && <SpinnerIcon />}
               {!done && !active && <CircleIcon />}
               <div>
-                <span style={{ opacity: done || active ? 1 : 0.5 }}>{step.label}</span>
+                <span style={{ fontSize: 15, color: done || active ? "var(--color-text)" : "var(--color-dashed-border)" }}>{step.label}</span>
                 {active && message && (
                   <p className="text-muted" style={{ margin: 0, fontSize: 12 }}>{message}</p>
                 )}
