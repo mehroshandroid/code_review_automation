@@ -1,10 +1,11 @@
+import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import PlatformReview, Project
+from app.db.models import ClauseChecklist, OrgSettings, PlatformReview, Project, SampleTemplate
 
 
 async def create_project(session: AsyncSession, project_id: str, name: str) -> Project:
@@ -70,3 +71,89 @@ async def list_reviews_for_project(session: AsyncSession, project_id: str) -> li
         .order_by(PlatformReview.created_at.desc())
     )
     return list(result.scalars().all())
+
+
+# --- org_settings (singleton, id=1) ---
+
+_ORG_SETTINGS_ID = 1
+
+
+async def get_org_settings(session: AsyncSession) -> Optional[OrgSettings]:
+    return await session.get(OrgSettings, _ORG_SETTINGS_ID)
+
+
+async def update_org_settings(
+    session: AsyncSession, default_llm_provider: str, default_ollama_model: Optional[str]
+) -> OrgSettings:
+    settings = await session.get(OrgSettings, _ORG_SETTINGS_ID)
+    if settings is None:
+        settings = OrgSettings(id=_ORG_SETTINGS_ID)
+        session.add(settings)
+    settings.default_llm_provider = default_llm_provider
+    settings.default_ollama_model = default_ollama_model
+    settings.updated_at = datetime.now(timezone.utc)
+    await session.commit()
+    await session.refresh(settings)
+    return settings
+
+
+# --- clause_checklists ---
+
+async def list_clause_checklists(session: AsyncSession) -> list[ClauseChecklist]:
+    result = await session.execute(select(ClauseChecklist).order_by(ClauseChecklist.platform, ClauseChecklist.sub_id))
+    return list(result.scalars().all())
+
+
+async def upsert_clause_checklist(session: AsyncSession, platform: str, sub_id: str, checklist_text: str) -> ClauseChecklist:
+    result = await session.execute(
+        select(ClauseChecklist).where(ClauseChecklist.platform == platform, ClauseChecklist.sub_id == sub_id)
+    )
+    checklist = result.scalar_one_or_none()
+    if checklist is None:
+        checklist = ClauseChecklist(id=str(uuid.uuid4()), platform=platform, sub_id=sub_id, checklist_text=checklist_text)
+        session.add(checklist)
+    else:
+        checklist.checklist_text = checklist_text
+    await session.commit()
+    await session.refresh(checklist)
+    return checklist
+
+
+async def delete_clause_checklist(session: AsyncSession, platform: str, sub_id: str) -> bool:
+    result = await session.execute(
+        delete(ClauseChecklist).where(ClauseChecklist.platform == platform, ClauseChecklist.sub_id == sub_id)
+    )
+    await session.commit()
+    return result.rowcount > 0
+
+
+# --- sample_templates ---
+
+async def list_sample_templates(session: AsyncSession) -> list[SampleTemplate]:
+    result = await session.execute(select(SampleTemplate).order_by(SampleTemplate.platform))
+    return list(result.scalars().all())
+
+
+async def get_sample_template(session: AsyncSession, platform: str) -> Optional[SampleTemplate]:
+    return await session.get(SampleTemplate, platform)
+
+
+async def upsert_sample_template(
+    session: AsyncSession, platform: str, filename: str, file_path: str, uploaded_at: datetime
+) -> SampleTemplate:
+    template = await session.get(SampleTemplate, platform)
+    if template is None:
+        template = SampleTemplate(platform=platform)
+        session.add(template)
+    template.filename = filename
+    template.file_path = file_path
+    template.uploaded_at = uploaded_at
+    await session.commit()
+    await session.refresh(template)
+    return template
+
+
+async def delete_sample_template(session: AsyncSession, platform: str) -> bool:
+    result = await session.execute(delete(SampleTemplate).where(SampleTemplate.platform == platform))
+    await session.commit()
+    return result.rowcount > 0
