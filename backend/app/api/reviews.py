@@ -1,10 +1,11 @@
 import asyncio
+import os
 import shutil
 import tempfile
 import time
 import uuid
 import zipfile
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
@@ -25,6 +26,8 @@ from app.analyzer.excel_handler import (
     generate_review_excel,
 )
 from app.analyzer.llm_client import generate_general_remarks, score_category
+from app.db import crud
+from app.db.session import new_session
 from app.utils.logger import get_logger
 
 router = APIRouter()
@@ -81,6 +84,74 @@ def _merge_compile_result_into_category_1(sub_results: dict, compile_sub_result:
     return {sub_id: merged[sub_id] for sub_id in categories["1"]["sub_criteria"]}
 
 
+def _review_artifacts_dir() -> Path:
+    return Path(os.environ.get("REVIEW_ARTIFACTS_DIR", "/data/reviews"))
+
+
+async def _persist_review_result(
+    review_id: str,
+    project_id: str | None,
+    project_name: str,
+    platform: str,
+    llm_provider: str,
+    ollama_model: str | None,
+    compile_check_mode: str,
+    state: dict,
+) -> None:
+    """Saves the review's terminal outcome to Postgres as an additive step --
+    a DB failure here is logged and swallowed, never raised, so it can never
+    affect the in-memory review outcome already shown to the current user
+    (see docs/superpowers/specs/2026-08-04-org-wide-phase1-db-design.md).
+    Excludes code_context/prompt_log from result_data -- those can run to
+    120,000 characters each and aren't needed for the approval record.
+    """
+    try:
+        workbook_path = None
+        if state["status"] == "completed" and state["download_path"]:
+            artifacts_dir = _review_artifacts_dir()
+            artifacts_dir.mkdir(parents=True, exist_ok=True)
+            persisted_path = artifacts_dir / f"{review_id}.xlsx"
+            shutil.copyfile(state["download_path"], persisted_path)
+            workbook_path = str(persisted_path)
+
+        completed = state["status"] == "completed"
+        status = "pending_approval" if completed else "error"
+        result_data = (
+            {
+                "category_scores": state["category_scores"],
+                "warnings": state["warnings"],
+                "secrets_found": state["secrets_found"],
+                "lint_issues": state["lint_issues"],
+                "compile_status": state["compile_status"],
+                "stats": state["stats"],
+            }
+            if completed
+            else {"error": state["error"]}
+        )
+
+        now = datetime.now(timezone.utc)
+        async with new_session() as session:
+            await crud.persist_review_result(
+                session,
+                review_id=review_id,
+                project_id=project_id,
+                platform=platform,
+                status=status,
+                project_name=project_name,
+                created_at=now,
+                completed_at=now if completed else None,
+                total_score_pct=state["total_score_pct"],
+                llm_provider=llm_provider,
+                llm_model=ollama_model,
+                compile_check_mode=compile_check_mode,
+                source=state["source"],
+                workbook_path=workbook_path,
+                result_data=result_data,
+            )
+    except Exception:
+        logger.exception("Review %s: failed to persist result to the database", review_id)
+
+
 @router.post("/api/reviews")
 async def create_review(
     androidZip: UploadFile | None = File(None),
@@ -92,6 +163,7 @@ async def create_review(
     devopsRepoUrl: str | None = Form(None),
     devopsPat: str | None = Form(None),
     devopsBranch: str | None = Form(None),
+    projectId: str | None = Form(None),
 ):
     review_id = str(uuid.uuid4())
     work_dir = Path(tempfile.mkdtemp(prefix=f"review_{review_id}_"))
@@ -150,7 +222,7 @@ async def create_review(
         _run_review(
             review_id, work_dir, zip_path, template_path, zip_valid, template_valid, project_name,
             llmProvider, ollamaModel, compileCheckMode, platform,
-            devopsRepoUrl, devopsPat, devopsBranch,
+            devopsRepoUrl, devopsPat, devopsBranch, project_id=projectId,
         )
     )
     return {"review_id": review_id, "status": "processing"}
@@ -171,6 +243,7 @@ async def _run_review(
     devops_repo_url: str | None = None,
     devops_pat: str | None = None,
     devops_branch: str | None = None,
+    project_id: str | None = None,
 ) -> None:
     state = _reviews[review_id]
     extract_dir = work_dir / "extracted"
@@ -342,6 +415,9 @@ async def _run_review(
         shutil.rmtree(extract_dir, ignore_errors=True)
         zip_path.unlink(missing_ok=True)
         template_path.unlink(missing_ok=True)
+        await _persist_review_result(
+            review_id, project_id, project_name, platform, llm_provider, ollama_model, compile_check_mode, state,
+        )
         if state["download_path"] is None:
             shutil.rmtree(work_dir, ignore_errors=True)
 
