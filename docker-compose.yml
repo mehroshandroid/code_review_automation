@@ -23,11 +23,15 @@ services:
       - MAC_BUILD_AGENT_URL=http://host.docker.internal:8100
       - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/codereviews
       - REVIEW_ARTIFACTS_DIR=/data/reviews
+      - SAMPLE_TEMPLATES_DIR=/data/sample-templates
     volumes:
       # Completed reviews' workbooks -- copied here (out of the per-review
       # temp work dir, which gets cleaned up) so an approver can still open
       # one long after the review that produced it has finished.
       - review-artifacts:/data/reviews
+      # Org-wide default Excel templates configured per platform via the
+      # settings page -- see app/api/settings.py.
+      - sample-templates:/data/sample-templates
     depends_on:
       compiler:
         condition: service_started
@@ -107,3 +111,4 @@ volumes:
   nuget-cache:
   postgres-data:
   review-artifacts:
+  sample-templates:
