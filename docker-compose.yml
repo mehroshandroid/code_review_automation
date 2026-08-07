@@ -21,9 +21,36 @@ services:
       # `uvicorn main:app --port 8100` from mac_build_agent/. Serves both
       # iOS (/lint) and Android local mode (/android-lint).
       - MAC_BUILD_AGENT_URL=http://host.docker.internal:8100
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/codereviews
+      - REVIEW_ARTIFACTS_DIR=/data/reviews
+    volumes:
+      # Completed reviews' workbooks -- copied here (out of the per-review
+      # temp work dir, which gets cleaned up) so an approver can still open
+      # one long after the review that produced it has finished.
+      - review-artifacts:/data/reviews
     depends_on:
-      - compiler
-      - dotnet-compiler
+      compiler:
+        condition: service_started
+      dotnet-compiler:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+    networks:
+      - review-network
+
+  postgres:
+    image: postgres:16
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=codereviews
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
     networks:
       - review-network
 
@@ -78,3 +105,5 @@ networks:
 volumes:
   gradle-cache:
   nuget-cache:
+  postgres-data:
+  review-artifacts:
