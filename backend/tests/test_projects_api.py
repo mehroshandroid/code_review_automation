@@ -58,6 +58,33 @@ def test_list_projects_returns_created_projects_newest_first(test_sessionmaker):
     assert names == ["Second", "First"]
 
 
+def test_update_project_renames_and_returns_it(test_sessionmaker):
+    with TestClient(app) as client:
+        project_id = client.post("/api/projects", json={"name": "Old Name"}).json()["id"]
+        response = client.patch(f"/api/projects/{project_id}", json={"name": "New Name"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["id"] == project_id
+    assert body["name"] == "New Name"
+
+
+def test_update_project_returns_404_for_unknown_project(test_sessionmaker):
+    with TestClient(app) as client:
+        response = client.patch("/api/projects/nonexistent", json={"name": "New Name"})
+
+    assert response.status_code == 404
+
+
+def test_update_project_returns_409_on_duplicate_name(test_sessionmaker):
+    with TestClient(app) as client:
+        client.post("/api/projects", json={"name": "Taken"})
+        project_id = client.post("/api/projects", json={"name": "Original"}).json()["id"]
+        response = client.patch(f"/api/projects/{project_id}", json={"name": "Taken"})
+
+    assert response.status_code == 409
+
+
 async def _persist(session, review_id, project_id, platform="Android", created_at=None, total_score_pct=None):
     return await crud.persist_review_result(
         session,

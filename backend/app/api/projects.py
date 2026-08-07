@@ -35,6 +35,18 @@ async def list_projects():
         return {"projects": [_project_to_dict(p) for p in projects]}
 
 
+@router.patch("/api/projects/{project_id}")
+async def update_project(project_id: str, body: CreateProjectRequest):
+    async with new_session() as session:
+        try:
+            project = await crud.update_project_name(session, project_id=project_id, name=body.name)
+        except IntegrityError:
+            raise HTTPException(status_code=409, detail="A project with this name already exists")
+        if project is None:
+            raise HTTPException(status_code=404, detail="Project not found")
+        return _project_to_dict(project)
+
+
 def _review_summary_to_dict(review) -> dict:
     return {
         "id": review.id,

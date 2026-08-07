@@ -49,6 +49,29 @@ async def test_list_projects_returns_empty_list_when_none_exist(session):
     assert await crud.list_projects(session) == []
 
 
+async def test_update_project_name_renames_and_returns_it(session):
+    await crud.create_project(session, project_id="p1", name="Old Name")
+
+    project = await crud.update_project_name(session, project_id="p1", name="New Name")
+
+    assert project.id == "p1"
+    assert project.name == "New Name"
+
+
+async def test_update_project_name_returns_none_when_project_does_not_exist(session):
+    project = await crud.update_project_name(session, project_id="missing", name="New Name")
+
+    assert project is None
+
+
+async def test_update_project_name_raises_on_duplicate_name(session):
+    await crud.create_project(session, project_id="p1", name="First")
+    await crud.create_project(session, project_id="p2", name="Second")
+
+    with pytest.raises(IntegrityError):
+        await crud.update_project_name(session, project_id="p2", name="First")
+
+
 async def test_persist_review_result_creates_a_row_with_the_given_fields(session):
     review = await crud.persist_review_result(
         session,

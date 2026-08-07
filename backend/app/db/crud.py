@@ -21,6 +21,16 @@ async def list_projects(session: AsyncSession) -> list[Project]:
     return list(result.scalars().all())
 
 
+async def update_project_name(session: AsyncSession, project_id: str, name: str) -> Optional[Project]:
+    project = await session.get(Project, project_id)
+    if project is None:
+        return None
+    project.name = name
+    await session.commit()
+    await session.refresh(project)
+    return project
+
+
 async def persist_review_result(
     session: AsyncSession,
     review_id: str,
