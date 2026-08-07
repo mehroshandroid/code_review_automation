@@ -34,3 +34,13 @@ export async function getOllamaModels() {
 export function getDownloadUrl(downloadPath) {
   return `${API_ORIGIN}${downloadPath}`;
 }
+
+export async function createProject(name) {
+  const response = await axios.post(`${API_BASE_URL}/projects`, { name });
+  return response.data;
+}
+
+export async function getProjects() {
+  const response = await axios.get(`${API_BASE_URL}/projects`);
+  return response.data.projects;
+}

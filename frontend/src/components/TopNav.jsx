@@ -11,7 +11,10 @@ export default function TopNav() {
         </span>
         <span className="nav-brand">Code Review Automation</span>
       </Link>
-      <Link to="/" className="btn btn-ghost" style={{ marginLeft: "auto" }}>← Home</Link>
+      <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: "var(--space-3)" }}>
+        <Link to="/projects" className="btn btn-ghost">Projects</Link>
+        <Link to="/" className="btn btn-ghost">← Home</Link>
+      </div>
     </nav>
   );
 }

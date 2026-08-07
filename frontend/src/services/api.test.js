@@ -1,5 +1,5 @@
 import axios from "axios";
-import { createReview, getProgress, getDownloadUrl, getOllamaModels } from "./api";
+import { createReview, getProgress, getDownloadUrl, getOllamaModels, createProject, getProjects } from "./api";
 
 jest.mock("axios");
 
@@ -118,6 +118,30 @@ describe("getOllamaModels", () => {
 
     expect(result).toEqual(["mistral:latest", "qwen2.5-coder:7b"]);
     expect(axios.get).toHaveBeenCalledWith(expect.stringContaining("/ollama/models"));
+  });
+});
+
+describe("createProject", () => {
+  it("posts the given name and returns the created project", async () => {
+    const project = { id: "p1", name: "Payments Service", created_at: "2026-08-07T00:00:00Z" };
+    axios.post.mockResolvedValue({ data: project });
+
+    const result = await createProject("Payments Service");
+
+    expect(result).toEqual(project);
+    expect(axios.post).toHaveBeenCalledWith(expect.stringContaining("/projects"), { name: "Payments Service" });
+  });
+});
+
+describe("getProjects", () => {
+  it("fetches all projects and returns the list", async () => {
+    const projects = [{ id: "p1", name: "Payments Service", created_at: "2026-08-07T00:00:00Z" }];
+    axios.get.mockResolvedValue({ data: { projects } });
+
+    const result = await getProjects();
+
+    expect(result).toEqual(projects);
+    expect(axios.get).toHaveBeenCalledWith(expect.stringContaining("/projects"));
   });
 });
 
