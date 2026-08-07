@@ -1,29 +1,24 @@
 import re
 
-# Keyed by (platform, sub_id) -- mirrors the existing precedent in reviews.py,
-# which already special-cases sub-criterion "1.4" by its literal ID for the
-# compile-check merge, so clause IDs are already treated as stable
-# conventions in this codebase rather than arbitrary per-template text.
-# Every clause without an entry here keeps the plain, generic behavior --
-# just its raw template description, unchanged.
-CLAUSE_CHECKLISTS = {
-    (".NET", "2.4"): (
-        "(1) every controller action that should require authentication has an "
-        "[Authorize] attribute -- flag any [AllowAnonymous] or missing [Authorize] "
-        "on an endpoint that looks like it handles user/account/payment data; "
-        "(2) JWT bearer configuration (AddJwtBearer/TokenValidationParameters) "
-        "explicitly sets ValidateAudience=true and ValidateIssuer=true with real, "
-        "non-default expected values; (3) UseAuthentication/UseAuthorization "
-        "middleware is registered, in the correct order, in Program.cs/Startup.cs."
-    ),
-}
 
-
-def category_instructions(category_name: str, sub_criteria: list, descriptions: dict, platform: str = "Android") -> str:
+def category_instructions(
+    category_name: str, sub_criteria: list, descriptions: dict, platform: str = "Android", checklists: dict | None = None,
+) -> str:
+    """checklists is keyed by (platform, sub_id) -- mirrors the existing
+    precedent in reviews.py, which already special-cases sub-criterion
+    "1.4" by its literal ID for the compile-check merge, so clause IDs are
+    already treated as stable conventions in this codebase rather than
+    arbitrary per-template text. Sourced from the clause_checklists DB
+    table (see app/db/crud.py's list_clause_checklists), fetched once per
+    review and threaded down here -- this function stays pure/DB-unaware.
+    Every clause without an entry keeps the plain, generic behavior --
+    just its raw template description, unchanged.
+    """
+    checklists = checklists or {}
     lines = []
     for sub_id in sub_criteria:
         line = f"{sub_id}: {descriptions.get(sub_id, '')}"
-        checklist = CLAUSE_CHECKLISTS.get((platform, sub_id))
+        checklist = checklists.get((platform, sub_id))
         if checklist:
             line += f"\n  Specifically check for: {checklist}"
         lines.append(line)
