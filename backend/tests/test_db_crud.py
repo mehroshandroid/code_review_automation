@@ -197,3 +197,53 @@ async def test_list_reviews_for_project_returns_empty_list_when_project_has_none
     await crud.create_project(session, project_id="p1", name="Payments Service")
 
     assert await crud.list_reviews_for_project(session, "p1") == []
+
+
+async def test_update_review_replaces_category_scores_and_total_score_pct(session):
+    await _persist(session, "r1", total_score_pct=50)
+    new_scores = [{"id": "1", "name": "Structure", "percent_points": 100, "sub_criteria": []}]
+
+    review = await crud.update_review(session, "r1", category_scores=new_scores, total_score_pct=100)
+
+    assert review.result_data["category_scores"] == new_scores
+    assert review.total_score_pct == 100
+
+
+async def test_update_review_sets_status_and_approved_at_when_moving_to_approved(session):
+    await _persist(session, "r1")
+
+    review = await crud.update_review(session, "r1", status="approved")
+
+    assert review.status == "approved"
+    assert review.approved_at is not None
+
+
+async def test_update_review_does_not_set_approved_at_for_other_statuses(session):
+    await _persist(session, "r1")
+
+    review = await crud.update_review(session, "r1", status="completed")
+
+    assert review.status == "completed"
+    assert review.approved_at is None
+
+
+async def test_update_review_leaves_category_scores_untouched_when_only_status_given(session):
+    await _persist(session, "r1", total_score_pct=77)
+
+    review = await crud.update_review(session, "r1", status="approved")
+
+    assert review.total_score_pct == 77
+
+
+async def test_update_review_leaves_status_untouched_when_only_category_scores_given(session):
+    await _persist(session, "r1")
+
+    review = await crud.update_review(session, "r1", category_scores=[], total_score_pct=None)
+
+    assert review.status == "pending_approval"
+
+
+async def test_update_review_returns_none_when_review_does_not_exist(session):
+    review = await crud.update_review(session, "does-not-exist", status="approved")
+
+    assert review is None

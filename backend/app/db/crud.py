@@ -83,6 +83,28 @@ async def list_reviews_for_project(session: AsyncSession, project_id: str) -> li
     return list(result.scalars().all())
 
 
+async def update_review(
+    session: AsyncSession,
+    review_id: str,
+    category_scores: Optional[list] = None,
+    total_score_pct: Optional[float] = None,
+    status: Optional[str] = None,
+) -> Optional[PlatformReview]:
+    review = await session.get(PlatformReview, review_id)
+    if review is None:
+        return None
+    if category_scores is not None:
+        review.result_data = {**review.result_data, "category_scores": category_scores}
+        review.total_score_pct = total_score_pct
+    if status is not None:
+        review.status = status
+        if status == "approved" and review.approved_at is None:
+            review.approved_at = datetime.now(timezone.utc)
+    await session.commit()
+    await session.refresh(review)
+    return review
+
+
 # --- org_settings (singleton, id=1) ---
 
 _ORG_SETTINGS_ID = 1

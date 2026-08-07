@@ -11,6 +11,7 @@ from pathlib import Path
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from openpyxl import load_workbook
+from pydantic import BaseModel
 from starlette.background import BackgroundTask
 
 from app.analyzer import android_analyzer, dotnet_analyzer, ios_analyzer
@@ -42,6 +43,34 @@ _reviews: dict = {}
 # docs/superpowers/specs/2026-08-04-llm-context-window-fixes-design.md.
 CODE_CONTEXT_MAX_CHARS_OLLAMA = 48000
 CODE_CONTEXT_MAX_CHARS_AZURE = 120000
+
+ALLOWED_REVIEW_STATUSES = {"pending_approval", "approved", "completed"}
+
+
+class UpdateReviewRequest(BaseModel):
+    category_scores: list[dict] | None = None
+    status: str | None = None
+
+
+def _recompute_category_scores(category_scores: list[dict]) -> tuple[list[dict], float | None]:
+    """Recomputes each category's percent_points from its (possibly
+    just-edited) sub-criteria scores, and the overall total_score_pct as the
+    average of the category percentages -- same math as
+    aggregate_category_scores/compute_total_score_pct in excel_handler.py,
+    just operating on the already-assembled category_scores list shape used
+    in a persisted review's result_data instead of the raw sub_scores dict
+    shape used during a live review.
+    """
+    updated_categories = []
+    percent_values = []
+    for category in category_scores:
+        scores = [sub["score"] for sub in category.get("sub_criteria", []) if sub.get("score") is not None]
+        percent_points = round((sum(scores) / len(scores)) * 100, 1) if scores else None
+        updated_categories.append({**category, "percent_points": percent_points})
+        if percent_points is not None:
+            percent_values.append(percent_points)
+    total_score_pct = round(sum(percent_values) / len(percent_values), 1) if percent_values else None
+    return updated_categories, total_score_pct
 
 
 def _new_review_state() -> dict:
@@ -500,12 +529,7 @@ async def get_progress(review_id: str):
     }
 
 
-@router.get("/api/reviews/{review_id}")
-async def get_review(review_id: str):
-    async with new_session() as session:
-        review = await crud.get_review_by_id(session, review_id)
-    if review is None:
-        raise HTTPException(status_code=404, detail="Review not found")
+def _review_to_dict(review) -> dict:
     result_data = review.result_data or {}
     return {
         "id": review.id,
@@ -526,7 +550,36 @@ async def get_review(review_id: str):
         "compile_status": result_data.get("compile_status"),
         "stats": result_data.get("stats", {}),
         "error": result_data.get("error"),
+        "approved_at": review.approved_at.isoformat() if review.approved_at else None,
     }
+
+
+@router.get("/api/reviews/{review_id}")
+async def get_review(review_id: str):
+    async with new_session() as session:
+        review = await crud.get_review_by_id(session, review_id)
+    if review is None:
+        raise HTTPException(status_code=404, detail="Review not found")
+    return _review_to_dict(review)
+
+
+@router.patch("/api/reviews/{review_id}")
+async def update_review(review_id: str, body: UpdateReviewRequest):
+    if body.status is not None and body.status not in ALLOWED_REVIEW_STATUSES:
+        raise HTTPException(status_code=400, detail=f"status must be one of {sorted(ALLOWED_REVIEW_STATUSES)}")
+
+    category_scores = None
+    total_score_pct = None
+    if body.category_scores is not None:
+        category_scores, total_score_pct = _recompute_category_scores(body.category_scores)
+
+    async with new_session() as session:
+        review = await crud.update_review(
+            session, review_id, category_scores=category_scores, total_score_pct=total_score_pct, status=body.status,
+        )
+    if review is None:
+        raise HTTPException(status_code=404, detail="Review not found")
+    return _review_to_dict(review)
 
 
 @router.get("/api/reviews/{review_id}/download")
