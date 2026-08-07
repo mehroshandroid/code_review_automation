@@ -2,9 +2,17 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import UploadForm from "./UploadForm";
 import { getCompileCheckMode } from "../services/compileCheckModeStorage";
+import { getSampleTemplates } from "../services/api";
+
+jest.mock("../services/api", () => ({
+  ...jest.requireActual("../services/api"),
+  getSampleTemplates: jest.fn(),
+}));
 
 beforeEach(() => {
   localStorage.clear();
+  getSampleTemplates.mockReset();
+  getSampleTemplates.mockResolvedValue([]);
 });
 
 function buildFile(name, type) {
@@ -190,4 +198,94 @@ test("calls onSubmit with the DevOps fields (and a null androidZip) in DevOps mo
     devopsPat: "fake-pat",
     devopsBranch: "release/1.0",
   });
+});
+
+test("shows 'Using default' and hides the file picker when a sample template is configured for the platform", async () => {
+  getSampleTemplates.mockResolvedValue([
+    { platform: "Android", filename: "android-default.xlsx", uploaded_at: "2026-08-07T00:00:00Z" },
+  ]);
+  render(<UploadForm onSubmit={jest.fn()} disabled={false} />);
+
+  expect(await screen.findByText(/using default: android-default\.xlsx/i)).toBeInTheDocument();
+  expect(screen.queryByLabelText(/scoring template/i)).not.toBeInTheDocument();
+});
+
+test("does not show 'Using default' when no sample template is configured for the platform", async () => {
+  getSampleTemplates.mockResolvedValue([
+    { platform: "iOS", filename: "ios-default.xlsx", uploaded_at: "2026-08-07T00:00:00Z" },
+  ]);
+  render(<UploadForm onSubmit={jest.fn()} disabled={false} platformLabel="Android" />);
+
+  await screen.findByLabelText(/scoring template/i);
+  expect(screen.queryByText(/using default/i)).not.toBeInTheDocument();
+});
+
+test("start review is enabled without choosing a template file when a default is configured", async () => {
+  const user = userEvent.setup();
+  getSampleTemplates.mockResolvedValue([
+    { platform: "Android", filename: "android-default.xlsx", uploaded_at: "2026-08-07T00:00:00Z" },
+  ]);
+  render(<UploadForm onSubmit={jest.fn()} disabled={false} />);
+
+  await screen.findByText(/using default: android-default\.xlsx/i);
+  const zip = buildFile("project.zip", "application/zip");
+  await user.upload(screen.getByLabelText(/android project/i), zip);
+
+  expect(screen.getByRole("button", { name: /start review/i })).toBeEnabled();
+});
+
+test("submits with excelTemplate: null when the default template is used", async () => {
+  const user = userEvent.setup();
+  const onSubmit = jest.fn();
+  getSampleTemplates.mockResolvedValue([
+    { platform: "Android", filename: "android-default.xlsx", uploaded_at: "2026-08-07T00:00:00Z" },
+  ]);
+  render(<UploadForm onSubmit={onSubmit} disabled={false} />);
+
+  await screen.findByText(/using default: android-default\.xlsx/i);
+  const zip = buildFile("project.zip", "application/zip");
+  await user.upload(screen.getByLabelText(/android project/i), zip);
+  await user.click(screen.getByRole("button", { name: /start review/i }));
+
+  expect(onSubmit).toHaveBeenCalledWith({
+    androidZip: zip, excelTemplate: null, devopsRepoUrl: null, devopsPat: null, devopsBranch: null,
+  });
+});
+
+test("'Choose a different file' reveals the normal file picker and requires a file to start", async () => {
+  const user = userEvent.setup();
+  getSampleTemplates.mockResolvedValue([
+    { platform: "Android", filename: "android-default.xlsx", uploaded_at: "2026-08-07T00:00:00Z" },
+  ]);
+  render(<UploadForm onSubmit={jest.fn()} disabled={false} />);
+
+  await screen.findByText(/using default: android-default\.xlsx/i);
+  const zip = buildFile("project.zip", "application/zip");
+  await user.upload(screen.getByLabelText(/android project/i), zip);
+  await user.click(screen.getByRole("button", { name: /choose a different file/i }));
+
+  expect(screen.queryByText(/using default/i)).not.toBeInTheDocument();
+  expect(screen.getByLabelText(/scoring template/i)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /start review/i })).toBeDisabled();
+});
+
+test("'Use default instead' reverts back to the default after choosing a different file", async () => {
+  const user = userEvent.setup();
+  const onSubmit = jest.fn();
+  getSampleTemplates.mockResolvedValue([
+    { platform: "Android", filename: "android-default.xlsx", uploaded_at: "2026-08-07T00:00:00Z" },
+  ]);
+  render(<UploadForm onSubmit={onSubmit} disabled={false} />);
+
+  await screen.findByText(/using default: android-default\.xlsx/i);
+  await user.click(screen.getByRole("button", { name: /choose a different file/i }));
+  await user.click(screen.getByRole("button", { name: /use default instead/i }));
+
+  expect(await screen.findByText(/using default: android-default\.xlsx/i)).toBeInTheDocument();
+
+  const zip = buildFile("project.zip", "application/zip");
+  await user.upload(screen.getByLabelText(/android project/i), zip);
+  await user.click(screen.getByRole("button", { name: /start review/i }));
+
+  expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ excelTemplate: null }));
 });

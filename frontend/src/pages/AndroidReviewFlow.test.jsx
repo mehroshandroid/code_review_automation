@@ -2,13 +2,14 @@ import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import AndroidReviewFlow from "./AndroidReviewFlow";
-import { createReview, getProgress, getOllamaModels } from "../services/api";
+import { createReview, getProgress, getOllamaModels, getSampleTemplates } from "../services/api";
 
 jest.mock("../services/api", () => ({
   ...jest.requireActual("../services/api"),
   createReview: jest.fn(),
   getProgress: jest.fn(),
   getOllamaModels: jest.fn(),
+  getSampleTemplates: jest.fn(),
 }));
 
 beforeEach(() => {
@@ -16,6 +17,7 @@ beforeEach(() => {
   localStorage.clear();
   localStorage.setItem("llmProvider", "azure");
   getOllamaModels.mockResolvedValue([]);
+  getSampleTemplates.mockResolvedValue([]);
 });
 
 afterEach(() => {
