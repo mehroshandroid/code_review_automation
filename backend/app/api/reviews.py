@@ -102,6 +102,27 @@ async def _load_clause_checklists() -> dict:
         return {}
 
 
+async def _resolve_excel_template(
+    excel_template: UploadFile | None, platform: str
+) -> tuple[bytes | None, str | None]:
+    """When the client doesn't upload a template, falls back to the
+    platform's stored sample_templates row (see app/api/settings.py) --
+    best-effort, same rationale as _load_clause_checklists: a DB outage
+    just means no fallback is available, not a hard failure.
+    """
+    if excel_template is not None:
+        return await excel_template.read(), excel_template.filename
+    try:
+        async with new_session() as session:
+            template = await crud.get_sample_template(session, platform)
+        if template is None:
+            return None, None
+        return Path(template.file_path).read_bytes(), template.filename
+    except Exception:
+        logger.exception("Failed to load stored sample template for platform %s", platform)
+        return None, None
+
+
 async def _persist_review_result(
     review_id: str,
     project_id: str | None,
@@ -169,7 +190,7 @@ async def _persist_review_result(
 @router.post("/api/reviews")
 async def create_review(
     androidZip: UploadFile | None = File(None),
-    excelTemplate: UploadFile = File(...),
+    excelTemplate: UploadFile | None = File(None),
     llmProvider: str = Form("azure"),
     ollamaModel: str | None = Form(None),
     compileCheckMode: str = Form("compiler"),
@@ -207,7 +228,7 @@ async def create_review(
     try:
         if has_zip:
             zip_path.write_bytes(await androidZip.read())
-        template_path.write_bytes(await excelTemplate.read())
+        template_bytes, template_filename = await _resolve_excel_template(excelTemplate, platform)
     except Exception as exc:
         logger.exception("Review %s failed while saving uploads", review_id)
         shutil.rmtree(work_dir, ignore_errors=True)
@@ -219,8 +240,23 @@ async def create_review(
         _reviews[review_id] = state
         return {"review_id": review_id, "status": "error"}
 
+    if template_bytes is None:
+        shutil.rmtree(work_dir, ignore_errors=True)
+        state = _new_review_state()
+        state["status"] = "error"
+        state["phase"] = "error"
+        state["message"] = "Review failed"
+        state["error"] = (
+            "excelTemplate must be provided, or a default sample template "
+            "configured for this platform in Settings."
+        )
+        _reviews[review_id] = state
+        return {"review_id": review_id, "status": "error"}
+
+    template_path.write_bytes(template_bytes)
+
     zip_valid = (androidZip.filename or "").endswith(".zip") if has_zip else True
-    template_valid = (excelTemplate.filename or "").endswith(".xlsx")
+    template_valid = (template_filename or "").endswith(".xlsx")
 
     if has_zip:
         project_name = Path(androidZip.filename).stem if androidZip.filename else "Unknown Project"
