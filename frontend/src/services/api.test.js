@@ -1,5 +1,5 @@
 import axios from "axios";
-import { createReview, getProgress, getDownloadUrl, getOllamaModels, createProject, getProjects } from "./api";
+import { createReview, getProgress, getDownloadUrl, getOllamaModels, createProject, getProjects, getProjectReviews, getReview } from "./api";
 
 jest.mock("axios");
 
@@ -93,6 +93,28 @@ describe("createReview", () => {
     expect(formData.get("devopsPat")).toBeNull();
     expect(formData.get("devopsBranch")).toBeNull();
   });
+
+  it("includes projectId field when provided", async () => {
+    axios.post.mockResolvedValue({ data: { review_id: "abc-123", status: "processing" } });
+    const zip = new File(["zip content"], "project.zip", { type: "application/zip" });
+    const xlsx = new File(["xlsx content"], "template.xlsx", { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+
+    await createReview(zip, xlsx, "azure", null, "compiler", "Android", null, null, null, "proj-1");
+
+    const [, formData] = axios.post.mock.calls[0];
+    expect(formData.get("projectId")).toBe("proj-1");
+  });
+
+  it("omits projectId field when not provided", async () => {
+    axios.post.mockResolvedValue({ data: { review_id: "abc-123", status: "processing" } });
+    const zip = new File(["zip content"], "project.zip", { type: "application/zip" });
+    const xlsx = new File(["xlsx content"], "template.xlsx", { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+
+    await createReview(zip, xlsx);
+
+    const [, formData] = axios.post.mock.calls[0];
+    expect(formData.get("projectId")).toBeNull();
+  });
 });
 
 describe("getProgress", () => {
@@ -142,6 +164,30 @@ describe("getProjects", () => {
 
     expect(result).toEqual(projects);
     expect(axios.get).toHaveBeenCalledWith(expect.stringContaining("/projects"));
+  });
+});
+
+describe("getProjectReviews", () => {
+  it("fetches reviews for a project id and returns the list", async () => {
+    const reviews = [{ id: "r1", platform: "Android", status: "pending_approval", total_score_pct: 90 }];
+    axios.get.mockResolvedValue({ data: { reviews } });
+
+    const result = await getProjectReviews("p1");
+
+    expect(result).toEqual(reviews);
+    expect(axios.get).toHaveBeenCalledWith(expect.stringContaining("/projects/p1/reviews"));
+  });
+});
+
+describe("getReview", () => {
+  it("fetches a single review by id and returns the response body", async () => {
+    const review = { id: "r1", platform: "Android", status: "pending_approval", category_scores: [] };
+    axios.get.mockResolvedValue({ data: review });
+
+    const result = await getReview("r1");
+
+    expect(result).toEqual(review);
+    expect(axios.get).toHaveBeenCalledWith(expect.stringContaining("/reviews/r1"));
   });
 });
 

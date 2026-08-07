@@ -5,7 +5,7 @@ const API_ORIGIN = API_BASE_URL.replace(/\/api\/?$/, "");
 
 export async function createReview(
   androidZip, excelTemplate, llmProvider, ollamaModel, compileCheckMode, platform,
-  devopsRepoUrl, devopsPat, devopsBranch
+  devopsRepoUrl, devopsPat, devopsBranch, projectId
 ) {
   const formData = new FormData();
   if (androidZip) formData.append("androidZip", androidZip);
@@ -17,6 +17,7 @@ export async function createReview(
   if (devopsRepoUrl) formData.append("devopsRepoUrl", devopsRepoUrl);
   if (devopsPat) formData.append("devopsPat", devopsPat);
   if (devopsBranch) formData.append("devopsBranch", devopsBranch);
+  if (projectId) formData.append("projectId", projectId);
   const response = await axios.post(`${API_BASE_URL}/reviews`, formData);
   return response.data;
 }
@@ -43,4 +44,14 @@ export async function createProject(name) {
 export async function getProjects() {
   const response = await axios.get(`${API_BASE_URL}/projects`);
   return response.data.projects;
+}
+
+export async function getProjectReviews(projectId) {
+  const response = await axios.get(`${API_BASE_URL}/projects/${projectId}/reviews`);
+  return response.data.reviews;
+}
+
+export async function getReview(reviewId) {
+  const response = await axios.get(`${API_BASE_URL}/reviews/${reviewId}`);
+  return response.data;
 }
