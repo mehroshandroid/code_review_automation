@@ -61,6 +61,14 @@ export async function getReview(reviewId) {
   return response.data;
 }
 
+export async function updateReview(reviewId, { categoryScores, status } = {}) {
+  const body = {};
+  if (categoryScores !== undefined) body.category_scores = categoryScores;
+  if (status !== undefined) body.status = status;
+  const response = await axios.patch(`${API_BASE_URL}/reviews/${reviewId}`, body);
+  return response.data;
+}
+
 export async function getLlmProviderSettings() {
   const response = await axios.get(`${API_BASE_URL}/settings/llm-provider`);
   return response.data;

@@ -3,7 +3,7 @@ import { useParams } from "react-router-dom";
 import TopNav from "../components/TopNav";
 import ReportTable from "../components/ReportTable";
 import { DownloadIcon } from "../icons";
-import { getReview, getDownloadUrl } from "../services/api";
+import { getReview, getDownloadUrl, updateReview } from "../services/api";
 
 const STATUS_LABELS = {
   pending_approval: "Pending approval",
@@ -12,20 +12,98 @@ const STATUS_LABELS = {
   error: "Error",
 };
 
+const SELECTABLE_STATUSES = ["pending_approval", "approved", "completed"];
+
+function cloneCategoryScores(categoryScores) {
+  return categoryScores.map((category) => ({
+    ...category,
+    sub_criteria: category.sub_criteria.map((sub) => ({ ...sub })),
+  }));
+}
+
 export default function ReviewReportPage() {
   const { reviewId } = useParams();
   const [review, setReview] = useState(null);
   const [notFound, setNotFound] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [draftCategoryScores, setDraftCategoryScores] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  const [statusSaving, setStatusSaving] = useState(false);
+  const [statusError, setStatusError] = useState("");
 
   useEffect(() => {
     let cancelled = false;
     setReview(null);
     setNotFound(false);
+    setEditing(false);
     getReview(reviewId)
       .then((result) => { if (!cancelled) setReview(result); })
       .catch(() => { if (!cancelled) setNotFound(true); });
     return () => { cancelled = true; };
   }, [reviewId]);
+
+  function handleStartEdit() {
+    setDraftCategoryScores(cloneCategoryScores(review.category_scores));
+    setSaveError("");
+    setEditing(true);
+  }
+
+  function handleCancelEdit() {
+    setEditing(false);
+    setDraftCategoryScores(null);
+    setSaveError("");
+  }
+
+  function handleChangeScore(categoryId, subId, score) {
+    setDraftCategoryScores((current) =>
+      current.map((category) => (
+        category.id !== categoryId
+          ? category
+          : { ...category, sub_criteria: category.sub_criteria.map((sub) => (sub.id !== subId ? sub : { ...sub, score })) }
+      ))
+    );
+  }
+
+  function handleChangeRemark(categoryId, subId, remark) {
+    setDraftCategoryScores((current) =>
+      current.map((category) => (
+        category.id !== categoryId
+          ? category
+          : { ...category, sub_criteria: category.sub_criteria.map((sub) => (sub.id !== subId ? sub : { ...sub, remark })) }
+      ))
+    );
+  }
+
+  async function handleSaveEdit() {
+    setSaving(true);
+    setSaveError("");
+    try {
+      const updated = await updateReview(reviewId, { categoryScores: draftCategoryScores });
+      setReview(updated);
+      setEditing(false);
+      setDraftCategoryScores(null);
+    } catch (err) {
+      setSaveError("Failed to save changes");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleChangeStatus(status) {
+    setStatusSaving(true);
+    setStatusError("");
+    try {
+      const updated = await updateReview(reviewId, { status });
+      setReview(updated);
+    } catch (err) {
+      setStatusError("Failed to update status");
+    } finally {
+      setStatusSaving(false);
+    }
+  }
+
+  const canApprove = review && review.status !== "error" && review.category_scores.length > 0;
 
   return (
     <div style={{ minHeight: "100vh", background: "var(--color-bg)", fontFamily: "var(--font-body)", color: "var(--color-text)" }}>
@@ -72,7 +150,47 @@ export default function ReviewReportPage() {
               )}
             </header>
 
-            <ReportTable categoryScores={review.category_scores} />
+            {canApprove && (
+              <div className="card card-subtle" style={{ padding: 20, marginBottom: "var(--space-4)" }}>
+                <div className="card-kicker">Approval</div>
+                <div style={{ display: "flex", gap: "var(--space-2)", marginTop: "var(--space-3)", flexWrap: "wrap", alignItems: "center" }}>
+                  {SELECTABLE_STATUSES.map((status) => (
+                    <button
+                      key={status}
+                      type="button"
+                      className={`btn ${review.status === status ? "btn-primary" : ""}`}
+                      disabled={statusSaving}
+                      onClick={() => handleChangeStatus(status)}
+                    >
+                      {STATUS_LABELS[status]}
+                    </button>
+                  ))}
+                  {!editing && (
+                    <button type="button" className="btn btn-ghost" style={{ marginLeft: "auto" }} onClick={handleStartEdit}>
+                      Edit scores
+                    </button>
+                  )}
+                </div>
+                {statusError && <p className="card-body" style={{ color: "var(--color-brand-coral)", marginTop: "var(--space-2)" }}>{statusError}</p>}
+              </div>
+            )}
+
+            <ReportTable
+              categoryScores={editing ? draftCategoryScores : review.category_scores}
+              editable={editing}
+              onChangeScore={handleChangeScore}
+              onChangeRemark={handleChangeRemark}
+            />
+
+            {editing && (
+              <div style={{ display: "flex", gap: "var(--space-3)", marginTop: "var(--space-4)", alignItems: "center" }}>
+                <button type="button" className="btn btn-primary" disabled={saving} onClick={handleSaveEdit}>
+                  {saving ? "Saving…" : "Save changes"}
+                </button>
+                <button type="button" className="btn" disabled={saving} onClick={handleCancelEdit}>Cancel</button>
+                {saveError && <p className="card-body" style={{ color: "var(--color-brand-coral)", margin: 0 }}>{saveError}</p>}
+              </div>
+            )}
           </>
         )}
       </main>

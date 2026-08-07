@@ -1,6 +1,6 @@
 import axios from "axios";
 import {
-  createReview, getProgress, getDownloadUrl, getOllamaModels, createProject, updateProject, getProjects, getProjectReviews, getReview,
+  createReview, getProgress, getDownloadUrl, getOllamaModels, createProject, updateProject, getProjects, getProjectReviews, getReview, updateReview,
   getLlmProviderSettings, updateLlmProviderSettings, getClauseChecklists, upsertClauseChecklist, deleteClauseChecklist,
   getSampleTemplates, uploadSampleTemplate, deleteSampleTemplate,
 } from "./api";
@@ -214,6 +214,38 @@ describe("getReview", () => {
 
     expect(result).toEqual(review);
     expect(axios.get).toHaveBeenCalledWith(expect.stringContaining("/reviews/r1"));
+  });
+});
+
+describe("updateReview", () => {
+  it("patches category_scores when provided", async () => {
+    const review = { id: "r1", status: "pending_approval" };
+    axios.patch.mockResolvedValue({ data: review });
+    const categoryScores = [{ id: "1", sub_criteria: [] }];
+
+    const result = await updateReview("r1", { categoryScores });
+
+    expect(result).toEqual(review);
+    expect(axios.patch).toHaveBeenCalledWith(expect.stringContaining("/reviews/r1"), { category_scores: categoryScores });
+  });
+
+  it("patches status when provided", async () => {
+    const review = { id: "r1", status: "approved" };
+    axios.patch.mockResolvedValue({ data: review });
+
+    const result = await updateReview("r1", { status: "approved" });
+
+    expect(result).toEqual(review);
+    expect(axios.patch).toHaveBeenCalledWith(expect.stringContaining("/reviews/r1"), { status: "approved" });
+  });
+
+  it("omits fields that are not provided", async () => {
+    axios.patch.mockResolvedValue({ data: {} });
+
+    await updateReview("r1", { status: "approved" });
+
+    const [, body] = axios.patch.mock.calls[0];
+    expect(body).not.toHaveProperty("category_scores");
   });
 });
 
