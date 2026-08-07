@@ -57,3 +57,16 @@ async def persist_review_result(
     await session.commit()
     await session.refresh(review)
     return review
+
+
+async def get_review_by_id(session: AsyncSession, review_id: str) -> Optional[PlatformReview]:
+    return await session.get(PlatformReview, review_id)
+
+
+async def list_reviews_for_project(session: AsyncSession, project_id: str) -> list[PlatformReview]:
+    result = await session.execute(
+        select(PlatformReview)
+        .where(PlatformReview.project_id == project_id)
+        .order_by(PlatformReview.created_at.desc())
+    )
+    return list(result.scalars().all())

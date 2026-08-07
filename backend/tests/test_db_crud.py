@@ -120,3 +120,57 @@ async def test_persist_review_result_records_an_error_status(session):
 
     assert review.status == "error"
     assert review.result_data == {"error": "Ollama request timed out"}
+
+
+async def _persist(session, review_id, project_id=None, platform="Android", created_at=None, total_score_pct=None):
+    return await crud.persist_review_result(
+        session,
+        review_id=review_id,
+        project_id=project_id,
+        platform=platform,
+        status="pending_approval",
+        project_name="MyApp",
+        created_at=created_at or datetime.now(timezone.utc),
+        completed_at=created_at or datetime.now(timezone.utc),
+        total_score_pct=total_score_pct,
+        llm_provider="azure",
+        llm_model=None,
+        compile_check_mode="compiler",
+        source="upload",
+        workbook_path=None,
+        result_data={"category_scores": []},
+    )
+
+
+async def test_get_review_by_id_returns_the_matching_review(session):
+    await crud.create_project(session, project_id="p1", name="Payments Service")
+    await _persist(session, "r1", project_id="p1", total_score_pct=90)
+
+    review = await crud.get_review_by_id(session, "r1")
+
+    assert review is not None
+    assert review.id == "r1"
+    assert review.project_id == "p1"
+    assert review.total_score_pct == 90
+
+
+async def test_get_review_by_id_returns_none_when_not_found(session):
+    assert await crud.get_review_by_id(session, "does-not-exist") is None
+
+
+async def test_list_reviews_for_project_returns_only_that_projects_reviews_newest_first(session):
+    await crud.create_project(session, project_id="p1", name="Payments Service")
+    await crud.create_project(session, project_id="p2", name="Other Project")
+    await _persist(session, "r1", project_id="p1", created_at=datetime(2026, 1, 1, tzinfo=timezone.utc))
+    await _persist(session, "r2", project_id="p1", created_at=datetime(2026, 2, 1, tzinfo=timezone.utc))
+    await _persist(session, "r3", project_id="p2", created_at=datetime(2026, 3, 1, tzinfo=timezone.utc))
+
+    reviews = await crud.list_reviews_for_project(session, "p1")
+
+    assert [r.id for r in reviews] == ["r2", "r1"]
+
+
+async def test_list_reviews_for_project_returns_empty_list_when_project_has_none(session):
+    await crud.create_project(session, project_id="p1", name="Payments Service")
+
+    assert await crud.list_reviews_for_project(session, "p1") == []
