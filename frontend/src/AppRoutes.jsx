@@ -1,14 +1,14 @@
 import { Routes, Route } from "react-router-dom";
-import HomePage from "./pages/HomePage";
-import ProjectsPage from "./pages/ProjectsPage";
+import ProjectDashboardPage from "./pages/ProjectDashboardPage";
 import ReviewPage from "./pages/ReviewPage";
+import ReviewReportPage from "./pages/ReviewReportPage";
 
 export default function AppRoutes() {
   return (
     <Routes>
-      <Route path="/" element={<HomePage />} />
-      <Route path="/projects" element={<ProjectsPage />} />
+      <Route path="/" element={<ProjectDashboardPage />} />
       <Route path="/review/:platform" element={<ReviewPage />} />
+      <Route path="/reports/:reviewId" element={<ReviewReportPage />} />
     </Routes>
   );
 }

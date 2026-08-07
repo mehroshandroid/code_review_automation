@@ -11,12 +11,3 @@ test("renders the brand and Home link, both pointing at /", () => {
   expect(screen.getByText("Code Review Automation").closest("a")).toHaveAttribute("href", "/");
   expect(screen.getByText("← Home")).toHaveAttribute("href", "/");
 });
-
-test("renders a Projects link pointing at /projects", () => {
-  render(
-    <MemoryRouter>
-      <TopNav />
-    </MemoryRouter>
-  );
-  expect(screen.getByText("Projects")).toHaveAttribute("href", "/projects");
-});

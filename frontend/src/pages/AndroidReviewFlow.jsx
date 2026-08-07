@@ -15,7 +15,7 @@ import { getCompileCheckMode } from "../services/compileCheckModeStorage";
 
 const SCORING_PHASES = ["scoring", "generating", "completed"];
 
-export default function AndroidReviewFlow({ platform = { id: "android", label: "Android" } }) {
+export default function AndroidReviewFlow({ platform = { id: "android", label: "Android" }, projectId = null }) {
   const [state, setState] = useState("idle"); // idle | uploading | polling | completed | error
   const [reviewId, setReviewId] = useState(null);
   const [progressData, setProgressData] = useState(null);
@@ -41,7 +41,7 @@ export default function AndroidReviewFlow({ platform = { id: "android", label: "
 
       const result = await createReview(
         androidZip, excelTemplate, effectiveProvider, effectiveModel, compileCheckMode, platform.label,
-        devopsRepoUrl, devopsPat, devopsBranch
+        devopsRepoUrl, devopsPat, devopsBranch, projectId
       );
       if (result.status === "error") {
         setErrorMessage(result.error || "Upload failed");
@@ -54,7 +54,7 @@ export default function AndroidReviewFlow({ platform = { id: "android", label: "
       setErrorMessage("Failed to start review. Is the server running?");
       setState("error");
     }
-  }, [platform.label]);
+  }, [platform.label, projectId]);
 
   const handleProgressUpdate = useCallback((data) => {
     setProgressData(data);
