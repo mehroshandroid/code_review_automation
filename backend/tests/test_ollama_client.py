@@ -30,9 +30,52 @@ async def test_score_category_calls_ollama_endpoint_and_parses_response(monkeypa
     assert result == {"1.1": {"score": 1, "remark": "Well named"}}
     assert captured["url"] == "http://fake-ollama:11434/v1/chat/completions"
     assert captured["json"]["model"] == "qwen2.5-coder:7b"
+    # Ollama defaults num_ctx to 2048 tokens unless a request overrides it --
+    # far below what a category's code context + instructions can need, so
+    # every request must set it explicitly (top-level field: this project
+    # talks to Ollama's OpenAI-compatible /v1/chat/completions endpoint,
+    # where num_ctx is not nested under "options" the way it is on Ollama's
+    # native /api/chat endpoint).
+    assert captured["json"]["num_ctx"] == 16384
     assert prompt_info["tokens"] == {
         "prompt_tokens": 300, "completion_tokens": 20, "total_tokens": 320, "cached_tokens": None,
     }
+
+
+@pytest.mark.asyncio
+async def test_score_category_respects_the_ollama_num_ctx_env_var_override(monkeypatch):
+    monkeypatch.setenv("OLLAMA_BASE_URL", "http://fake-ollama:11434")
+    monkeypatch.setenv("OLLAMA_NUM_CTX", "8192")
+    captured = {}
+
+    async def fake_post(self, url, json=None):
+        captured["json"] = json
+        content = '{"1.1": {"score": 1, "remark": "ok"}}'
+        request = httpx.Request("POST", url)
+        return httpx.Response(status_code=200, json={"choices": [{"message": {"content": content}}]}, request=request)
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", fake_post)
+
+    await ollama_client.score_category("Code Structure", ["1.1"], {}, "code here")
+
+    assert captured["json"]["num_ctx"] == 8192
+
+
+@pytest.mark.asyncio
+async def test_generate_general_remarks_sends_num_ctx_too(monkeypatch):
+    monkeypatch.setenv("OLLAMA_BASE_URL", "http://fake-ollama:11434")
+    captured = {}
+
+    async def fake_post(self, url, json=None):
+        captured["json"] = json
+        request = httpx.Request("POST", url)
+        return httpx.Response(status_code=200, json={"choices": [{"message": {"content": "summary"}}]}, request=request)
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", fake_post)
+
+    await ollama_client.generate_general_remarks({})
+
+    assert captured["json"]["num_ctx"] == 16384
 
 
 @pytest.mark.asyncio

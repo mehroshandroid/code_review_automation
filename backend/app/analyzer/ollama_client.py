@@ -14,6 +14,14 @@ from app.analyzer.llm_prompts import (
 
 DEFAULT_OLLAMA_BASE_URL = "http://host.docker.internal:11434"
 DEFAULT_OLLAMA_MODEL = "qwen2.5-coder:7b"
+# Ollama defaults every model to num_ctx=2048 tokens (~8,000 characters) as
+# an intentional hardware-safety default, not a model capability limit --
+# nothing about the model itself caps it there. 16384 (8x the default)
+# comfortably covers a category's code context + instructions without going
+# all the way to the model's theoretical 32K ceiling, since num_ctx memory
+# cost scales with context size and local hardware is already the
+# bottleneck (see TIMEOUT_SECONDS below).
+DEFAULT_OLLAMA_NUM_CTX = 16384
 # Local hardware varies a lot more than a hosted API -- a 7B model on a
 # laptop CPU/GPU can genuinely take several minutes for a category with a
 # large code-context prompt, especially on a cold start.
@@ -27,6 +35,10 @@ def _base_url() -> str:
 
 def _model(model: str | None) -> str:
     return model or os.environ.get("OLLAMA_MODEL", DEFAULT_OLLAMA_MODEL)
+
+
+def _num_ctx() -> int:
+    return int(os.environ.get("OLLAMA_NUM_CTX", DEFAULT_OLLAMA_NUM_CTX))
 
 
 def _empty_tokens() -> dict:
@@ -50,6 +62,10 @@ async def _post(payload: dict):
     # model occasionally running slow for one request shouldn't permanently
     # zero out that category's score (see MAX_ATTEMPTS usage below).
     url = f"{_base_url()}/v1/chat/completions"
+    # num_ctx is a top-level field on this OpenAI-compatible endpoint, not
+    # nested under "options" (that nesting only applies to Ollama's native
+    # /api/generate and /api/chat endpoints, which this client doesn't use).
+    payload = {**payload, "num_ctx": _num_ctx()}
     for attempt in range(MAX_ATTEMPTS):
         try:
             async with httpx.AsyncClient(timeout=TIMEOUT_SECONDS) as client:

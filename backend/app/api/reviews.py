@@ -32,6 +32,14 @@ logger = get_logger(__name__)
 
 _reviews: dict = {}
 
+# gather_code_context's max_chars budget, sized per LLM provider rather than
+# one constant shared by both -- Ollama (local hardware, num_ctx raised to
+# 16384 in ollama_client.py) and Azure OpenAI (hosted gpt-4o-mini, 128K
+# token context) have very different real capacity. See
+# docs/superpowers/specs/2026-08-04-llm-context-window-fixes-design.md.
+CODE_CONTEXT_MAX_CHARS_OLLAMA = 48000
+CODE_CONTEXT_MAX_CHARS_AZURE = 120000
+
 
 def _new_review_state() -> dict:
     return {
@@ -217,7 +225,10 @@ async def _run_review(
         state["warnings"] = analysis.structure_warnings + [w["issue"] for w in analysis.version_warnings]
         state["test_coverage"] = analysis.test_coverage
         state["secrets_found"] = analysis.secrets_found
-        code_context = analyzer.gather_code_context(extract_dir)
+        code_context_max_chars = (
+            CODE_CONTEXT_MAX_CHARS_OLLAMA if llm_provider == "ollama" else CODE_CONTEXT_MAX_CHARS_AZURE
+        )
+        code_context = analyzer.gather_code_context(extract_dir, max_chars=code_context_max_chars)
         state["code_context"] = code_context
         template_ws = load_workbook(template_path).active
         categories, sub_criteria_descriptions = discover_structure(template_ws)

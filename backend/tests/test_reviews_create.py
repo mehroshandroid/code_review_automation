@@ -365,6 +365,84 @@ async def test_run_review_passes_llm_provider_and_model_through_to_scoring_calls
     assert captured_models == ["qwen2.5-coder:7b"] * 6
 
 
+async def test_run_review_uses_the_ollama_code_context_budget_for_ollama_reviews(monkeypatch):
+    review_id = "ollama-code-context-budget-check"
+    work_dir = Path(tempfile.mkdtemp(prefix=f"review_{review_id}_"))
+    zip_path = work_dir / "android.zip"
+    template_path = work_dir / "template.xlsx"
+    zip_path.write_bytes(_build_zip_bytes())
+    template_path.write_bytes(_build_xlsx_bytes())
+
+    _reviews[review_id] = _new_review_state()
+
+    captured_max_chars = []
+    real_gather_code_context = reviews_module.android_analyzer.gather_code_context
+
+    def fake_gather_code_context(extract_dir, max_chars=32000):
+        captured_max_chars.append(max_chars)
+        return real_gather_code_context(extract_dir, max_chars=max_chars)
+
+    async def fake_score_category(provider, category_name, sub_criteria, descriptions, code_snippets, model=None, platform="Android"):
+        sub_results = {sub_id: {"score": 1, "remark": ""} for sub_id in sub_criteria}
+        prompt_info = {"label": category_name, "prompt_text": "stub", "tokens": {
+            "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "cached_tokens": 0,
+        }}
+        return sub_results, prompt_info
+
+    async def fake_check_compile_warnings(zip_path_arg):
+        return {"status": "ok", "warning_count": 0, "issues": []}
+
+    monkeypatch.setattr(reviews_module.android_analyzer, "gather_code_context", fake_gather_code_context)
+    monkeypatch.setattr(reviews_module, "score_category", fake_score_category)
+    monkeypatch.setattr(reviews_module, "check_compile_warnings", fake_check_compile_warnings)
+
+    await _run_review(
+        review_id, work_dir, zip_path, template_path, zip_valid=True, template_valid=True, project_name="Test",
+        llm_provider="ollama",
+    )
+
+    assert captured_max_chars == [reviews_module.CODE_CONTEXT_MAX_CHARS_OLLAMA]
+
+
+async def test_run_review_uses_the_azure_code_context_budget_for_non_ollama_reviews(monkeypatch):
+    review_id = "azure-code-context-budget-check"
+    work_dir = Path(tempfile.mkdtemp(prefix=f"review_{review_id}_"))
+    zip_path = work_dir / "android.zip"
+    template_path = work_dir / "template.xlsx"
+    zip_path.write_bytes(_build_zip_bytes())
+    template_path.write_bytes(_build_xlsx_bytes())
+
+    _reviews[review_id] = _new_review_state()
+
+    captured_max_chars = []
+    real_gather_code_context = reviews_module.android_analyzer.gather_code_context
+
+    def fake_gather_code_context(extract_dir, max_chars=32000):
+        captured_max_chars.append(max_chars)
+        return real_gather_code_context(extract_dir, max_chars=max_chars)
+
+    async def fake_score_category(provider, category_name, sub_criteria, descriptions, code_snippets, model=None, platform="Android"):
+        sub_results = {sub_id: {"score": 1, "remark": ""} for sub_id in sub_criteria}
+        prompt_info = {"label": category_name, "prompt_text": "stub", "tokens": {
+            "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "cached_tokens": 0,
+        }}
+        return sub_results, prompt_info
+
+    async def fake_check_compile_warnings(zip_path_arg):
+        return {"status": "ok", "warning_count": 0, "issues": []}
+
+    monkeypatch.setattr(reviews_module.android_analyzer, "gather_code_context", fake_gather_code_context)
+    monkeypatch.setattr(reviews_module, "score_category", fake_score_category)
+    monkeypatch.setattr(reviews_module, "check_compile_warnings", fake_check_compile_warnings)
+
+    await _run_review(
+        review_id, work_dir, zip_path, template_path, zip_valid=True, template_valid=True, project_name="Test",
+        llm_provider="azure",
+    )
+
+    assert captured_max_chars == [reviews_module.CODE_CONTEXT_MAX_CHARS_AZURE]
+
+
 async def test_run_review_passes_platform_through_to_scoring_calls(monkeypatch):
     review_id = "platform-threading-check"
     work_dir = Path(tempfile.mkdtemp(prefix=f"review_{review_id}_"))
