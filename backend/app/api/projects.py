@@ -33,3 +33,21 @@ async def list_projects():
     async with new_session() as session:
         projects = await crud.list_projects(session)
         return {"projects": [_project_to_dict(p) for p in projects]}
+
+
+def _review_summary_to_dict(review) -> dict:
+    return {
+        "id": review.id,
+        "platform": review.platform,
+        "status": review.status,
+        "created_at": review.created_at.isoformat(),
+        "completed_at": review.completed_at.isoformat() if review.completed_at else None,
+        "total_score_pct": float(review.total_score_pct) if review.total_score_pct is not None else None,
+    }
+
+
+@router.get("/api/projects/{project_id}/reviews")
+async def list_project_reviews(project_id: str):
+    async with new_session() as session:
+        reviews = await crud.list_reviews_for_project(session, project_id)
+        return {"reviews": [_review_summary_to_dict(r) for r in reviews]}
