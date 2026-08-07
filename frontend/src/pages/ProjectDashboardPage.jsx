@@ -76,6 +76,10 @@ export default function ProjectDashboardPage() {
     setSelectedProjectId(project.id);
   }
 
+  function handleProjectRenamed(project) {
+    setProjects((current) => current.map((p) => (p.id === project.id ? project : p)));
+  }
+
   const ollamaEnabled = ollamaModels === null || ollamaModels.length > 0;
   const effectiveProvider = !ollamaEnabled && llmProvider === "ollama" ? "azure" : llmProvider;
 
@@ -91,11 +95,8 @@ export default function ProjectDashboardPage() {
         <Link to="/settings" className="btn btn-ghost" aria-label="Settings" style={{ marginLeft: "auto" }}><GearIcon /></Link>
       </nav>
 
-      <main style={{ maxWidth: 1440, margin: "0 auto", padding: "64px 24px 96px" }}>
-        <header style={{ marginBottom: "var(--space-6)" }}>
-          <h1 style={{ fontFamily: "var(--font-heading)", fontWeight: "var(--font-heading-weight)", fontSize: 40, lineHeight: 1.1, letterSpacing: "-0.02em", margin: "0 0 12px" }}>
-            Code Review Automation
-          </h1>
+      <main style={{ maxWidth: 1600, margin: "0 auto", padding: "40px 16px 96px" }}>
+        <header style={{ marginBottom: "var(--space-5)" }}>
           <p style={{ margin: 0, color: "var(--color-text-muted)", maxWidth: "60ch", fontSize: 16, lineHeight: 1.6 }}>
             Select a project to see its review history, or start a new review.
           </p>
@@ -107,6 +108,7 @@ export default function ProjectDashboardPage() {
             selectedProjectId={selectedProjectId}
             onSelectProject={setSelectedProjectId}
             onProjectCreated={handleProjectCreated}
+            onProjectRenamed={handleProjectRenamed}
           />
 
           {selectedProjectId ? (

@@ -78,6 +78,7 @@ test("creating a project selects it automatically", async () => {
   renderDashboard();
 
   await screen.findByText(/create a project to get started/i);
+  await user.click(screen.getByRole("button", { name: /add project/i }));
   await user.type(screen.getByLabelText(/project name/i), "New Project");
   await user.click(screen.getByRole("button", { name: /create/i }));
 

@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import SettingsPage from "./SettingsPage";
 import {
-  getLlmProviderSettings, updateLlmProviderSettings,
+  getLlmProviderSettings, updateLlmProviderSettings, getOllamaModels,
   getClauseChecklists, upsertClauseChecklist, deleteClauseChecklist,
   getSampleTemplates, uploadSampleTemplate, deleteSampleTemplate,
 } from "../services/api";
@@ -12,6 +12,7 @@ jest.mock("../services/api", () => ({
   ...jest.requireActual("../services/api"),
   getLlmProviderSettings: jest.fn(),
   updateLlmProviderSettings: jest.fn(),
+  getOllamaModels: jest.fn(),
   getClauseChecklists: jest.fn(),
   upsertClauseChecklist: jest.fn(),
   deleteClauseChecklist: jest.fn(),
@@ -23,6 +24,7 @@ jest.mock("../services/api", () => ({
 beforeEach(() => {
   jest.resetAllMocks();
   getLlmProviderSettings.mockResolvedValue({ default_llm_provider: "ollama", default_ollama_model: null });
+  getOllamaModels.mockResolvedValue(["qwen2.5-coder:7b", "mistral:latest"]);
   getClauseChecklists.mockResolvedValue([]);
   getSampleTemplates.mockResolvedValue([]);
 });
@@ -52,7 +54,7 @@ describe("LLM provider section", () => {
     expect(screen.queryByLabelText(/default ollama model/i)).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Ollama (local)" }));
-    expect(screen.getByLabelText(/default ollama model/i)).toBeInTheDocument();
+    expect(await screen.findByLabelText(/default ollama model/i)).toBeInTheDocument();
   });
 
   test("saves the selected provider and model", async () => {
@@ -62,11 +64,32 @@ describe("LLM provider section", () => {
     renderSettings();
 
     await waitFor(() => expect(screen.getByRole("button", { name: "Ollama (local)" })).toHaveClass("btn-primary"));
-    await user.type(screen.getByLabelText(/default ollama model/i), "qwen2.5-coder:7b");
+    await screen.findByLabelText(/default ollama model/i);
+    await user.selectOptions(screen.getByLabelText(/default ollama model/i), "qwen2.5-coder:7b");
     await user.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(updateLlmProviderSettings).toHaveBeenCalledWith("ollama", "qwen2.5-coder:7b"));
     expect(await screen.findByText("Saved.")).toBeInTheDocument();
+  });
+
+  test("shows a dropdown of installed Ollama models to choose from", async () => {
+    getLlmProviderSettings.mockResolvedValue({ default_llm_provider: "ollama", default_ollama_model: "mistral:latest" });
+    renderSettings();
+
+    const select = await screen.findByLabelText(/default ollama model/i);
+    expect(select.tagName).toBe("SELECT");
+    expect(select).toHaveValue("mistral:latest");
+    expect(screen.getByRole("option", { name: "qwen2.5-coder:7b" })).toBeInTheDocument();
+  });
+
+  test("falls back to a free-text model field when Ollama has no installed models", async () => {
+    getLlmProviderSettings.mockResolvedValue({ default_llm_provider: "ollama", default_ollama_model: "" });
+    getOllamaModels.mockResolvedValue([]);
+    renderSettings();
+
+    const input = await screen.findByLabelText(/default ollama model/i);
+    expect(input.tagName).toBe("INPUT");
+    expect(screen.getByText(/couldn't reach ollama/i)).toBeInTheDocument();
   });
 });
 

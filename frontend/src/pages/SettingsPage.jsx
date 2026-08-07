@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import TopNav from "../components/TopNav";
 import { PLATFORMS } from "../platforms";
 import {
-  getLlmProviderSettings, updateLlmProviderSettings,
+  getLlmProviderSettings, updateLlmProviderSettings, getOllamaModels,
   getClauseChecklists, upsertClauseChecklist, deleteClauseChecklist,
   getSampleTemplates, uploadSampleTemplate, deleteSampleTemplate,
 } from "../services/api";
@@ -17,6 +17,7 @@ const LLM_PROVIDERS = [
 function LlmProviderSection() {
   const [provider, setProvider] = useState(null);
   const [ollamaModel, setOllamaModel] = useState("");
+  const [ollamaModels, setOllamaModels] = useState(null); // null = still loading
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
@@ -30,6 +31,14 @@ function LlmProviderSection() {
         setOllamaModel(settings.default_ollama_model || "");
       })
       .catch(() => { if (!cancelled) setError("Failed to load LLM provider settings"); });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    getOllamaModels()
+      .then((models) => { if (!cancelled) setOllamaModels(models); })
+      .catch(() => { if (!cancelled) setOllamaModels([]); });
     return () => { cancelled = true; };
   }, []);
 
@@ -67,7 +76,22 @@ function LlmProviderSection() {
         ))}
       </div>
 
-      {provider === "ollama" && (
+      {provider === "ollama" && ollamaModels && ollamaModels.length > 0 && (
+        <div className="field" style={{ marginTop: "var(--space-3)" }}>
+          <label htmlFor="defaultOllamaModel">Default Ollama model</label>
+          <select
+            id="defaultOllamaModel"
+            className="input"
+            value={ollamaModels.includes(ollamaModel) ? ollamaModel : ""}
+            onChange={(event) => setOllamaModel(event.target.value)}
+          >
+            <option value="" disabled>Select a model…</option>
+            {ollamaModels.map((model) => <option key={model} value={model}>{model}</option>)}
+          </select>
+        </div>
+      )}
+
+      {provider === "ollama" && ollamaModels && ollamaModels.length === 0 && (
         <div className="field" style={{ marginTop: "var(--space-3)" }}>
           <label htmlFor="defaultOllamaModel">Default Ollama model</label>
           <input
@@ -78,6 +102,9 @@ function LlmProviderSection() {
             onChange={(event) => setOllamaModel(event.target.value)}
             placeholder="qwen2.5-coder:7b"
           />
+          <p className="card-body" style={{ marginTop: "var(--space-2)" }}>
+            Couldn't reach Ollama to list installed models -- enter the model name manually.
+          </p>
         </div>
       )}
 

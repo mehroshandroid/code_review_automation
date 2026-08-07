@@ -1,6 +1,6 @@
 import axios from "axios";
 import {
-  createReview, getProgress, getDownloadUrl, getOllamaModels, createProject, getProjects, getProjectReviews, getReview,
+  createReview, getProgress, getDownloadUrl, getOllamaModels, createProject, updateProject, getProjects, getProjectReviews, getReview,
   getLlmProviderSettings, updateLlmProviderSettings, getClauseChecklists, upsertClauseChecklist, deleteClauseChecklist,
   getSampleTemplates, uploadSampleTemplate, deleteSampleTemplate,
 } from "./api";
@@ -178,6 +178,18 @@ describe("getProjects", () => {
 
     expect(result).toEqual(projects);
     expect(axios.get).toHaveBeenCalledWith(expect.stringContaining("/projects"));
+  });
+});
+
+describe("updateProject", () => {
+  it("patches the given name and returns the updated project", async () => {
+    const project = { id: "p1", name: "Renamed Project", created_at: "2026-08-07T00:00:00Z" };
+    axios.patch.mockResolvedValue({ data: project });
+
+    const result = await updateProject("p1", "Renamed Project");
+
+    expect(result).toEqual(project);
+    expect(axios.patch).toHaveBeenCalledWith(expect.stringContaining("/projects/p1"), { name: "Renamed Project" });
   });
 });
 

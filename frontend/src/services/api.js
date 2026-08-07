@@ -46,6 +46,11 @@ export async function getProjects() {
   return response.data.projects;
 }
 
+export async function updateProject(projectId, name) {
+  const response = await axios.patch(`${API_BASE_URL}/projects/${projectId}`, { name });
+  return response.data;
+}
+
 export async function getProjectReviews(projectId) {
   const response = await axios.get(`${API_BASE_URL}/projects/${projectId}/reviews`);
   return response.data.reviews;
