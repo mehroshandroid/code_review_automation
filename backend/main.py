@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.analyzer.openai_client import is_stub_mode
 from app.api.ollama import router as ollama_router
+from app.api.projects import router as projects_router
 from app.api.reviews import router as reviews_router
 
 load_dotenv()
@@ -17,6 +18,7 @@ app.add_middleware(
 )
 app.include_router(reviews_router)
 app.include_router(ollama_router)
+app.include_router(projects_router)
 
 
 @app.get("/api/health")
