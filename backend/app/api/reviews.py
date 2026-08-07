@@ -449,17 +449,62 @@ async def get_progress(review_id: str):
     }
 
 
+@router.get("/api/reviews/{review_id}")
+async def get_review(review_id: str):
+    async with new_session() as session:
+        review = await crud.get_review_by_id(session, review_id)
+    if review is None:
+        raise HTTPException(status_code=404, detail="Review not found")
+    result_data = review.result_data or {}
+    return {
+        "id": review.id,
+        "project_id": review.project_id,
+        "platform": review.platform,
+        "status": review.status,
+        "project_name": review.project_name,
+        "created_at": review.created_at.isoformat(),
+        "completed_at": review.completed_at.isoformat() if review.completed_at else None,
+        "total_score_pct": float(review.total_score_pct) if review.total_score_pct is not None else None,
+        "llm_provider": review.llm_provider,
+        "llm_model": review.llm_model,
+        "has_workbook": review.workbook_path is not None,
+        "category_scores": result_data.get("category_scores", []),
+        "warnings": result_data.get("warnings", []),
+        "secrets_found": result_data.get("secrets_found", []),
+        "lint_issues": result_data.get("lint_issues", []),
+        "compile_status": result_data.get("compile_status"),
+        "stats": result_data.get("stats", {}),
+        "error": result_data.get("error"),
+    }
+
+
 @router.get("/api/reviews/{review_id}/download")
 async def download_review(review_id: str):
     state = _reviews.get(review_id)
-    if state is None or state["download_path"] is None:
+    if state is not None and state["download_path"] is not None:
+        path = Path(state["download_path"])
+        if not path.exists():
+            raise HTTPException(status_code=404, detail="Result already downloaded or expired")
+        return FileResponse(
+            path,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            filename="review_result.xlsx",
+            background=BackgroundTask(shutil.rmtree, path.parent, ignore_errors=True),
+        )
+
+    # Not live (or not in this backend process's lifetime) -- fall back to
+    # the persisted workbook on the artifacts volume. Unlike the live/temp
+    # path above, this is NOT deleted after serving: an approver may need
+    # to download the same persisted review more than once.
+    async with new_session() as session:
+        review = await crud.get_review_by_id(session, review_id)
+    if review is None or review.workbook_path is None:
         raise HTTPException(status_code=404, detail="Result not available")
-    path = Path(state["download_path"])
-    if not path.exists():
-        raise HTTPException(status_code=404, detail="Result already downloaded or expired")
+    persisted_path = Path(review.workbook_path)
+    if not persisted_path.exists():
+        raise HTTPException(status_code=404, detail="Result not available")
     return FileResponse(
-        path,
+        persisted_path,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         filename="review_result.xlsx",
-        background=BackgroundTask(shutil.rmtree, path.parent, ignore_errors=True),
     )
