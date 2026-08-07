@@ -1,10 +1,30 @@
+import io
+
 import pytest
 from fastapi.testclient import TestClient
+from openpyxl import Workbook
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 import app.api.settings as settings_module
 from app.db.models import Base
 from main import app
+
+
+def _build_xlsx_bytes() -> bytes:
+    wb = Workbook()
+    ws = wb.active
+    ws.append(["Clause", None, "Weight", "Avg Points", "Final Points", "% Points", "Remarks"])
+    category_specs = [("1", "Code naming conventions / Code Structure", 2), ("2", "Reliability, Security & Observability", 1)]
+    for category_id, name, sub_count in category_specs:
+        category_row = ws.max_row + 1
+        start_row = category_row + 1
+        end_row = start_row + sub_count - 1
+        ws.append([int(category_id), name, 1, f"=AVERAGE(D{start_row}:D{end_row})", None, None, None])
+        for offset in range(1, sub_count + 1):
+            ws.append([f"{category_id}.{offset}", f"Sub {category_id}.{offset} description", None, None, None, None, None])
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    return buffer.getvalue()
 
 
 @pytest.fixture
@@ -152,3 +172,50 @@ def test_delete_sample_template_returns_404_when_not_found(test_sessionmaker):
         response = client.delete("/api/settings/sample-templates/iOS")
 
     assert response.status_code == 404
+
+
+# --- sample template preview ---
+
+def test_preview_sample_template_returns_categories_and_descriptions(test_sessionmaker):
+    with TestClient(app) as client:
+        client.post(
+            "/api/settings/sample-templates/Android",
+            files={"file": ("android.xlsx", _build_xlsx_bytes(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        )
+        response = client.get("/api/settings/sample-templates/Android/preview")
+
+    assert response.status_code == 200
+    categories = response.json()["categories"]
+    assert categories == [
+        {
+            "id": "1",
+            "name": "Code naming conventions / Code Structure",
+            "sub_criteria": [
+                {"id": "1.1", "description": "Sub 1.1 description"},
+                {"id": "1.2", "description": "Sub 1.2 description"},
+            ],
+        },
+        {
+            "id": "2",
+            "name": "Reliability, Security & Observability",
+            "sub_criteria": [{"id": "2.1", "description": "Sub 2.1 description"}],
+        },
+    ]
+
+
+def test_preview_sample_template_returns_404_when_no_template_configured(test_sessionmaker):
+    with TestClient(app) as client:
+        response = client.get("/api/settings/sample-templates/Android/preview")
+
+    assert response.status_code == 404
+
+
+def test_preview_sample_template_returns_422_when_the_sheet_cannot_be_parsed(test_sessionmaker):
+    with TestClient(app) as client:
+        client.post(
+            "/api/settings/sample-templates/Android",
+            files={"file": ("android.xlsx", b"not a real xlsx file", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        )
+        response = client.get("/api/settings/sample-templates/Android/preview")
+
+    assert response.status_code == 422

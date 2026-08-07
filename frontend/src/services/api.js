@@ -114,3 +114,8 @@ export async function uploadSampleTemplate(platform, file) {
 export async function deleteSampleTemplate(platform) {
   await axios.delete(`${API_BASE_URL}/settings/sample-templates/${platform}`);
 }
+
+export async function previewSampleTemplate(platform) {
+  const response = await axios.get(`${API_BASE_URL}/settings/sample-templates/${platform}/preview`);
+  return response.data.categories;
+}

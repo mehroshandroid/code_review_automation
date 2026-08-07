@@ -3,8 +3,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, File, HTTPException, Response, UploadFile
+from openpyxl import load_workbook
 from pydantic import BaseModel
 
+from app.analyzer.excel_handler import discover_structure
 from app.db import crud
 from app.db.session import new_session
 
@@ -95,6 +97,38 @@ async def upload_sample_template(platform: str, file: UploadFile = File(...)):
             file_path=str(file_path), uploaded_at=datetime.now(timezone.utc),
         )
     return _template_to_dict(template)
+
+
+@router.get("/api/settings/sample-templates/{platform}/preview")
+async def preview_sample_template(platform: str):
+    async with new_session() as session:
+        template = await crud.get_sample_template(session, platform)
+    if template is None:
+        raise HTTPException(status_code=404, detail="No sample template configured for this platform")
+
+    path = Path(template.file_path)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Sample template file is missing")
+
+    try:
+        worksheet = load_workbook(path).active
+        categories, descriptions = discover_structure(worksheet)
+    except Exception:
+        raise HTTPException(status_code=422, detail="Could not read this sheet's clause structure")
+
+    return {
+        "categories": [
+            {
+                "id": category_id,
+                "name": category["name"],
+                "sub_criteria": [
+                    {"id": sub_id, "description": descriptions.get(sub_id, "")}
+                    for sub_id in category["sub_criteria"]
+                ],
+            }
+            for category_id, category in categories.items()
+        ]
+    }
 
 
 @router.delete("/api/settings/sample-templates/{platform}", status_code=204)

@@ -2,7 +2,7 @@ import axios from "axios";
 import {
   createReview, getProgress, getDownloadUrl, getOllamaModels, createProject, updateProject, getProjects, getProjectReviews, getReview, updateReview,
   getLlmProviderSettings, updateLlmProviderSettings, getClauseChecklists, upsertClauseChecklist, deleteClauseChecklist,
-  getSampleTemplates, uploadSampleTemplate, deleteSampleTemplate,
+  getSampleTemplates, uploadSampleTemplate, deleteSampleTemplate, previewSampleTemplate,
 } from "./api";
 
 jest.mock("axios");
@@ -354,5 +354,19 @@ describe("deleteSampleTemplate", () => {
     await deleteSampleTemplate("Android");
 
     expect(axios.delete).toHaveBeenCalledWith(expect.stringContaining("/settings/sample-templates/Android"));
+  });
+});
+
+describe("previewSampleTemplate", () => {
+  it("fetches the parsed clause structure for the given platform and returns the categories", async () => {
+    const categories = [
+      { id: "1", name: "Structure", sub_criteria: [{ id: "1.1", description: "Naming conventions" }] },
+    ];
+    axios.get.mockResolvedValue({ data: { categories } });
+
+    const result = await previewSampleTemplate("Android");
+
+    expect(result).toEqual(categories);
+    expect(axios.get).toHaveBeenCalledWith(expect.stringContaining("/settings/sample-templates/Android/preview"));
   });
 });

@@ -5,7 +5,7 @@ import SettingsPage from "./SettingsPage";
 import {
   getLlmProviderSettings, updateLlmProviderSettings, getOllamaModels,
   getClauseChecklists, upsertClauseChecklist, deleteClauseChecklist,
-  getSampleTemplates, uploadSampleTemplate, deleteSampleTemplate,
+  getSampleTemplates, uploadSampleTemplate, deleteSampleTemplate, previewSampleTemplate,
 } from "../services/api";
 
 jest.mock("../services/api", () => ({
@@ -19,7 +19,19 @@ jest.mock("../services/api", () => ({
   getSampleTemplates: jest.fn(),
   uploadSampleTemplate: jest.fn(),
   deleteSampleTemplate: jest.fn(),
+  previewSampleTemplate: jest.fn(),
 }));
+
+const previewCategories = [
+  {
+    id: "2",
+    name: "Reliability, Security & Observability",
+    sub_criteria: [
+      { id: "2.3", description: "No hardcoded secrets" },
+      { id: "2.4", description: "Proper authentication handling" },
+    ],
+  },
+];
 
 beforeEach(() => {
   jest.resetAllMocks();
@@ -27,6 +39,7 @@ beforeEach(() => {
   getOllamaModels.mockResolvedValue(["qwen2.5-coder:7b", "mistral:latest"]);
   getClauseChecklists.mockResolvedValue([]);
   getSampleTemplates.mockResolvedValue([]);
+  previewSampleTemplate.mockResolvedValue(previewCategories);
 });
 
 function renderSettings() {
@@ -152,6 +165,40 @@ describe("Clause checklist section", () => {
     await waitFor(() => expect(deleteClauseChecklist).toHaveBeenCalledWith(".NET", "2.4"));
     await waitFor(() => expect(screen.queryByText("Check JWT config")).not.toBeInTheDocument());
   });
+
+  test("clicking Preview clauses opens a dialog showing the selected platform's clause structure", async () => {
+    const user = userEvent.setup();
+    renderSettings();
+
+    await user.click(screen.getByRole("button", { name: /preview clauses/i }));
+
+    expect(await screen.findByText(/no hardcoded secrets/i)).toBeInTheDocument();
+    expect(screen.getByText(/proper authentication handling/i)).toBeInTheDocument();
+    expect(previewSampleTemplate).toHaveBeenCalledWith("Android");
+  });
+
+  test("clicking Use on a clause fills the Sub-clause ID field and closes the dialog", async () => {
+    const user = userEvent.setup();
+    renderSettings();
+
+    await user.click(screen.getByRole("button", { name: /preview clauses/i }));
+    await screen.findByText(/no hardcoded secrets/i);
+    const useButtons = screen.getAllByRole("button", { name: "Use" });
+    await user.click(useButtons[1]);
+
+    expect(screen.getByLabelText(/sub-clause id/i)).toHaveValue("2.4");
+    expect(screen.queryByText(/no hardcoded secrets/i)).not.toBeInTheDocument();
+  });
+
+  test("shows a helpful message in the preview dialog when no sample sheet is configured for the platform", async () => {
+    const user = userEvent.setup();
+    previewSampleTemplate.mockRejectedValue({ response: { status: 404 } });
+    renderSettings();
+
+    await user.click(screen.getByRole("button", { name: /preview clauses/i }));
+
+    expect(await screen.findByText(/no sample sheet uploaded for android/i)).toBeInTheDocument();
+  });
 });
 
 describe("Sample template section", () => {
@@ -205,5 +252,27 @@ describe("Sample template section", () => {
 
     await waitFor(() => expect(deleteSampleTemplate).toHaveBeenCalledWith("Android"));
     await waitFor(() => expect(within(androidRow).getByText(/no default configured/i)).toBeInTheDocument());
+  });
+
+  test("does not show a Preview button for platforms without a stored template", async () => {
+    renderSettings();
+
+    const androidRow = (await screen.findByText("Android", { selector: ".card-title" })).closest(".card");
+    expect(within(androidRow).queryByRole("button", { name: /preview/i })).not.toBeInTheDocument();
+  });
+
+  test("clicking Preview for a configured platform opens a read-only clause dialog with no Use buttons", async () => {
+    const user = userEvent.setup();
+    getSampleTemplates.mockResolvedValue([
+      { platform: "Android", filename: "android-default.xlsx", uploaded_at: "2026-08-07T00:00:00Z" },
+    ]);
+    renderSettings();
+
+    const androidRow = (await screen.findByText("Android", { selector: ".card-title" })).closest(".card");
+    await user.click(within(androidRow).getByRole("button", { name: /preview/i }));
+
+    expect(await screen.findByText(/no hardcoded secrets/i)).toBeInTheDocument();
+    expect(previewSampleTemplate).toHaveBeenCalledWith("Android");
+    expect(screen.queryByRole("button", { name: "Use" })).not.toBeInTheDocument();
   });
 });

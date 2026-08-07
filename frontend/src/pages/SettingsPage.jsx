@@ -4,7 +4,7 @@ import { PLATFORMS } from "../platforms";
 import {
   getLlmProviderSettings, updateLlmProviderSettings, getOllamaModels,
   getClauseChecklists, upsertClauseChecklist, deleteClauseChecklist,
-  getSampleTemplates, uploadSampleTemplate, deleteSampleTemplate,
+  getSampleTemplates, uploadSampleTemplate, deleteSampleTemplate, previewSampleTemplate,
 } from "../services/api";
 
 const PLATFORM_LABELS = PLATFORMS.map((platform) => platform.label);
@@ -13,6 +13,66 @@ const LLM_PROVIDERS = [
   { id: "azure", label: "Azure OpenAI" },
   { id: "ollama", label: "Ollama (local)" },
 ];
+
+function ClausePreviewDialog({ platform, onSelect, onClose }) {
+  const [categories, setCategories] = useState(null); // null = still loading
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    setCategories(null);
+    setError("");
+    previewSampleTemplate(platform)
+      .then((result) => { if (!cancelled) setCategories(result); })
+      .catch((err) => {
+        if (cancelled) return;
+        setError(
+          err.response?.status === 404
+            ? `No sample sheet uploaded for ${platform} yet -- upload one below to preview its clauses here.`
+            : "Could not read this sheet's clause structure."
+        );
+      });
+    return () => { cancelled = true; };
+  }, [platform]);
+
+  return (
+    <div className="dialog-backdrop" onClick={onClose}>
+      <div className="dialog" onClick={(event) => event.stopPropagation()}>
+        <div className="dialog-title">{platform} clauses</div>
+        <div className="dialog-body">
+          {error && <p className="card-body" style={{ color: "var(--color-brand-coral)" }}>{error}</p>}
+          {!error && categories === null && <p className="card-body">Loading…</p>}
+          {!error && categories && categories.length === 0 && <p className="card-body">This sheet has no recognizable clause structure.</p>}
+          {!error && categories && categories.map((category) => (
+            <div key={category.id} style={{ marginBottom: "var(--space-4)" }}>
+              <div className="card-kicker-muted">{category.id} — {category.name}</div>
+              <ul style={{ paddingLeft: "1.1em", fontSize: 13, margin: "6px 0 0" }}>
+                {category.sub_criteria.map((sub) => (
+                  <li key={sub.id} style={{ marginBottom: "var(--space-2)", display: "flex", alignItems: "baseline", gap: "var(--space-2)" }}>
+                    <span><strong>{sub.id}</strong> — {sub.description}</span>
+                    {onSelect && (
+                      <button
+                        type="button"
+                        className="btn btn-ghost"
+                        style={{ flexShrink: 0 }}
+                        onClick={() => onSelect(sub.id)}
+                      >
+                        Use
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+        <div className="dialog-actions">
+          <button type="button" className="btn" onClick={onClose}>Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function LlmProviderSection() {
   const [provider, setProvider] = useState(null);
@@ -131,6 +191,7 @@ function ClauseChecklistSection() {
   const [checklistText, setChecklistText] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   function loadChecklists() {
     return getClauseChecklists().then(setChecklists).catch(() => setError("Failed to load clause checklists"));
@@ -235,14 +296,19 @@ function ClauseChecklistSection() {
           </div>
           <div className="field">
             <label htmlFor="checklistSubId">Sub-clause ID</label>
-            <input
-              id="checklistSubId"
-              type="text"
-              className="input"
-              value={subId}
-              onChange={(event) => setSubId(event.target.value)}
-              placeholder="2.4"
-            />
+            <div style={{ display: "flex", gap: "var(--space-2)" }}>
+              <input
+                id="checklistSubId"
+                type="text"
+                className="input"
+                value={subId}
+                onChange={(event) => setSubId(event.target.value)}
+                placeholder="2.4"
+              />
+              <button type="button" className="btn" style={{ flexShrink: 0 }} onClick={() => setPreviewOpen(true)}>
+                Preview clauses
+              </button>
+            </div>
           </div>
         </div>
         <div className="field">
@@ -265,6 +331,14 @@ function ClauseChecklistSection() {
           {saving ? "Saving…" : "Save checklist"}
         </button>
       </form>
+
+      {previewOpen && (
+        <ClausePreviewDialog
+          platform={platform}
+          onSelect={(selectedSubId) => { setSubId(selectedSubId); setPreviewOpen(false); }}
+          onClose={() => setPreviewOpen(false)}
+        />
+      )}
     </section>
   );
 }
@@ -273,6 +347,7 @@ function SampleTemplateSection() {
   const [templates, setTemplates] = useState([]);
   const [uploadingPlatform, setUploadingPlatform] = useState(null);
   const [error, setError] = useState("");
+  const [previewPlatform, setPreviewPlatform] = useState(null);
 
   function loadTemplates() {
     return getSampleTemplates().then(setTemplates).catch(() => setError("Failed to load sample templates"));
@@ -347,6 +422,11 @@ function SampleTemplateSection() {
                   />
                 </label>
                 {template && (
+                  <button type="button" className="btn" onClick={() => setPreviewPlatform(platformLabel)}>
+                    Preview
+                  </button>
+                )}
+                {template && (
                   <button type="button" className="btn" onClick={() => handleDelete(platformLabel)}>
                     Remove
                   </button>
@@ -358,6 +438,10 @@ function SampleTemplateSection() {
       </div>
 
       {error && <p className="card-body" style={{ color: "var(--color-brand-coral)", marginTop: "var(--space-3)" }}>{error}</p>}
+
+      {previewPlatform && (
+        <ClausePreviewDialog platform={previewPlatform} onClose={() => setPreviewPlatform(null)} />
+      )}
     </section>
   );
 }
