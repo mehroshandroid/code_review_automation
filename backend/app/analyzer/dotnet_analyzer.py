@@ -112,9 +112,30 @@ def analyze_project(project_dir: Path) -> AnalysisResult:
     )
 
 
+_PRIORITY_ENTRYPOINTS = {"Program.cs", "Startup.cs"}
+
+
+def _priority_tier(filename: str) -> int:
+    """Lower tiers are placed first when gather_code_context's max_chars
+    budget can't fit every file. Program.cs/Startup.cs (JWT/auth middleware
+    configuration) and *Controller.cs (per-endpoint [Authorize]/
+    [AllowAnonymous] usage) are exactly the files a security-focused review
+    clause like "Authentication and authorization correctly enforced" needs
+    to see -- plain alphabetical order could truncate them out of a large
+    multi-project solution before the LLM ever sees them."""
+    if filename in _PRIORITY_ENTRYPOINTS:
+        return 0
+    if filename.endswith("Controller.cs"):
+        return 1
+    return 2
+
+
 def gather_code_context(project_dir: Path, max_chars: int = 32000) -> str:
     project_dir = Path(project_dir)
-    source_files = sorted(project_dir.rglob("*.cs"), key=lambda f: str(f.relative_to(project_dir)))
+    source_files = sorted(
+        project_dir.rglob("*.cs"),
+        key=lambda f: (_priority_tier(f.name), str(f.relative_to(project_dir))),
+    )
     parts = []
     remaining = max_chars
     for f in source_files:
