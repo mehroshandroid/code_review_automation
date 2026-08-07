@@ -17,6 +17,9 @@ frontend/.env
 /tmp/reviews/
 backend/tmp/
 
+# Local SQLite DBs (throwaway, e.g. from ad-hoc alembic runs against sqlite)
+backend/*.db
+
 # OS
 .DS_Store
 
