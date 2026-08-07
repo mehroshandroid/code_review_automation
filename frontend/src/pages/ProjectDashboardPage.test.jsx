@@ -114,6 +114,13 @@ test("seeds localStorage from the fetched org default when nothing was explicitl
   expect(getLlmProvider()).toBe("azure");
 });
 
+test("renders a Settings link pointing at /settings", async () => {
+  getProjects.mockResolvedValue(projects);
+  renderDashboard();
+
+  expect(await screen.findByRole("link", { name: /settings/i })).toHaveAttribute("href", "/settings");
+});
+
 test("does not override a provider the user already picked in a previous session", async () => {
   localStorage.setItem("llmProvider", "azure");
   getProjects.mockResolvedValue(projects);

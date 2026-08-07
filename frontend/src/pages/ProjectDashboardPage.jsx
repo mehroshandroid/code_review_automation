@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import ProjectSidebar from "../components/ProjectSidebar";
 import ProjectReviewHistory from "../components/ProjectReviewHistory";
 import { PLATFORMS } from "../platforms";
+import { GearIcon } from "../icons";
 import { getLlmProviderSettings, getOllamaModels, getProjects } from "../services/api";
 import { getLlmProvider, setLlmProvider, getOllamaModel, setOllamaModel, initializeLlmProviderDefault } from "../services/llmProviderStorage";
 
@@ -87,6 +88,7 @@ export default function ProjectDashboardPage() {
           </svg>
         </span>
         <span className="nav-brand">Code Review Automation</span>
+        <Link to="/settings" className="btn btn-ghost" aria-label="Settings" style={{ marginLeft: "auto" }}><GearIcon /></Link>
       </nav>
 
       <main style={{ maxWidth: 1440, margin: "0 auto", padding: "64px 24px 96px" }}>
