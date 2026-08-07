@@ -175,7 +175,7 @@ async def test_run_review_threads_project_id_through_to_persistence(monkeypatch)
         captured["review_id"] = review_id_arg
         captured["project_id"] = project_id_arg
 
-    async def fake_score_category(provider, category_name, sub_criteria, descriptions, code_snippets, model=None, platform="Android"):
+    async def fake_score_category(provider, category_name, sub_criteria, descriptions, code_snippets, model=None, platform="Android", checklists=None):
         sub_results = {sub_id: {"score": 1, "remark": ""} for sub_id in sub_criteria}
         prompt_info = {"label": category_name, "prompt_text": "stub", "tokens": {
             "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "cached_tokens": 0,

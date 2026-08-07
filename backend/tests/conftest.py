@@ -16,3 +16,17 @@ def _stub_persist_review_result(monkeypatch):
         return None
 
     monkeypatch.setattr(reviews_module, "_persist_review_result", _noop)
+
+
+@pytest.fixture(autouse=True)
+def _stub_load_clause_checklists(monkeypatch):
+    """Same rationale as _stub_persist_review_result above -- most existing
+    tests don't configure a test database, so the real _load_clause_checklists
+    would otherwise attempt a real DB connection on every review. Tests that
+    specifically cover checklist wiring override this with their own
+    monkeypatch.setattr call.
+    """
+    async def _empty(*args, **kwargs):
+        return {}
+
+    monkeypatch.setattr(reviews_module, "_load_clause_checklists", _empty)

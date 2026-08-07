@@ -228,7 +228,7 @@ async def test_run_review_updates_message_per_category_during_scoring(monkeypatc
 
     seen_messages = []
 
-    async def _recording_score_category(provider, category_name, sub_criteria, descriptions, code_snippets, model=None, platform="Android"):
+    async def _recording_score_category(provider, category_name, sub_criteria, descriptions, code_snippets, model=None, platform="Android", checklists=None):
         seen_messages.append(_reviews[review_id]["message"])
         sub_results = {sub_id: {"score": 1, "remark": ""} for sub_id in sub_criteria}
         prompt_info = {"label": category_name, "prompt_text": "stub", "tokens": {
@@ -275,7 +275,7 @@ async def test_run_review_updates_category_scores_progressively(monkeypatch):
 
     snapshots = []
 
-    async def _recording_score_category(provider, category_name, sub_criteria, descriptions, code_snippets, model=None, platform="Android"):
+    async def _recording_score_category(provider, category_name, sub_criteria, descriptions, code_snippets, model=None, platform="Android", checklists=None):
         snapshots.append([(e["id"], e["percent_points"]) for e in _reviews[review_id]["category_scores"]])
         sub_results = {sub_id: {"score": 1, "remark": ""} for sub_id in sub_criteria}
         prompt_info = {"label": category_name, "prompt_text": "stub", "tokens": {
@@ -332,7 +332,7 @@ async def test_run_review_passes_llm_provider_and_model_through_to_scoring_calls
     captured_providers = []
     captured_models = []
 
-    async def fake_score_category(provider, category_name, sub_criteria, descriptions, code_snippets, model=None, platform="Android"):
+    async def fake_score_category(provider, category_name, sub_criteria, descriptions, code_snippets, model=None, platform="Android", checklists=None):
         captured_providers.append(provider)
         captured_models.append(model)
         sub_results = {sub_id: {"score": 1, "remark": ""} for sub_id in sub_criteria}
@@ -382,7 +382,7 @@ async def test_run_review_uses_the_ollama_code_context_budget_for_ollama_reviews
         captured_max_chars.append(max_chars)
         return real_gather_code_context(extract_dir, max_chars=max_chars)
 
-    async def fake_score_category(provider, category_name, sub_criteria, descriptions, code_snippets, model=None, platform="Android"):
+    async def fake_score_category(provider, category_name, sub_criteria, descriptions, code_snippets, model=None, platform="Android", checklists=None):
         sub_results = {sub_id: {"score": 1, "remark": ""} for sub_id in sub_criteria}
         prompt_info = {"label": category_name, "prompt_text": "stub", "tokens": {
             "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "cached_tokens": 0,
@@ -421,7 +421,7 @@ async def test_run_review_uses_the_azure_code_context_budget_for_non_ollama_revi
         captured_max_chars.append(max_chars)
         return real_gather_code_context(extract_dir, max_chars=max_chars)
 
-    async def fake_score_category(provider, category_name, sub_criteria, descriptions, code_snippets, model=None, platform="Android"):
+    async def fake_score_category(provider, category_name, sub_criteria, descriptions, code_snippets, model=None, platform="Android", checklists=None):
         sub_results = {sub_id: {"score": 1, "remark": ""} for sub_id in sub_criteria}
         prompt_info = {"label": category_name, "prompt_text": "stub", "tokens": {
             "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "cached_tokens": 0,
@@ -455,7 +455,7 @@ async def test_run_review_passes_platform_through_to_scoring_calls(monkeypatch):
 
     captured_platforms = []
 
-    async def fake_score_category(provider, category_name, sub_criteria, descriptions, code_snippets, model=None, platform="Android"):
+    async def fake_score_category(provider, category_name, sub_criteria, descriptions, code_snippets, model=None, platform="Android", checklists=None):
         captured_platforms.append(platform)
         sub_results = {sub_id: {"score": 1, "remark": ""} for sub_id in sub_criteria}
         prompt_info = {"label": category_name, "prompt_text": "stub", "tokens": {
@@ -577,7 +577,7 @@ async def test_run_review_scores_1_4_from_compile_check_and_excludes_it_from_the
 
     captured_sub_criteria = {}
 
-    async def fake_score_category(provider, category_name, sub_criteria, descriptions, code_snippets, model=None, platform="Android"):
+    async def fake_score_category(provider, category_name, sub_criteria, descriptions, code_snippets, model=None, platform="Android", checklists=None):
         captured_sub_criteria[category_name] = list(sub_criteria)
         sub_results = {sub_id: {"score": 1, "remark": ""} for sub_id in sub_criteria}
         prompt_info = {"label": category_name, "prompt_text": "stub", "tokens": {
@@ -628,7 +628,7 @@ async def test_run_review_static_mode_skips_compiler_and_scores_1_4_via_llm(monk
         compile_check_called.append(True)
         return {"status": "ok", "warning_count": 0, "issues": []}
 
-    async def fake_score_category(provider, category_name, sub_criteria, descriptions, code_snippets, model=None, platform="Android"):
+    async def fake_score_category(provider, category_name, sub_criteria, descriptions, code_snippets, model=None, platform="Android", checklists=None):
         captured_sub_criteria[category_name] = list(sub_criteria)
         sub_results = {sub_id: {"score": 1, "remark": "stub"} for sub_id in sub_criteria}
         prompt_info = {"label": category_name, "prompt_text": "stub", "tokens": {
@@ -779,7 +779,7 @@ async def test_run_review_unsupported_platform_skips_compile_check_entirely(monk
         compile_check_called.append(True)
         return {"status": "ok", "warning_count": 0, "issues": []}
 
-    async def fake_score_category(provider, category_name, sub_criteria, descriptions, code_snippets, model=None, platform="Android"):
+    async def fake_score_category(provider, category_name, sub_criteria, descriptions, code_snippets, model=None, platform="Android", checklists=None):
         captured_sub_criteria[category_name] = list(sub_criteria)
         sub_results = {sub_id: {"score": 1, "remark": ""} for sub_id in sub_criteria}
         prompt_info = {"label": category_name, "prompt_text": "stub", "tokens": {
@@ -853,7 +853,7 @@ async def test_run_review_scores_1_4_from_ios_build_check_and_excludes_it_from_t
 
     captured_sub_criteria = {}
 
-    async def fake_score_category(provider, category_name, sub_criteria, descriptions, code_snippets, model=None, platform="Android"):
+    async def fake_score_category(provider, category_name, sub_criteria, descriptions, code_snippets, model=None, platform="Android", checklists=None):
         captured_sub_criteria[category_name] = list(sub_criteria)
         sub_results = {sub_id: {"score": 1, "remark": ""} for sub_id in sub_criteria}
         prompt_info = {"label": category_name, "prompt_text": "stub", "tokens": {
@@ -905,7 +905,7 @@ async def test_run_review_ios_static_mode_skips_build_check_and_scores_1_4_via_l
         build_check_called.append(True)
         return {"status": "ok", "warning_count": 0, "issues": []}
 
-    async def fake_score_category(provider, category_name, sub_criteria, descriptions, code_snippets, model=None, platform="Android"):
+    async def fake_score_category(provider, category_name, sub_criteria, descriptions, code_snippets, model=None, platform="Android", checklists=None):
         captured_sub_criteria[category_name] = list(sub_criteria)
         sub_results = {sub_id: {"score": 1, "remark": "stub"} for sub_id in sub_criteria}
         prompt_info = {"label": category_name, "prompt_text": "stub", "tokens": {
@@ -956,7 +956,7 @@ async def test_run_review_android_local_mode_uses_local_checker_not_docker(monke
             "issues": [{"severity": "Warning", "message": "m", "file": "f.java", "line": 1}],
         }
 
-    async def fake_score_category(provider, category_name, sub_criteria, descriptions, code_snippets, model=None, platform="Android"):
+    async def fake_score_category(provider, category_name, sub_criteria, descriptions, code_snippets, model=None, platform="Android", checklists=None):
         captured_sub_criteria[category_name] = list(sub_criteria)
         sub_results = {sub_id: {"score": 1, "remark": ""} for sub_id in sub_criteria}
         prompt_info = {"label": category_name, "prompt_text": "stub", "tokens": {
@@ -1023,7 +1023,7 @@ async def test_run_review_scores_1_4_from_dotnet_build_check_and_excludes_it_fro
 
     captured_sub_criteria = {}
 
-    async def fake_score_category(provider, category_name, sub_criteria, descriptions, code_snippets, model=None, platform="Android"):
+    async def fake_score_category(provider, category_name, sub_criteria, descriptions, code_snippets, model=None, platform="Android", checklists=None):
         captured_sub_criteria[category_name] = list(sub_criteria)
         sub_results = {sub_id: {"score": 1, "remark": ""} for sub_id in sub_criteria}
         prompt_info = {"label": category_name, "prompt_text": "stub", "tokens": {
@@ -1075,7 +1075,7 @@ async def test_run_review_dotnet_static_mode_skips_build_check_and_scores_1_4_vi
         build_check_called.append(True)
         return {"status": "ok", "warning_count": 0, "issues": []}
 
-    async def fake_score_category(provider, category_name, sub_criteria, descriptions, code_snippets, model=None, platform="Android"):
+    async def fake_score_category(provider, category_name, sub_criteria, descriptions, code_snippets, model=None, platform="Android", checklists=None):
         captured_sub_criteria[category_name] = list(sub_criteria)
         sub_results = {sub_id: {"score": 1, "remark": "stub"} for sub_id in sub_criteria}
         prompt_info = {"label": category_name, "prompt_text": "stub", "tokens": {

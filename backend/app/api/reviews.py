@@ -88,6 +88,20 @@ def _review_artifacts_dir() -> Path:
     return Path(os.environ.get("REVIEW_ARTIFACTS_DIR", "/data/reviews"))
 
 
+async def _load_clause_checklists() -> dict:
+    """Best-effort, same rationale as _persist_review_result -- a DB outage
+    shouldn't block a review from running, it should just mean no
+    clause-specific checklists get applied for it (falls back to the
+    plain, generic per-clause prompt exactly like today)."""
+    try:
+        async with new_session() as session:
+            checklists = await crud.list_clause_checklists(session)
+        return {(c.platform, c.sub_id): c.checklist_text for c in checklists}
+    except Exception:
+        logger.exception("Failed to load clause checklists from the database; continuing without them")
+        return {}
+
+
 async def _persist_review_result(
     review_id: str,
     project_id: str | None,
@@ -349,6 +363,7 @@ async def _run_review(
 
         t2 = time.monotonic()
         state["phase"] = "scoring"
+        clause_checklists = await _load_clause_checklists()
         scores_by_category = {}
         category_count = len(categories)
         for index, (category_id, category) in enumerate(categories.items()):
@@ -360,7 +375,7 @@ async def _run_review(
             )
             sub_results, prompt_info = await score_category(
                 llm_provider, category["name"], llm_sub_criteria, sub_criteria_descriptions, code_context,
-                model=ollama_model, platform=platform,
+                model=ollama_model, platform=platform, checklists=clause_checklists,
             )
             if category_id == "1" and platform in ("Android", "iOS", ".NET") and compile_check_mode != "static":
                 sub_results = _merge_compile_result_into_category_1(sub_results, compile_sub_result, categories)
