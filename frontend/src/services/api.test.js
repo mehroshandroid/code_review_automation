@@ -1,5 +1,9 @@
 import axios from "axios";
-import { createReview, getProgress, getDownloadUrl, getOllamaModels, createProject, getProjects, getProjectReviews, getReview } from "./api";
+import {
+  createReview, getProgress, getDownloadUrl, getOllamaModels, createProject, getProjects, getProjectReviews, getReview,
+  getLlmProviderSettings, updateLlmProviderSettings, getClauseChecklists, upsertClauseChecklist, deleteClauseChecklist,
+  getSampleTemplates, uploadSampleTemplate, deleteSampleTemplate,
+} from "./api";
 
 jest.mock("axios");
 
@@ -115,6 +119,16 @@ describe("createReview", () => {
     const [, formData] = axios.post.mock.calls[0];
     expect(formData.get("projectId")).toBeNull();
   });
+
+  it("omits excelTemplate field when not provided", async () => {
+    axios.post.mockResolvedValue({ data: { review_id: "abc-123", status: "processing" } });
+    const zip = new File(["zip content"], "project.zip", { type: "application/zip" });
+
+    await createReview(zip, null);
+
+    const [, formData] = axios.post.mock.calls[0];
+    expect(formData.get("excelTemplate")).toBeNull();
+  });
 });
 
 describe("getProgress", () => {
@@ -195,5 +209,106 @@ describe("getDownloadUrl", () => {
   it("combines the API origin with the backend's returned download path without doubling /api", () => {
     const url = getDownloadUrl("/api/reviews/abc-123/download");
     expect(url).toBe("http://localhost:8000/api/reviews/abc-123/download");
+  });
+});
+
+describe("getLlmProviderSettings", () => {
+  it("fetches the org-wide LLM provider default", async () => {
+    const settings = { default_llm_provider: "ollama", default_ollama_model: "qwen2.5-coder:7b" };
+    axios.get.mockResolvedValue({ data: settings });
+
+    const result = await getLlmProviderSettings();
+
+    expect(result).toEqual(settings);
+    expect(axios.get).toHaveBeenCalledWith(expect.stringContaining("/settings/llm-provider"));
+  });
+});
+
+describe("updateLlmProviderSettings", () => {
+  it("puts the new default provider and model and returns the response body", async () => {
+    const settings = { default_llm_provider: "azure", default_ollama_model: null };
+    axios.put.mockResolvedValue({ data: settings });
+
+    const result = await updateLlmProviderSettings("azure", null);
+
+    expect(result).toEqual(settings);
+    expect(axios.put).toHaveBeenCalledWith(
+      expect.stringContaining("/settings/llm-provider"),
+      { default_llm_provider: "azure", default_ollama_model: null }
+    );
+  });
+});
+
+describe("getClauseChecklists", () => {
+  it("fetches all clause checklists and returns the list", async () => {
+    const checklists = [{ platform: ".NET", sub_id: "2.4", checklist_text: "Check JWT config" }];
+    axios.get.mockResolvedValue({ data: { checklists } });
+
+    const result = await getClauseChecklists();
+
+    expect(result).toEqual(checklists);
+    expect(axios.get).toHaveBeenCalledWith(expect.stringContaining("/settings/clause-checklists"));
+  });
+});
+
+describe("upsertClauseChecklist", () => {
+  it("puts the checklist text for the given platform and sub id", async () => {
+    const checklist = { platform: ".NET", sub_id: "2.4", checklist_text: "Check JWT config" };
+    axios.put.mockResolvedValue({ data: checklist });
+
+    const result = await upsertClauseChecklist(".NET", "2.4", "Check JWT config");
+
+    expect(result).toEqual(checklist);
+    expect(axios.put).toHaveBeenCalledWith(
+      expect.stringContaining("/settings/clause-checklists/.NET/2.4"),
+      { checklist_text: "Check JWT config" }
+    );
+  });
+});
+
+describe("deleteClauseChecklist", () => {
+  it("deletes the checklist for the given platform and sub id", async () => {
+    axios.delete.mockResolvedValue({});
+
+    await deleteClauseChecklist(".NET", "2.4");
+
+    expect(axios.delete).toHaveBeenCalledWith(expect.stringContaining("/settings/clause-checklists/.NET/2.4"));
+  });
+});
+
+describe("getSampleTemplates", () => {
+  it("fetches all configured sample templates and returns the list", async () => {
+    const templates = [{ platform: "Android", filename: "android-default.xlsx", uploaded_at: "2026-08-07T00:00:00Z" }];
+    axios.get.mockResolvedValue({ data: { templates } });
+
+    const result = await getSampleTemplates();
+
+    expect(result).toEqual(templates);
+    expect(axios.get).toHaveBeenCalledWith(expect.stringContaining("/settings/sample-templates"));
+  });
+});
+
+describe("uploadSampleTemplate", () => {
+  it("posts the file as multipart form data for the given platform and returns the response body", async () => {
+    const template = { platform: "Android", filename: "android-default.xlsx", uploaded_at: "2026-08-07T00:00:00Z" };
+    axios.post.mockResolvedValue({ data: template });
+    const file = new File(["xlsx content"], "android-default.xlsx", { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+
+    const result = await uploadSampleTemplate("Android", file);
+
+    expect(result).toEqual(template);
+    const [url, formData] = axios.post.mock.calls[0];
+    expect(url).toContain("/settings/sample-templates/Android");
+    expect(formData.get("file")).toBe(file);
+  });
+});
+
+describe("deleteSampleTemplate", () => {
+  it("deletes the sample template for the given platform", async () => {
+    axios.delete.mockResolvedValue({});
+
+    await deleteSampleTemplate("Android");
+
+    expect(axios.delete).toHaveBeenCalledWith(expect.stringContaining("/settings/sample-templates/Android"));
   });
 });

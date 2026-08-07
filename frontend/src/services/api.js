@@ -9,7 +9,7 @@ export async function createReview(
 ) {
   const formData = new FormData();
   if (androidZip) formData.append("androidZip", androidZip);
-  formData.append("excelTemplate", excelTemplate);
+  if (excelTemplate) formData.append("excelTemplate", excelTemplate);
   if (llmProvider) formData.append("llmProvider", llmProvider);
   if (ollamaModel) formData.append("ollamaModel", ollamaModel);
   if (compileCheckMode) formData.append("compileCheckMode", compileCheckMode);
@@ -54,4 +54,50 @@ export async function getProjectReviews(projectId) {
 export async function getReview(reviewId) {
   const response = await axios.get(`${API_BASE_URL}/reviews/${reviewId}`);
   return response.data;
+}
+
+export async function getLlmProviderSettings() {
+  const response = await axios.get(`${API_BASE_URL}/settings/llm-provider`);
+  return response.data;
+}
+
+export async function updateLlmProviderSettings(defaultLlmProvider, defaultOllamaModel) {
+  const response = await axios.put(`${API_BASE_URL}/settings/llm-provider`, {
+    default_llm_provider: defaultLlmProvider,
+    default_ollama_model: defaultOllamaModel,
+  });
+  return response.data;
+}
+
+export async function getClauseChecklists() {
+  const response = await axios.get(`${API_BASE_URL}/settings/clause-checklists`);
+  return response.data.checklists;
+}
+
+export async function upsertClauseChecklist(platform, subId, checklistText) {
+  const response = await axios.put(
+    `${API_BASE_URL}/settings/clause-checklists/${platform}/${subId}`,
+    { checklist_text: checklistText }
+  );
+  return response.data;
+}
+
+export async function deleteClauseChecklist(platform, subId) {
+  await axios.delete(`${API_BASE_URL}/settings/clause-checklists/${platform}/${subId}`);
+}
+
+export async function getSampleTemplates() {
+  const response = await axios.get(`${API_BASE_URL}/settings/sample-templates`);
+  return response.data.templates;
+}
+
+export async function uploadSampleTemplate(platform, file) {
+  const formData = new FormData();
+  formData.append("file", file);
+  const response = await axios.post(`${API_BASE_URL}/settings/sample-templates/${platform}`, formData);
+  return response.data;
+}
+
+export async function deleteSampleTemplate(platform) {
+  await axios.delete(`${API_BASE_URL}/settings/sample-templates/${platform}`);
 }
