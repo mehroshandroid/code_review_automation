@@ -3,8 +3,8 @@ import { Link } from "react-router-dom";
 import ProjectSidebar from "../components/ProjectSidebar";
 import ProjectReviewHistory from "../components/ProjectReviewHistory";
 import { PLATFORMS } from "../platforms";
-import { getOllamaModels, getProjects } from "../services/api";
-import { getLlmProvider, setLlmProvider, getOllamaModel, setOllamaModel } from "../services/llmProviderStorage";
+import { getLlmProviderSettings, getOllamaModels, getProjects } from "../services/api";
+import { getLlmProvider, setLlmProvider, getOllamaModel, setOllamaModel, initializeLlmProviderDefault } from "../services/llmProviderStorage";
 
 const LLM_PROVIDERS = [
   { id: "azure", label: "Azure OpenAI" },
@@ -35,6 +35,18 @@ export default function ProjectDashboardPage() {
     getOllamaModels()
       .then((models) => { if (!cancelled) setOllamaModels(models); })
       .catch(() => { if (!cancelled) setOllamaModels([]); });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    getLlmProviderSettings()
+      .then((settings) => {
+        if (cancelled) return;
+        initializeLlmProviderDefault(settings.default_llm_provider);
+        setLlmProviderState(getLlmProvider());
+      })
+      .catch(() => {});
     return () => { cancelled = true; };
   }, []);
 

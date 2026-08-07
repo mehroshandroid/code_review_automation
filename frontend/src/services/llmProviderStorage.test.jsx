@@ -1,11 +1,11 @@
-import { getLlmProvider, setLlmProvider, getOllamaModel, setOllamaModel } from "./llmProviderStorage";
+import { getLlmProvider, setLlmProvider, getOllamaModel, setOllamaModel, initializeLlmProviderDefault } from "./llmProviderStorage";
 
 beforeEach(() => {
   localStorage.clear();
 });
 
-test("defaults to ollama when nothing is stored", () => {
-  expect(getLlmProvider()).toBe("ollama");
+test("returns null when nothing is stored", () => {
+  expect(getLlmProvider()).toBeNull();
 });
 
 test("returns a previously-stored value", () => {
@@ -27,4 +27,15 @@ test("setOllamaModel writes to localStorage under the expected key", () => {
   setOllamaModel("qwen2.5-coder:7b");
   expect(localStorage.getItem("ollamaModel")).toBe("qwen2.5-coder:7b");
   expect(getOllamaModel()).toBe("qwen2.5-coder:7b");
+});
+
+test("initializeLlmProviderDefault seeds localStorage when nothing is stored", () => {
+  initializeLlmProviderDefault("azure");
+  expect(getLlmProvider()).toBe("azure");
+});
+
+test("initializeLlmProviderDefault does not override an explicitly-chosen provider", () => {
+  setLlmProvider("azure");
+  initializeLlmProviderDefault("ollama");
+  expect(getLlmProvider()).toBe("azure");
 });

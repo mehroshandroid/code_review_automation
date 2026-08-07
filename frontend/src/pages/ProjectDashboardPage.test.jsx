@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import ProjectDashboardPage from "./ProjectDashboardPage";
 import { getLlmProvider } from "../services/llmProviderStorage";
-import { getOllamaModels, getProjects, getProjectReviews, createProject } from "../services/api";
+import { getOllamaModels, getProjects, getProjectReviews, createProject, getLlmProviderSettings } from "../services/api";
 
 jest.mock("../services/api", () => ({
   ...jest.requireActual("../services/api"),
@@ -11,6 +11,7 @@ jest.mock("../services/api", () => ({
   getProjects: jest.fn(),
   getProjectReviews: jest.fn(),
   createProject: jest.fn(),
+  getLlmProviderSettings: jest.fn(),
 }));
 
 const projects = [
@@ -23,6 +24,7 @@ beforeEach(() => {
   jest.resetAllMocks();
   getOllamaModels.mockResolvedValue(["qwen2.5-coder:7b"]);
   getProjectReviews.mockResolvedValue([]);
+  getLlmProviderSettings.mockResolvedValue({ default_llm_provider: "ollama", default_ollama_model: null });
 });
 
 function renderDashboard() {
@@ -101,4 +103,23 @@ test("defaults to Ollama highlighted when models are available, same as before",
 
   await waitFor(() => expect(screen.getByRole("button", { name: "Ollama (local)" })).toHaveClass("btn-primary"));
   expect(getLlmProvider()).toBe("ollama");
+});
+
+test("seeds localStorage from the fetched org default when nothing was explicitly chosen", async () => {
+  getProjects.mockResolvedValue(projects);
+  getLlmProviderSettings.mockResolvedValue({ default_llm_provider: "azure", default_ollama_model: null });
+  renderDashboard();
+
+  await waitFor(() => expect(screen.getByRole("button", { name: "Azure OpenAI" })).toHaveClass("btn-primary"));
+  expect(getLlmProvider()).toBe("azure");
+});
+
+test("does not override a provider the user already picked in a previous session", async () => {
+  localStorage.setItem("llmProvider", "azure");
+  getProjects.mockResolvedValue(projects);
+  getLlmProviderSettings.mockResolvedValue({ default_llm_provider: "ollama", default_ollama_model: null });
+  renderDashboard();
+
+  await waitFor(() => expect(screen.getByRole("button", { name: "Azure OpenAI" })).toHaveClass("btn-primary"));
+  expect(getLlmProvider()).toBe("azure");
 });
