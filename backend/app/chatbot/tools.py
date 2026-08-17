@@ -24,6 +24,13 @@ def _failing_clauses(result_data: dict) -> list[dict]:
     return failing
 
 
+def _category_scores(result_data: dict) -> list[dict]:
+    return [
+        {"id": category.get("id"), "name": category.get("name"), "percent_points": category.get("percent_points")}
+        for category in result_data.get("category_scores", [])
+    ]
+
+
 def _review_to_source(review: PlatformReview) -> dict:
     result_data = review.result_data or {}
     return {
@@ -32,6 +39,11 @@ def _review_to_source(review: PlatformReview) -> dict:
         "platform": review.platform,
         "total_score_pct": float(review.total_score_pct) if review.total_score_pct is not None else None,
         "created_at": review.created_at.isoformat(),
+        # Per-category percentages (not just failures) -- this is what lets
+        # the agent answer trend/fluctuation questions ("why did Reliability
+        # swing between reviews"), by comparing the same category's
+        # percent_points across multiple returned reviews.
+        "category_scores": _category_scores(result_data),
         "failing_clauses": _failing_clauses(result_data),
         "warnings": result_data.get("warnings", []),
         "lint_issues": result_data.get("lint_issues", []),
@@ -90,8 +102,12 @@ async def query_reviews(
     limit: max reviews to return (default 20, capped at 50).
 
     Returns, per matching review: id, project_name, platform,
-    total_score_pct, created_at, the clauses it failed (id/description/
-    remark), and its warnings/lint_issues. Excludes errored reviews (they
+    total_score_pct, created_at, category_scores (every clause/category's
+    id/name/percent_points -- compare this same field across the reviews
+    returned to spot trends or fluctuations in a specific category over
+    time, e.g. "Reliability, Security & Observability" swinging between
+    reviews), the clauses it failed (id/description/remark, for root-cause
+    detail), and its warnings/lint_issues. Excludes errored reviews (they
     have no scores to reason about).
     """
     return await _query_reviews(platform, year, start_date, end_date, max_score, min_score, limit)

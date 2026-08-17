@@ -27,7 +27,7 @@ async def _add_review(sessionmaker, **overrides):
         source="upload", workbook_path=None,
         result_data={
             "category_scores": [
-                {"id": "1", "name": "Structure", "sub_criteria": [
+                {"id": "1", "name": "Structure", "percent_points": 50.0, "sub_criteria": [
                     {"id": "1.1", "description": "Naming", "score": 0, "remark": "Inconsistent casing"},
                     {"id": "1.2", "description": "Formatting", "score": 1, "remark": "Fine"},
                 ]},
@@ -110,6 +110,39 @@ async def test_query_reviews_returns_only_failing_clauses(sessionmaker):
     results = await _query_reviews()
 
     assert results[0]["failing_clauses"] == [{"id": "1.1", "description": "Naming", "remark": "Inconsistent casing"}]
+
+
+async def test_query_reviews_includes_full_category_percent_points(sessionmaker):
+    await _add_review(sessionmaker, id="r1")
+
+    results = await _query_reviews()
+
+    assert results[0]["category_scores"] == [{"id": "1", "name": "Structure", "percent_points": 50.0}]
+
+
+async def test_query_reviews_multiple_reviews_show_the_same_categorys_trend(sessionmaker):
+    # This is the shape a "why is category X fluctuating across reviews"
+    # question needs: the same category name/id with different
+    # percent_points across multiple reviews, comparable by the LLM.
+    await _add_review(
+        sessionmaker, id="r1", created_at=datetime(2025, 6, 1, tzinfo=timezone.utc),
+        result_data={
+            "category_scores": [{"id": "2", "name": "Reliability, Security & Observability", "percent_points": 40.0, "sub_criteria": []}],
+            "warnings": [], "lint_issues": [],
+        },
+    )
+    await _add_review(
+        sessionmaker, id="r2", created_at=datetime(2025, 7, 1, tzinfo=timezone.utc),
+        result_data={
+            "category_scores": [{"id": "2", "name": "Reliability, Security & Observability", "percent_points": 90.0, "sub_criteria": []}],
+            "warnings": [], "lint_issues": [],
+        },
+    )
+
+    results = await _query_reviews()
+
+    percentages = [r["category_scores"][0]["percent_points"] for r in results]
+    assert sorted(percentages) == [40.0, 90.0]
 
 
 async def test_query_reviews_includes_warnings_and_score(sessionmaker):
