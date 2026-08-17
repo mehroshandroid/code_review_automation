@@ -119,3 +119,11 @@ export async function previewSampleTemplate(platform) {
   const response = await axios.get(`${API_BASE_URL}/settings/sample-templates/${platform}/preview`);
   return response.data.categories;
 }
+
+export async function sendChatMessage(message, history = []) {
+  const response = await axios.post(`${API_BASE_URL}/chat`, {
+    message,
+    history: history.map((entry) => ({ role: entry.role, content: entry.content })),
+  });
+  return response.data;
+}

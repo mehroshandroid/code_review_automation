@@ -2,7 +2,7 @@ import axios from "axios";
 import {
   createReview, getProgress, getDownloadUrl, getOllamaModels, createProject, updateProject, getProjects, getProjectReviews, getReview, updateReview,
   getLlmProviderSettings, updateLlmProviderSettings, getClauseChecklists, upsertClauseChecklist, deleteClauseChecklist,
-  getSampleTemplates, uploadSampleTemplate, deleteSampleTemplate, previewSampleTemplate,
+  getSampleTemplates, uploadSampleTemplate, deleteSampleTemplate, previewSampleTemplate, sendChatMessage,
 } from "./api";
 
 jest.mock("axios");
@@ -368,5 +368,35 @@ describe("previewSampleTemplate", () => {
 
     expect(result).toEqual(categories);
     expect(axios.get).toHaveBeenCalledWith(expect.stringContaining("/settings/sample-templates/Android/preview"));
+  });
+});
+
+describe("sendChatMessage", () => {
+  it("posts the message and history and returns the response body", async () => {
+    const response = { answer: "It commonly failed on naming.", sources: [{ id: "r1" }] };
+    axios.post.mockResolvedValue({ data: response });
+
+    const result = await sendChatMessage("what was the reason for .NET low score", [
+      { role: "user", content: "earlier question" },
+      { role: "assistant", content: "earlier answer" },
+    ]);
+
+    expect(result).toEqual(response);
+    expect(axios.post).toHaveBeenCalledWith(expect.stringContaining("/chat"), {
+      message: "what was the reason for .NET low score",
+      history: [
+        { role: "user", content: "earlier question" },
+        { role: "assistant", content: "earlier answer" },
+      ],
+    });
+  });
+
+  it("defaults history to an empty array when omitted", async () => {
+    axios.post.mockResolvedValue({ data: { answer: "ok", sources: [] } });
+
+    await sendChatMessage("hello");
+
+    const [, body] = axios.post.mock.calls[0];
+    expect(body.history).toEqual([]);
   });
 });
