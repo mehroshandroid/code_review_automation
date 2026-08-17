@@ -85,13 +85,13 @@ def test_update_project_returns_409_on_duplicate_name(test_sessionmaker):
     assert response.status_code == 409
 
 
-async def _persist(session, review_id, project_id, platform="Android", created_at=None, total_score_pct=None):
+async def _persist(session, review_id, project_id, platform="Android", created_at=None, total_score_pct=None, category_scores=None, status="pending_approval"):
     return await crud.persist_review_result(
         session,
         review_id=review_id,
         project_id=project_id,
         platform=platform,
-        status="pending_approval",
+        status=status,
         project_name="MyApp",
         created_at=created_at or datetime.now(timezone.utc),
         completed_at=created_at or datetime.now(timezone.utc),
@@ -101,7 +101,7 @@ async def _persist(session, review_id, project_id, platform="Android", created_a
         compile_check_mode="compiler",
         source="upload",
         workbook_path=None,
-        result_data={"category_scores": []},
+        result_data={"category_scores": category_scores if category_scores is not None else []},
     )
 
 
@@ -124,6 +124,40 @@ async def test_list_project_reviews_returns_only_that_projects_reviews_newest_fi
     assert reviews[0]["platform"] == "Android"
     assert reviews[0]["status"] == "pending_approval"
     assert "result_data" not in reviews[0]
+
+
+async def test_list_project_reviews_includes_trimmed_category_scores(test_sessionmaker):
+    with TestClient(app) as client:
+        project_id = client.post("/api/projects", json={"name": "Payments Service"}).json()["id"]
+
+        async with test_sessionmaker() as session:
+            await _persist(session, "r1", project_id, category_scores=[
+                {
+                    "id": "1", "name": "Structure", "percent_points": 83.3,
+                    "sub_criteria": [{"id": "1.1", "description": "Naming", "score": 1, "remark": "Good"}],
+                },
+                {"id": "2", "name": "Security", "percent_points": 55.0, "sub_criteria": []},
+            ])
+
+        response = client.get(f"/api/projects/{project_id}/reviews")
+
+    reviews = response.json()["reviews"]
+    assert reviews[0]["category_scores"] == [
+        {"id": "1", "name": "Structure", "percent_points": 83.3},
+        {"id": "2", "name": "Security", "percent_points": 55.0},
+    ]
+
+
+async def test_list_project_reviews_defaults_category_scores_to_empty_list(test_sessionmaker):
+    with TestClient(app) as client:
+        project_id = client.post("/api/projects", json={"name": "Payments Service"}).json()["id"]
+
+        async with test_sessionmaker() as session:
+            await _persist(session, "r1", project_id)
+
+        response = client.get(f"/api/projects/{project_id}/reviews")
+
+    assert response.json()["reviews"][0]["category_scores"] == []
 
 
 async def test_list_project_reviews_returns_empty_list_when_project_has_none(test_sessionmaker):

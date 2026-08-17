@@ -48,6 +48,7 @@ async def update_project(project_id: str, body: CreateProjectRequest):
 
 
 def _review_summary_to_dict(review) -> dict:
+    result_data = review.result_data or {}
     return {
         "id": review.id,
         "platform": review.platform,
@@ -55,6 +56,13 @@ def _review_summary_to_dict(review) -> dict:
         "created_at": review.created_at.isoformat(),
         "completed_at": review.completed_at.isoformat() if review.completed_at else None,
         "total_score_pct": float(review.total_score_pct) if review.total_score_pct is not None else None,
+        # Trimmed to just id/name/percent_points -- the dashboard's
+        # per-clause chart doesn't need sub_criteria/remarks, and this
+        # endpoint already returns every review for a project in one call.
+        "category_scores": [
+            {"id": category.get("id"), "name": category.get("name"), "percent_points": category.get("percent_points")}
+            for category in result_data.get("category_scores", [])
+        ],
     }
 
 
