@@ -58,6 +58,19 @@ services:
     networks:
       - review-network
 
+  adminer:
+    # Web UI for browsing the postgres container -- the Postgres equivalent
+    # of phpMyAdmin. Log in with System: PostgreSQL, Server: postgres,
+    # Username: postgres, Password: postgres, Database: codereviews.
+    image: adminer
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - review-network
+
   compiler:
     build: ./compiler
     # Forced to amd64: confirmed against a real production project whose
