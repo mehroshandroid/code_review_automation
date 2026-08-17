@@ -29,7 +29,11 @@ class PlatformReview(Base):
     project_name: Mapped[str] = mapped_column(String, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    total_score_pct: Mapped[Optional[float]] = mapped_column(Numeric, nullable=True)
+    # Explicit precision/scale (0.0-100.0, matching every round(x, 1) call
+    # site that computes this value) -- an unconstrained Numeric stores the
+    # exact binary expansion of the Python float (e.g. 88.4 becomes
+    # 88.400000000000005684...), since Postgres has no scale to round to.
+    total_score_pct: Mapped[Optional[float]] = mapped_column(Numeric(4, 1), nullable=True)
     llm_provider: Mapped[str] = mapped_column(String, nullable=False)
     llm_model: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     compile_check_mode: Mapped[str] = mapped_column(String, nullable=False)
