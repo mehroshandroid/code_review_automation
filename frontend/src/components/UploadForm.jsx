@@ -1,17 +1,32 @@
-import { useState } from "react";
-import CornerMarks from "./CornerMarks";
+import { useEffect, useState } from "react";
 import { FileIcon, ArrowRightIcon } from "../icons";
 import { getCompileCheckMode, setCompileCheckMode } from "../services/compileCheckModeStorage";
+import { getSampleTemplates } from "../services/api";
 
 export default function UploadForm({ onSubmit, disabled, disabledLabel = "Starting review…", showCompileCheckToggle = false, platformLabel = "Android" }) {
   const [sourceMode, setSourceMode] = useState("upload"); // upload | devops
   const [androidZip, setAndroidZip] = useState(null);
   const [excelTemplate, setExcelTemplate] = useState(null);
+  const [defaultTemplate, setDefaultTemplate] = useState(null);
+  const [useOwnTemplate, setUseOwnTemplate] = useState(false);
   const [devopsRepoUrl, setDevopsRepoUrl] = useState("");
   const [devopsPat, setDevopsPat] = useState("");
   const [devopsBranch, setDevopsBranch] = useState("");
   const [validationError, setValidationError] = useState("");
   const [compileCheckMode, setCompileCheckModeState] = useState(() => getCompileCheckMode());
+
+  useEffect(() => {
+    let cancelled = false;
+    getSampleTemplates()
+      .then((templates) => {
+        if (cancelled) return;
+        setDefaultTemplate(templates.find((template) => template.platform === platformLabel) || null);
+      })
+      .catch(() => { if (!cancelled) setDefaultTemplate(null); });
+    return () => { cancelled = true; };
+  }, [platformLabel]);
+
+  const usingDefaultTemplate = !!defaultTemplate && !useOwnTemplate;
 
   function handleSubmit(event) {
     event.preventDefault();
@@ -24,14 +39,14 @@ export default function UploadForm({ onSubmit, disabled, disabledLabel = "Starti
       setValidationError("Azure DevOps repo URL and PAT are both required");
       return;
     }
-    if (!excelTemplate || !excelTemplate.name.endsWith(".xlsx")) {
+    if (!usingDefaultTemplate && (!excelTemplate || !excelTemplate.name.endsWith(".xlsx"))) {
       setValidationError("Review template must be a .xlsx file");
       return;
     }
     setValidationError("");
     onSubmit({
       androidZip: sourceMode === "upload" ? androidZip : null,
-      excelTemplate,
+      excelTemplate: usingDefaultTemplate ? null : excelTemplate,
       devopsRepoUrl: sourceMode === "devops" ? devopsRepoUrl : null,
       devopsPat: sourceMode === "devops" ? devopsPat : null,
       devopsBranch: sourceMode === "devops" ? (devopsBranch || null) : null,
@@ -44,11 +59,10 @@ export default function UploadForm({ onSubmit, disabled, disabledLabel = "Starti
   }
 
   const canStart =
-    !!excelTemplate && (sourceMode === "upload" ? !!androidZip : !!devopsRepoUrl && !!devopsPat);
+    (usingDefaultTemplate || !!excelTemplate) && (sourceMode === "upload" ? !!androidZip : !!devopsRepoUrl && !!devopsPat);
 
   return (
-    <form onSubmit={handleSubmit} className="card blueprint elev-md" style={{ padding: "var(--space-6)" }}>
-      <CornerMarks />
+    <form onSubmit={handleSubmit} className="card elev-md" style={{ padding: 32 }}>
       <div className="card-kicker">Step 1 of 2</div>
       <div className="card-title" style={{ fontSize: 20 }}>Upload project files</div>
       <p className="card-body">Both a project source and a template are required to start a review.</p>
@@ -76,9 +90,9 @@ export default function UploadForm({ onSubmit, disabled, disabledLabel = "Starti
         {sourceMode === "upload" ? (
           <div className="field">
             <label htmlFor="androidZip">{platformLabel} project (.zip)</label>
-            <label className="input" style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", cursor: "pointer" }}>
+            <label className="dropzone">
               <FileIcon />
-              {androidZip ? <span>{androidZip.name}</span> : <span style={{ opacity: 0.55 }}>Choose ZIP file…</span>}
+              {androidZip ? <span style={{ fontSize: 14 }}>{androidZip.name}</span> : <span style={{ fontSize: 14, color: "var(--color-text-faint)" }}>Choose ZIP file…</span>}
               <input
                 id="androidZip"
                 type="file"
@@ -130,18 +144,45 @@ export default function UploadForm({ onSubmit, disabled, disabledLabel = "Starti
         )}
         <div className="field">
           <label htmlFor="excelTemplate">Scoring template (.xlsx)</label>
-          <label className="input" style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", cursor: "pointer" }}>
-            <FileIcon />
-            {excelTemplate ? <span>{excelTemplate.name}</span> : <span style={{ opacity: 0.55 }}>Choose Excel file…</span>}
-            <input
-              id="excelTemplate"
-              type="file"
-              accept=".xlsx"
-              disabled={disabled}
-              onChange={(event) => setExcelTemplate(event.target.files[0] ?? null)}
-              style={{ display: "none" }}
-            />
-          </label>
+          {usingDefaultTemplate ? (
+            <div className="dropzone" style={{ justifyContent: "space-between" }}>
+              <span style={{ fontSize: 14 }}>Using default: {defaultTemplate.filename}</span>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                disabled={disabled}
+                onClick={() => setUseOwnTemplate(true)}
+              >
+                Choose a different file
+              </button>
+            </div>
+          ) : (
+            <>
+              <label className="dropzone">
+                <FileIcon />
+                {excelTemplate ? <span style={{ fontSize: 14 }}>{excelTemplate.name}</span> : <span style={{ fontSize: 14, color: "var(--color-text-faint)" }}>Choose Excel file…</span>}
+                <input
+                  id="excelTemplate"
+                  type="file"
+                  accept=".xlsx"
+                  disabled={disabled}
+                  onChange={(event) => setExcelTemplate(event.target.files[0] ?? null)}
+                  style={{ display: "none" }}
+                />
+              </label>
+              {defaultTemplate && (
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  style={{ marginTop: 8 }}
+                  disabled={disabled}
+                  onClick={() => { setUseOwnTemplate(false); setExcelTemplate(null); }}
+                >
+                  Use default instead
+                </button>
+              )}
+            </>
+          )}
         </div>
       </div>
 
@@ -179,15 +220,14 @@ export default function UploadForm({ onSubmit, disabled, disabledLabel = "Starti
         </div>
       )}
 
-      {validationError && <p className="card-body" style={{ color: "#b3261e" }}>{validationError}</p>}
+      {validationError && <p className="card-body" style={{ color: "var(--color-brand-coral)" }}>{validationError}</p>}
 
       <button
         type="submit"
-        className="btn btn-primary btn-block blueprint"
+        className="btn btn-primary btn-block"
         style={{ marginTop: "var(--space-5)" }}
         disabled={disabled || !canStart}
       >
-        <CornerMarks />
         {disabled ? disabledLabel : "Start review"}
         <ArrowRightIcon />
       </button>

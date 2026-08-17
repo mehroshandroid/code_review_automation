@@ -1,6 +1,17 @@
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import PlaceholderReviewFlow from "./PlaceholderReviewFlow";
+import { getSampleTemplates } from "../services/api";
+
+jest.mock("../services/api", () => ({
+  ...jest.requireActual("../services/api"),
+  getSampleTemplates: jest.fn(),
+}));
+
+beforeEach(() => {
+  getSampleTemplates.mockReset();
+  getSampleTemplates.mockResolvedValue([]);
+});
 
 const platform = { id: "ios", label: "iOS", available: false };
 

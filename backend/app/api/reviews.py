@@ -1,15 +1,17 @@
 import asyncio
+import os
 import shutil
 import tempfile
 import time
 import uuid
 import zipfile
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from openpyxl import load_workbook
+from pydantic import BaseModel
 from starlette.background import BackgroundTask
 
 from app.analyzer import android_analyzer, dotnet_analyzer, ios_analyzer
@@ -25,6 +27,8 @@ from app.analyzer.excel_handler import (
     generate_review_excel,
 )
 from app.analyzer.llm_client import generate_general_remarks, score_category
+from app.db import crud
+from app.db.session import new_session
 from app.utils.logger import get_logger
 
 router = APIRouter()
@@ -39,6 +43,34 @@ _reviews: dict = {}
 # docs/superpowers/specs/2026-08-04-llm-context-window-fixes-design.md.
 CODE_CONTEXT_MAX_CHARS_OLLAMA = 48000
 CODE_CONTEXT_MAX_CHARS_AZURE = 120000
+
+ALLOWED_REVIEW_STATUSES = {"pending_approval", "approved", "completed"}
+
+
+class UpdateReviewRequest(BaseModel):
+    category_scores: list[dict] | None = None
+    status: str | None = None
+
+
+def _recompute_category_scores(category_scores: list[dict]) -> tuple[list[dict], float | None]:
+    """Recomputes each category's percent_points from its (possibly
+    just-edited) sub-criteria scores, and the overall total_score_pct as the
+    average of the category percentages -- same math as
+    aggregate_category_scores/compute_total_score_pct in excel_handler.py,
+    just operating on the already-assembled category_scores list shape used
+    in a persisted review's result_data instead of the raw sub_scores dict
+    shape used during a live review.
+    """
+    updated_categories = []
+    percent_values = []
+    for category in category_scores:
+        scores = [sub["score"] for sub in category.get("sub_criteria", []) if sub.get("score") is not None]
+        percent_points = round((sum(scores) / len(scores)) * 100, 1) if scores else None
+        updated_categories.append({**category, "percent_points": percent_points})
+        if percent_points is not None:
+            percent_values.append(percent_points)
+    total_score_pct = round(sum(percent_values) / len(percent_values), 1) if percent_values else None
+    return updated_categories, total_score_pct
 
 
 def _new_review_state() -> dict:
@@ -81,10 +113,113 @@ def _merge_compile_result_into_category_1(sub_results: dict, compile_sub_result:
     return {sub_id: merged[sub_id] for sub_id in categories["1"]["sub_criteria"]}
 
 
+def _review_artifacts_dir() -> Path:
+    return Path(os.environ.get("REVIEW_ARTIFACTS_DIR", "/data/reviews"))
+
+
+async def _load_clause_checklists() -> dict:
+    """Best-effort, same rationale as _persist_review_result -- a DB outage
+    shouldn't block a review from running, it should just mean no
+    clause-specific checklists get applied for it (falls back to the
+    plain, generic per-clause prompt exactly like today)."""
+    try:
+        async with new_session() as session:
+            checklists = await crud.list_clause_checklists(session)
+        return {(c.platform, c.sub_id): c.checklist_text for c in checklists}
+    except Exception:
+        logger.exception("Failed to load clause checklists from the database; continuing without them")
+        return {}
+
+
+async def _resolve_excel_template(
+    excel_template: UploadFile | None, platform: str
+) -> tuple[bytes | None, str | None]:
+    """When the client doesn't upload a template, falls back to the
+    platform's stored sample_templates row (see app/api/settings.py) --
+    best-effort, same rationale as _load_clause_checklists: a DB outage
+    just means no fallback is available, not a hard failure.
+    """
+    if excel_template is not None:
+        return await excel_template.read(), excel_template.filename
+    try:
+        async with new_session() as session:
+            template = await crud.get_sample_template(session, platform)
+        if template is None:
+            return None, None
+        return Path(template.file_path).read_bytes(), template.filename
+    except Exception:
+        logger.exception("Failed to load stored sample template for platform %s", platform)
+        return None, None
+
+
+async def _persist_review_result(
+    review_id: str,
+    project_id: str | None,
+    project_name: str,
+    platform: str,
+    llm_provider: str,
+    ollama_model: str | None,
+    compile_check_mode: str,
+    state: dict,
+) -> None:
+    """Saves the review's terminal outcome to Postgres as an additive step --
+    a DB failure here is logged and swallowed, never raised, so it can never
+    affect the in-memory review outcome already shown to the current user
+    (see docs/superpowers/specs/2026-08-04-org-wide-phase1-db-design.md).
+    Excludes code_context/prompt_log from result_data -- those can run to
+    120,000 characters each and aren't needed for the approval record.
+    """
+    try:
+        workbook_path = None
+        if state["status"] == "completed" and state["download_path"]:
+            artifacts_dir = _review_artifacts_dir()
+            artifacts_dir.mkdir(parents=True, exist_ok=True)
+            persisted_path = artifacts_dir / f"{review_id}.xlsx"
+            shutil.copyfile(state["download_path"], persisted_path)
+            workbook_path = str(persisted_path)
+
+        completed = state["status"] == "completed"
+        status = "pending_approval" if completed else "error"
+        result_data = (
+            {
+                "category_scores": state["category_scores"],
+                "warnings": state["warnings"],
+                "secrets_found": state["secrets_found"],
+                "lint_issues": state["lint_issues"],
+                "compile_status": state["compile_status"],
+                "stats": state["stats"],
+            }
+            if completed
+            else {"error": state["error"]}
+        )
+
+        now = datetime.now(timezone.utc)
+        async with new_session() as session:
+            await crud.persist_review_result(
+                session,
+                review_id=review_id,
+                project_id=project_id,
+                platform=platform,
+                status=status,
+                project_name=project_name,
+                created_at=now,
+                completed_at=now if completed else None,
+                total_score_pct=state["total_score_pct"],
+                llm_provider=llm_provider,
+                llm_model=ollama_model,
+                compile_check_mode=compile_check_mode,
+                source=state["source"],
+                workbook_path=workbook_path,
+                result_data=result_data,
+            )
+    except Exception:
+        logger.exception("Review %s: failed to persist result to the database", review_id)
+
+
 @router.post("/api/reviews")
 async def create_review(
     androidZip: UploadFile | None = File(None),
-    excelTemplate: UploadFile = File(...),
+    excelTemplate: UploadFile | None = File(None),
     llmProvider: str = Form("azure"),
     ollamaModel: str | None = Form(None),
     compileCheckMode: str = Form("compiler"),
@@ -92,6 +227,7 @@ async def create_review(
     devopsRepoUrl: str | None = Form(None),
     devopsPat: str | None = Form(None),
     devopsBranch: str | None = Form(None),
+    projectId: str | None = Form(None),
 ):
     review_id = str(uuid.uuid4())
     work_dir = Path(tempfile.mkdtemp(prefix=f"review_{review_id}_"))
@@ -121,7 +257,7 @@ async def create_review(
     try:
         if has_zip:
             zip_path.write_bytes(await androidZip.read())
-        template_path.write_bytes(await excelTemplate.read())
+        template_bytes, template_filename = await _resolve_excel_template(excelTemplate, platform)
     except Exception as exc:
         logger.exception("Review %s failed while saving uploads", review_id)
         shutil.rmtree(work_dir, ignore_errors=True)
@@ -133,8 +269,23 @@ async def create_review(
         _reviews[review_id] = state
         return {"review_id": review_id, "status": "error"}
 
+    if template_bytes is None:
+        shutil.rmtree(work_dir, ignore_errors=True)
+        state = _new_review_state()
+        state["status"] = "error"
+        state["phase"] = "error"
+        state["message"] = "Review failed"
+        state["error"] = (
+            "excelTemplate must be provided, or a default sample template "
+            "configured for this platform in Settings."
+        )
+        _reviews[review_id] = state
+        return {"review_id": review_id, "status": "error"}
+
+    template_path.write_bytes(template_bytes)
+
     zip_valid = (androidZip.filename or "").endswith(".zip") if has_zip else True
-    template_valid = (excelTemplate.filename or "").endswith(".xlsx")
+    template_valid = (template_filename or "").endswith(".xlsx")
 
     if has_zip:
         project_name = Path(androidZip.filename).stem if androidZip.filename else "Unknown Project"
@@ -150,7 +301,7 @@ async def create_review(
         _run_review(
             review_id, work_dir, zip_path, template_path, zip_valid, template_valid, project_name,
             llmProvider, ollamaModel, compileCheckMode, platform,
-            devopsRepoUrl, devopsPat, devopsBranch,
+            devopsRepoUrl, devopsPat, devopsBranch, project_id=projectId,
         )
     )
     return {"review_id": review_id, "status": "processing"}
@@ -171,6 +322,7 @@ async def _run_review(
     devops_repo_url: str | None = None,
     devops_pat: str | None = None,
     devops_branch: str | None = None,
+    project_id: str | None = None,
 ) -> None:
     state = _reviews[review_id]
     extract_dir = work_dir / "extracted"
@@ -276,6 +428,7 @@ async def _run_review(
 
         t2 = time.monotonic()
         state["phase"] = "scoring"
+        clause_checklists = await _load_clause_checklists()
         scores_by_category = {}
         category_count = len(categories)
         for index, (category_id, category) in enumerate(categories.items()):
@@ -287,7 +440,7 @@ async def _run_review(
             )
             sub_results, prompt_info = await score_category(
                 llm_provider, category["name"], llm_sub_criteria, sub_criteria_descriptions, code_context,
-                model=ollama_model, platform=platform,
+                model=ollama_model, platform=platform, checklists=clause_checklists,
             )
             if category_id == "1" and platform in ("Android", "iOS", ".NET") and compile_check_mode != "static":
                 sub_results = _merge_compile_result_into_category_1(sub_results, compile_sub_result, categories)
@@ -342,6 +495,9 @@ async def _run_review(
         shutil.rmtree(extract_dir, ignore_errors=True)
         zip_path.unlink(missing_ok=True)
         template_path.unlink(missing_ok=True)
+        await _persist_review_result(
+            review_id, project_id, project_name, platform, llm_provider, ollama_model, compile_check_mode, state,
+        )
         if state["download_path"] is None:
             shutil.rmtree(work_dir, ignore_errors=True)
 
@@ -373,17 +529,86 @@ async def get_progress(review_id: str):
     }
 
 
+def _review_to_dict(review) -> dict:
+    result_data = review.result_data or {}
+    return {
+        "id": review.id,
+        "project_id": review.project_id,
+        "platform": review.platform,
+        "status": review.status,
+        "project_name": review.project_name,
+        "created_at": review.created_at.isoformat(),
+        "completed_at": review.completed_at.isoformat() if review.completed_at else None,
+        "total_score_pct": float(review.total_score_pct) if review.total_score_pct is not None else None,
+        "llm_provider": review.llm_provider,
+        "llm_model": review.llm_model,
+        "has_workbook": review.workbook_path is not None,
+        "category_scores": result_data.get("category_scores", []),
+        "warnings": result_data.get("warnings", []),
+        "secrets_found": result_data.get("secrets_found", []),
+        "lint_issues": result_data.get("lint_issues", []),
+        "compile_status": result_data.get("compile_status"),
+        "stats": result_data.get("stats", {}),
+        "error": result_data.get("error"),
+        "approved_at": review.approved_at.isoformat() if review.approved_at else None,
+    }
+
+
+@router.get("/api/reviews/{review_id}")
+async def get_review(review_id: str):
+    async with new_session() as session:
+        review = await crud.get_review_by_id(session, review_id)
+    if review is None:
+        raise HTTPException(status_code=404, detail="Review not found")
+    return _review_to_dict(review)
+
+
+@router.patch("/api/reviews/{review_id}")
+async def update_review(review_id: str, body: UpdateReviewRequest):
+    if body.status is not None and body.status not in ALLOWED_REVIEW_STATUSES:
+        raise HTTPException(status_code=400, detail=f"status must be one of {sorted(ALLOWED_REVIEW_STATUSES)}")
+
+    category_scores = None
+    total_score_pct = None
+    if body.category_scores is not None:
+        category_scores, total_score_pct = _recompute_category_scores(body.category_scores)
+
+    async with new_session() as session:
+        review = await crud.update_review(
+            session, review_id, category_scores=category_scores, total_score_pct=total_score_pct, status=body.status,
+        )
+    if review is None:
+        raise HTTPException(status_code=404, detail="Review not found")
+    return _review_to_dict(review)
+
+
 @router.get("/api/reviews/{review_id}/download")
 async def download_review(review_id: str):
     state = _reviews.get(review_id)
-    if state is None or state["download_path"] is None:
+    if state is not None and state["download_path"] is not None:
+        path = Path(state["download_path"])
+        if not path.exists():
+            raise HTTPException(status_code=404, detail="Result already downloaded or expired")
+        return FileResponse(
+            path,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            filename="review_result.xlsx",
+            background=BackgroundTask(shutil.rmtree, path.parent, ignore_errors=True),
+        )
+
+    # Not live (or not in this backend process's lifetime) -- fall back to
+    # the persisted workbook on the artifacts volume. Unlike the live/temp
+    # path above, this is NOT deleted after serving: an approver may need
+    # to download the same persisted review more than once.
+    async with new_session() as session:
+        review = await crud.get_review_by_id(session, review_id)
+    if review is None or review.workbook_path is None:
         raise HTTPException(status_code=404, detail="Result not available")
-    path = Path(state["download_path"])
-    if not path.exists():
-        raise HTTPException(status_code=404, detail="Result already downloaded or expired")
+    persisted_path = Path(review.workbook_path)
+    if not persisted_path.exists():
+        raise HTTPException(status_code=404, detail="Result not available")
     return FileResponse(
-        path,
+        persisted_path,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         filename="review_result.xlsx",
-        background=BackgroundTask(shutil.rmtree, path.parent, ignore_errors=True),
     )

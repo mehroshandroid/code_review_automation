@@ -2,13 +2,14 @@ import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import AndroidReviewFlow from "./AndroidReviewFlow";
-import { createReview, getProgress, getOllamaModels } from "../services/api";
+import { createReview, getProgress, getOllamaModels, getSampleTemplates } from "../services/api";
 
 jest.mock("../services/api", () => ({
   ...jest.requireActual("../services/api"),
   createReview: jest.fn(),
   getProgress: jest.fn(),
   getOllamaModels: jest.fn(),
+  getSampleTemplates: jest.fn(),
 }));
 
 beforeEach(() => {
@@ -16,6 +17,7 @@ beforeEach(() => {
   localStorage.clear();
   localStorage.setItem("llmProvider", "azure");
   getOllamaModels.mockResolvedValue([]);
+  getSampleTemplates.mockResolvedValue([]);
 });
 
 afterEach(() => {
@@ -27,10 +29,10 @@ function buildFile(name, type) {
   return new File(["content"], name, { type });
 }
 
-function renderFlow() {
+function renderFlow(props = {}) {
   return render(
     <MemoryRouter>
-      <AndroidReviewFlow />
+      <AndroidReviewFlow {...props} />
     </MemoryRouter>
   );
 }
@@ -167,6 +169,26 @@ test("shows an error message when the review itself fails during processing, and
   expect(screen.getByLabelText(/android project/i)).toBeInTheDocument();
 });
 
+test("sends the given projectId prop through to createReview", async () => {
+  const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+  createReview.mockResolvedValue({ review_id: "abc-123", status: "processing" });
+  getProgress.mockResolvedValue({
+    status: "processing", phase: "extracting", progress: 20, message: "Extracting...",
+    stats: {}, download_url: null, error: null, warnings: [], test_coverage: null, secrets_found: [],
+    total_score_pct: null, project_name: null, category_scores: [], code_context: null, prompt_log: [],
+    lint_issues: [], compile_status: null,
+  });
+
+  renderFlow({ projectId: "proj-1" });
+  await act(async () => {
+    await uploadValidFiles(user);
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+
+  expect(createReview).toHaveBeenCalledWith(expect.anything(), expect.anything(), "azure", null, "compiler", "Android", null, null, null, "proj-1");
+});
+
 test("sends the selected Ollama provider and model when available", async () => {
   const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
   localStorage.setItem("llmProvider", "ollama");
@@ -187,7 +209,7 @@ test("sends the selected Ollama provider and model when available", async () => 
     await Promise.resolve();
   });
 
-  expect(createReview).toHaveBeenCalledWith(expect.anything(), expect.anything(), "ollama", "qwen2.5-coder:7b", "compiler", "Android", null, null, null);
+  expect(createReview).toHaveBeenCalledWith(expect.anything(), expect.anything(), "ollama", "qwen2.5-coder:7b", "compiler", "Android", null, null, null, null);
 });
 
 test("falls back to Azure when Ollama is selected but no models are installed", async () => {
@@ -209,7 +231,7 @@ test("falls back to Azure when Ollama is selected but no models are installed", 
     await Promise.resolve();
   });
 
-  expect(createReview).toHaveBeenCalledWith(expect.anything(), expect.anything(), "azure", null, "compiler", "Android", null, null, null);
+  expect(createReview).toHaveBeenCalledWith(expect.anything(), expect.anything(), "azure", null, "compiler", "Android", null, null, null, null);
 });
 
 test("shows the compile-check mode toggle", () => {
@@ -237,7 +259,7 @@ test("sends the persisted compile-check mode when starting a review", async () =
     await Promise.resolve();
   });
 
-  expect(createReview).toHaveBeenCalledWith(expect.anything(), expect.anything(), "azure", null, "static", "Android", null, null, null);
+  expect(createReview).toHaveBeenCalledWith(expect.anything(), expect.anything(), "azure", null, "static", "Android", null, null, null, null);
 });
 
 test("shows the given platform's label in the header and zip picker before any project is uploaded", () => {
@@ -294,7 +316,7 @@ test("sends the platform label from a custom platform prop instead of the defaul
     await Promise.resolve();
   });
 
-  expect(createReview).toHaveBeenCalledWith(expect.anything(), expect.anything(), "azure", null, "compiler", "AndroidCustom", null, null, null);
+  expect(createReview).toHaveBeenCalledWith(expect.anything(), expect.anything(), "azure", null, "compiler", "AndroidCustom", null, null, null, null);
 });
 
 test("sends devops fields through to createReview when starting a review in DevOps mode", async () => {
@@ -322,6 +344,6 @@ test("sends devops fields through to createReview when starting a review in DevO
 
   expect(createReview).toHaveBeenCalledWith(
     null, xlsx, "azure", null, "compiler", "Android",
-    "https://dev.azure.com/myorg/MyProject/_git/my-repo", "fake-pat", null
+    "https://dev.azure.com/myorg/MyProject/_git/my-repo", "fake-pat", null, null
   );
 });

@@ -8,7 +8,6 @@ import PromptDebugLog from "../components/PromptDebugLog";
 import ReportTable from "../components/ReportTable";
 import StatsDisplay from "../components/StatsDisplay";
 import ReviewMetaBar from "../components/ReviewMetaBar";
-import CornerMarks from "../components/CornerMarks";
 import TopNav from "../components/TopNav";
 import { createReview, getOllamaModels } from "../services/api";
 import { getLlmProvider, getOllamaModel } from "../services/llmProviderStorage";
@@ -16,7 +15,7 @@ import { getCompileCheckMode } from "../services/compileCheckModeStorage";
 
 const SCORING_PHASES = ["scoring", "generating", "completed"];
 
-export default function AndroidReviewFlow({ platform = { id: "android", label: "Android" } }) {
+export default function AndroidReviewFlow({ platform = { id: "android", label: "Android" }, projectId = null }) {
   const [state, setState] = useState("idle"); // idle | uploading | polling | completed | error
   const [reviewId, setReviewId] = useState(null);
   const [progressData, setProgressData] = useState(null);
@@ -42,7 +41,7 @@ export default function AndroidReviewFlow({ platform = { id: "android", label: "
 
       const result = await createReview(
         androidZip, excelTemplate, effectiveProvider, effectiveModel, compileCheckMode, platform.label,
-        devopsRepoUrl, devopsPat, devopsBranch
+        devopsRepoUrl, devopsPat, devopsBranch, projectId
       );
       if (result.status === "error") {
         setErrorMessage(result.error || "Upload failed");
@@ -55,7 +54,7 @@ export default function AndroidReviewFlow({ platform = { id: "android", label: "
       setErrorMessage("Failed to start review. Is the server running?");
       setState("error");
     }
-  }, []);
+  }, [platform.label, projectId]);
 
   const handleProgressUpdate = useCallback((data) => {
     setProgressData(data);
@@ -82,10 +81,10 @@ export default function AndroidReviewFlow({ platform = { id: "android", label: "
     <div style={{ minHeight: "100vh", background: "var(--color-bg)", fontFamily: "var(--font-body)", color: "var(--color-text)" }}>
       <TopNav />
 
-      <main style={{ maxWidth: isRunningOrDone ? 1440 : 920, margin: "0 auto", padding: "var(--space-8) var(--space-4) var(--space-10)" }}>
+      <main style={{ maxWidth: isRunningOrDone ? 1440 : 920, margin: "0 auto", padding: "64px 24px 96px" }}>
         <header style={{ marginBottom: "var(--space-6)" }}>
-          <div style={{ display: "flex", alignItems: "baseline", gap: "var(--space-3)", flexWrap: "wrap", marginBottom: "var(--space-2)" }}>
-            <h1 style={{ fontFamily: "var(--font-heading)", fontSize: 38, lineHeight: 1.1, margin: 0 }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 14, flexWrap: "wrap", marginBottom: 10 }}>
+            <h1 style={{ fontFamily: "var(--font-heading)", fontWeight: "var(--font-heading-weight)", fontSize: 40, lineHeight: 1.1, letterSpacing: "-0.02em", margin: 0 }}>
               {progressData?.project_name || `${platform.label} Code Review Automation`}
             </h1>
             {reviewMeta && (
@@ -97,7 +96,7 @@ export default function AndroidReviewFlow({ platform = { id: "android", label: "
               />
             )}
           </div>
-          <p style={{ margin: 0, opacity: 0.7, maxWidth: "60ch" }}>
+          <p style={{ margin: 0, color: "var(--color-text-muted)", maxWidth: "60ch", fontSize: 16, lineHeight: 1.6 }}>
             Upload your {platform.label} project and a scoring template. The reviewer analyzes structure, security,
             tests and dependency versions, scores each category with AI, and hands back a populated workbook.
           </p>
@@ -186,14 +185,12 @@ export default function AndroidReviewFlow({ platform = { id: "android", label: "
         )}
 
         {state === "error" && (
-          <div className="card blueprint elev-md" style={{ padding: "var(--space-6)" }}>
-            <CornerMarks />
-            <div className="card-kicker">Error</div>
-            <div className="card-title" style={{ fontSize: 20 }}>Review failed</div>
+          <div className="card elev-md" style={{ padding: 32, borderLeft: "4px solid var(--color-brand-coral)" }}>
+            <div className="card-kicker" style={{ color: "var(--color-brand-coral)" }}>Error</div>
+            <div className="card-title" style={{ fontSize: 22 }}>Review failed</div>
             <p className="card-body">{errorMessage}</p>
             <div style={{ display: "flex", gap: "var(--space-3)", marginTop: "var(--space-4)" }}>
-              <button type="button" className="btn btn-primary blueprint" onClick={handleReset}>
-                <CornerMarks />
+              <button type="button" className="btn btn-primary" onClick={handleReset}>
                 Try again
               </button>
             </div>

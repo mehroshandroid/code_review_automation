@@ -21,9 +21,53 @@ services:
       # `uvicorn main:app --port 8100` from mac_build_agent/. Serves both
       # iOS (/lint) and Android local mode (/android-lint).
       - MAC_BUILD_AGENT_URL=http://host.docker.internal:8100
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/codereviews
+      - REVIEW_ARTIFACTS_DIR=/data/reviews
+      - SAMPLE_TEMPLATES_DIR=/data/sample-templates
+    volumes:
+      # Completed reviews' workbooks -- copied here (out of the per-review
+      # temp work dir, which gets cleaned up) so an approver can still open
+      # one long after the review that produced it has finished.
+      - review-artifacts:/data/reviews
+      # Org-wide default Excel templates configured per platform via the
+      # settings page -- see app/api/settings.py.
+      - sample-templates:/data/sample-templates
     depends_on:
-      - compiler
-      - dotnet-compiler
+      compiler:
+        condition: service_started
+      dotnet-compiler:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+    networks:
+      - review-network
+
+  postgres:
+    image: postgres:16
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=codereviews
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+    networks:
+      - review-network
+
+  adminer:
+    # Web UI for browsing the postgres container -- the Postgres equivalent
+    # of phpMyAdmin. Log in with System: PostgreSQL, Server: postgres,
+    # Username: postgres, Password: postgres, Database: codereviews.
+    image: adminer
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
     networks:
       - review-network
 
@@ -78,3 +122,6 @@ networks:
 volumes:
   gradle-cache:
   nuget-cache:
+  postgres-data:
+  review-artifacts:
+  sample-templates:

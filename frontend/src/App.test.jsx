@@ -10,10 +10,10 @@ function renderAt(initialPath) {
   );
 }
 
-test("renders the home page's platform cards and LLM toggle at /", () => {
+test("renders the project dashboard at / -- no projects yet since no backend is mocked here", async () => {
   renderAt("/");
-  expect(screen.getByRole("link", { name: /android/i })).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Azure OpenAI" })).toBeInTheDocument();
+  expect(await screen.findByText(/no projects yet/i)).toBeInTheDocument();
+  expect(screen.getByText(/create a project to get started/i)).toBeInTheDocument();
 });
 
 test("renders the Android review flow at /review/android", () => {
@@ -39,7 +39,7 @@ test("renders a placeholder banner for a not-yet-available platform", () => {
   expect(screen.getByRole("button", { name: "Coming soon" })).toBeDisabled();
 });
 
-test("redirects to / for an unknown platform id", () => {
+test("redirects to / for an unknown platform id", async () => {
   renderAt("/review/nonsense");
-  expect(screen.getByRole("link", { name: /android/i })).toBeInTheDocument();
+  expect(await screen.findByText(/no projects yet/i)).toBeInTheDocument();
 });

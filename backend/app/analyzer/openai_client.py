@@ -41,10 +41,13 @@ def _extract_usage(response) -> dict:
     }
 
 
-async def score_category(category_name: str, sub_criteria: list, descriptions: dict, code_snippets: str, platform: str = "Android") -> tuple:
+async def score_category(
+    category_name: str, sub_criteria: list, descriptions: dict, code_snippets: str,
+    platform: str = "Android", checklists: dict | None = None,
+) -> tuple:
     if is_stub_mode():
-        return _stub_score(category_name, sub_criteria, descriptions, platform)
-    return await _live_score(category_name, sub_criteria, descriptions, code_snippets, platform)
+        return _stub_score(category_name, sub_criteria, descriptions, platform, checklists)
+    return await _live_score(category_name, sub_criteria, descriptions, code_snippets, platform, checklists)
 
 
 async def generate_general_remarks(category_results: dict, platform: str = "Android") -> tuple:
@@ -53,8 +56,8 @@ async def generate_general_remarks(category_results: dict, platform: str = "Andr
     return await _live_general_remarks(category_results, platform)
 
 
-def _stub_score(category_name: str, sub_criteria: list, descriptions: dict, platform: str = "Android") -> tuple:
-    instructions = category_instructions(category_name, sub_criteria, descriptions, platform)
+def _stub_score(category_name: str, sub_criteria: list, descriptions: dict, platform: str = "Android", checklists: dict | None = None) -> tuple:
+    instructions = category_instructions(category_name, sub_criteria, descriptions, platform, checklists=checklists)
     sub_results = {
         sub_id: {"score": 1, "remark": f"{STUB_PREFIX} No Azure OpenAI key configured; placeholder score."}
         for sub_id in sub_criteria
@@ -90,8 +93,11 @@ async def _post_with_retry(payload: dict):
         return response
 
 
-async def _live_score(category_name: str, sub_criteria: list, descriptions: dict, code_snippets: str, platform: str = "Android") -> tuple:
-    instructions = category_instructions(category_name, sub_criteria, descriptions, platform)
+async def _live_score(
+    category_name: str, sub_criteria: list, descriptions: dict, code_snippets: str,
+    platform: str = "Android", checklists: dict | None = None,
+) -> tuple:
+    instructions = category_instructions(category_name, sub_criteria, descriptions, platform, checklists=checklists)
     payload = {
         "messages": [
             {"role": "system", "content": code_context_message(code_snippets, platform)},

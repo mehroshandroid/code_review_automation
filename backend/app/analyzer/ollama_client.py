@@ -79,9 +79,9 @@ async def _post(payload: dict):
 
 async def score_category(
     category_name: str, sub_criteria: list, descriptions: dict, code_snippets: str,
-    model: str | None = None, platform: str = "Android",
+    model: str | None = None, platform: str = "Android", checklists: dict | None = None,
 ) -> tuple:
-    instructions = category_instructions(category_name, sub_criteria, descriptions, platform)
+    instructions = category_instructions(category_name, sub_criteria, descriptions, platform, checklists=checklists)
     payload = {
         "model": _model(model),
         "messages": [
