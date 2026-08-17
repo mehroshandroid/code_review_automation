@@ -122,6 +122,13 @@ test("renders a Settings link pointing at /settings", async () => {
   expect(await screen.findByRole("link", { name: /settings/i })).toHaveAttribute("href", "/settings");
 });
 
+test("renders the review-insights chat widget", async () => {
+  getProjects.mockResolvedValue(projects);
+  renderDashboard();
+
+  expect(await screen.findByRole("button", { name: /open review insights chat/i })).toBeInTheDocument();
+});
+
 test("does not override a provider the user already picked in a previous session", async () => {
   localStorage.setItem("llmProvider", "azure");
   getProjects.mockResolvedValue(projects);

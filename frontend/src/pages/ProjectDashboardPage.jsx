@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import ProjectSidebar from "../components/ProjectSidebar";
 import ProjectReviewHistory from "../components/ProjectReviewHistory";
+import ChatWidget from "../components/ChatWidget";
 import { PLATFORMS } from "../platforms";
 import { GearIcon } from "../icons";
 import { getLlmProviderSettings, getOllamaModels, getProjects } from "../services/api";
@@ -182,6 +183,7 @@ export default function ProjectDashboardPage() {
           )}
         </div>
       </main>
+      <ChatWidget />
     </div>
   );
 }
