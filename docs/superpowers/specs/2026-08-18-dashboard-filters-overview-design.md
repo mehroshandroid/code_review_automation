@@ -44,7 +44,7 @@ Any filter change (year/platform/project) refetches `GET /api/reviews` with the 
 
 ### Overview visualization
 
-`DashboardOverview.jsx`, built with Recharts `RadialBarChart` (no new charting dependency):
+`DashboardOverview.jsx`, built on a hand-rolled `ProgressRing.jsx` component (an SVG circle + `stroke-dasharray` filled arc, no new dependency) rather than Recharts' `RadialBarChart` -- verified during planning that Recharts v3's RadialBarChart doesn't reliably render its data-driven value sector in this app's jsdom test environment (only the background arc rendered), making it both hard to test and of uncertain reliability in production. A hand-rolled ring gives the same visual outcome (a progress ring, not a needle gauge) with full control over the markup, consistent with how this app already hand-rolls its icons (`icons.jsx`):
 
 - **Final Score ring** (larger, prominent): average `total_score_pct` across all **non-error** reviews in the current filtered set. A "based on N reviews" caption underneath states how many reviews fed the average.
 - **Per-category rings** (smaller grid beside/below the Final Score ring): one ring per distinct category `name` present across the filtered non-error reviews, valued as the average `percent_points` for that name across whichever of those reviews contain it. A category with zero occurrences in the current filtered set simply has no ring.
