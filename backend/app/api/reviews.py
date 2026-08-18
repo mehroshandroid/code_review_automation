@@ -502,6 +502,38 @@ async def _run_review(
             shutil.rmtree(work_dir, ignore_errors=True)
 
 
+def _review_summary_to_dict(review) -> dict:
+    result_data = review.result_data or {}
+    return {
+        "id": review.id,
+        "project_id": review.project_id,
+        "project_name": review.project_name,
+        "platform": review.platform,
+        "status": review.status,
+        "created_at": review.created_at.isoformat(),
+        "completed_at": review.completed_at.isoformat() if review.completed_at else None,
+        "total_score_pct": float(review.total_score_pct) if review.total_score_pct is not None else None,
+        "category_scores": [
+            {"id": category.get("id"), "name": category.get("name"), "percent_points": category.get("percent_points")}
+            for category in result_data.get("category_scores", [])
+        ],
+    }
+
+
+@router.get("/api/reviews")
+async def list_reviews(year: int, platform: str | None = None, project_id: str | None = None):
+    async with new_session() as session:
+        reviews = await crud.list_reviews(session, year=year, platform=platform, project_id=project_id)
+    return {"reviews": [_review_summary_to_dict(review) for review in reviews]}
+
+
+@router.get("/api/reviews/years")
+async def list_review_years():
+    async with new_session() as session:
+        years = await crud.list_review_years(session)
+    return {"years": years}
+
+
 @router.get("/api/reviews/{review_id}/progress")
 async def get_progress(review_id: str):
     state = _reviews.get(review_id)
