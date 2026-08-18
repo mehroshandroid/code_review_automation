@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, extract, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import ClauseChecklist, OrgSettings, PlatformReview, Project, SampleTemplate
@@ -81,6 +81,27 @@ async def list_reviews_for_project(session: AsyncSession, project_id: str) -> li
         .order_by(PlatformReview.created_at.desc())
     )
     return list(result.scalars().all())
+
+
+async def list_reviews(
+    session: AsyncSession,
+    year: int,
+    platform: Optional[str] = None,
+    project_id: Optional[str] = None,
+) -> list[PlatformReview]:
+    query = select(PlatformReview).where(extract("year", PlatformReview.created_at) == year)
+    if platform:
+        query = query.where(PlatformReview.platform.ilike(platform))
+    if project_id:
+        query = query.where(PlatformReview.project_id == project_id)
+    query = query.order_by(PlatformReview.created_at.desc())
+    result = await session.execute(query)
+    return list(result.scalars().all())
+
+
+async def list_review_years(session: AsyncSession) -> list[int]:
+    result = await session.execute(select(extract("year", PlatformReview.created_at)).distinct())
+    return sorted({int(year) for (year,) in result.all()})
 
 
 async def update_review(

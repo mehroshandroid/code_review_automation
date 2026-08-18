@@ -145,13 +145,13 @@ async def test_persist_review_result_records_an_error_status(session):
     assert review.result_data == {"error": "Ollama request timed out"}
 
 
-async def _persist(session, review_id, project_id=None, platform="Android", created_at=None, total_score_pct=None):
+async def _persist(session, review_id, project_id=None, platform="Android", created_at=None, total_score_pct=None, status="pending_approval"):
     return await crud.persist_review_result(
         session,
         review_id=review_id,
         project_id=project_id,
         platform=platform,
-        status="pending_approval",
+        status=status,
         project_name="MyApp",
         created_at=created_at or datetime.now(timezone.utc),
         completed_at=created_at or datetime.now(timezone.utc),
@@ -247,3 +247,66 @@ async def test_update_review_returns_none_when_review_does_not_exist(session):
     review = await crud.update_review(session, "does-not-exist", status="approved")
 
     assert review is None
+
+
+async def test_list_reviews_filters_by_year(session):
+    await _persist(session, "r1", created_at=datetime(2025, 6, 1, tzinfo=timezone.utc))
+    await _persist(session, "r2", created_at=datetime(2024, 6, 1, tzinfo=timezone.utc))
+
+    reviews = await crud.list_reviews(session, year=2025)
+
+    assert [r.id for r in reviews] == ["r1"]
+
+
+async def test_list_reviews_filters_by_platform(session):
+    await _persist(session, "r1", platform=".NET", created_at=datetime(2025, 1, 1, tzinfo=timezone.utc))
+    await _persist(session, "r2", platform="Android", created_at=datetime(2025, 1, 1, tzinfo=timezone.utc))
+
+    reviews = await crud.list_reviews(session, year=2025, platform=".NET")
+
+    assert [r.id for r in reviews] == ["r1"]
+
+
+async def test_list_reviews_filters_by_project_id(session):
+    await crud.create_project(session, project_id="p1", name="Payments")
+    await crud.create_project(session, project_id="p2", name="Other")
+    await _persist(session, "r1", project_id="p1", created_at=datetime(2025, 1, 1, tzinfo=timezone.utc))
+    await _persist(session, "r2", project_id="p2", created_at=datetime(2025, 1, 1, tzinfo=timezone.utc))
+
+    reviews = await crud.list_reviews(session, year=2025, project_id="p1")
+
+    assert [r.id for r in reviews] == ["r1"]
+
+
+async def test_list_reviews_includes_errored_reviews(session):
+    await _persist(session, "r1", status="pending_approval", created_at=datetime(2025, 1, 1, tzinfo=timezone.utc))
+    await _persist(session, "r2", status="error", created_at=datetime(2025, 1, 1, tzinfo=timezone.utc))
+
+    reviews = await crud.list_reviews(session, year=2025)
+
+    assert sorted(r.id for r in reviews) == ["r1", "r2"]
+
+
+async def test_list_reviews_orders_newest_first(session):
+    await _persist(session, "r1", created_at=datetime(2025, 6, 1, tzinfo=timezone.utc))
+    await _persist(session, "r2", created_at=datetime(2025, 1, 1, tzinfo=timezone.utc))
+
+    reviews = await crud.list_reviews(session, year=2025)
+
+    assert [r.id for r in reviews] == ["r1", "r2"]
+
+
+async def test_list_review_years_returns_distinct_years_sorted(session):
+    await _persist(session, "r1", created_at=datetime(2025, 6, 1, tzinfo=timezone.utc))
+    await _persist(session, "r2", created_at=datetime(2024, 1, 1, tzinfo=timezone.utc))
+    await _persist(session, "r3", created_at=datetime(2025, 9, 1, tzinfo=timezone.utc))
+
+    years = await crud.list_review_years(session)
+
+    assert years == [2024, 2025]
+
+
+async def test_list_review_years_returns_empty_list_when_no_reviews(session):
+    years = await crud.list_review_years(session)
+
+    assert years == []
