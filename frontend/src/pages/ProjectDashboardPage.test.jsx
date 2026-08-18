@@ -2,29 +2,28 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import ProjectDashboardPage from "./ProjectDashboardPage";
-import { getLlmProvider } from "../services/llmProviderStorage";
-import { getOllamaModels, getProjects, getProjectReviews, createProject, getLlmProviderSettings } from "../services/api";
+import { getProjects, getReviews, getReviewYears, updateProject } from "../services/api";
 
 jest.mock("../services/api", () => ({
   ...jest.requireActual("../services/api"),
-  getOllamaModels: jest.fn(),
   getProjects: jest.fn(),
-  getProjectReviews: jest.fn(),
-  createProject: jest.fn(),
-  getLlmProviderSettings: jest.fn(),
+  getReviews: jest.fn(),
+  getReviewYears: jest.fn(),
+  updateProject: jest.fn(),
 }));
 
 const projects = [
-  { id: "p1", name: "Payments Service", created_at: "2026-08-07T00:00:00Z" },
-  { id: "p2", name: "Notifications", created_at: "2026-08-06T00:00:00Z" },
+  { id: "p1", name: "Payments Service" },
+  { id: "p2", name: "Notifications" },
 ];
 
+const currentYear = new Date().getFullYear();
+
 beforeEach(() => {
-  localStorage.clear();
   jest.resetAllMocks();
-  getOllamaModels.mockResolvedValue(["qwen2.5-coder:7b"]);
-  getProjectReviews.mockResolvedValue([]);
-  getLlmProviderSettings.mockResolvedValue({ default_llm_provider: "ollama", default_ollama_model: null });
+  getProjects.mockResolvedValue(projects);
+  getReviewYears.mockResolvedValue([currentYear - 1, currentYear]);
+  getReviews.mockResolvedValue([]);
 });
 
 function renderDashboard() {
@@ -35,106 +34,99 @@ function renderDashboard() {
   );
 }
 
-test("fetches projects and auto-selects the first one", async () => {
-  getProjects.mockResolvedValue(projects);
+test("fetches reviews for the current year with no platform/project filter by default", async () => {
   renderDashboard();
 
-  await waitFor(() => expect(screen.getByRole("button", { name: "Payments Service" })).toHaveClass("btn-primary"));
-  expect(getProjectReviews).toHaveBeenCalledWith("p1");
+  await waitFor(() => expect(getReviews).toHaveBeenCalledWith({ year: currentYear, platform: null, projectId: null }));
 });
 
-test("shows a prompt instead of the platform picker when there are no projects", async () => {
-  getProjects.mockResolvedValue([]);
+test("shows the filter bar with the current year selected by default", async () => {
   renderDashboard();
 
-  expect(await screen.findByText(/create a project to get started/i)).toBeInTheDocument();
-  expect(screen.queryByRole("link", { name: /android/i })).not.toBeInTheDocument();
+  expect(await screen.findByRole("button", { name: "Year" })).toHaveTextContent(String(currentYear));
+  expect(screen.getByRole("button", { name: "Platform" })).toHaveTextContent("All platforms");
+  expect(screen.getByRole("button", { name: "Project" })).toHaveTextContent("All projects");
 });
 
-test("shows the platform picker once a project is selected", async () => {
-  getProjects.mockResolvedValue(projects);
-  renderDashboard();
-
-  expect(await screen.findByRole("link", { name: /android/i })).toHaveAttribute("href", "/review/android");
-});
-
-test("clicking a different project in the sidebar switches the selected project", async () => {
+test("changing a filter re-fetches reviews with the new params", async () => {
   const user = userEvent.setup();
-  getProjects.mockResolvedValue(projects);
   renderDashboard();
+  await screen.findByRole("button", { name: "Platform" });
 
-  await waitFor(() => expect(screen.getByRole("button", { name: "Payments Service" })).toHaveClass("btn-primary"));
-  await user.click(screen.getByRole("button", { name: "Notifications" }));
+  await user.click(screen.getByRole("button", { name: "Platform" }));
+  await user.click(screen.getByRole("button", { name: "Android" }));
 
-  expect(screen.getByRole("button", { name: "Notifications" })).toHaveClass("btn-primary");
-  expect(getProjectReviews).toHaveBeenCalledWith("p2");
+  await waitFor(() => expect(getReviews).toHaveBeenLastCalledWith({ year: currentYear, platform: "Android", projectId: null }));
 });
 
-test("creating a project selects it automatically", async () => {
+test("Reset filters restores the defaults and re-fetches", async () => {
   const user = userEvent.setup();
-  getProjects.mockResolvedValue([]);
-  const newProject = { id: "p3", name: "New Project", created_at: "2026-08-07T00:00:00Z" };
-  createProject.mockResolvedValue(newProject);
   renderDashboard();
+  await screen.findByRole("button", { name: "Platform" });
 
-  await screen.findByText(/create a project to get started/i);
-  await user.click(screen.getByRole("button", { name: /add project/i }));
-  await user.type(screen.getByLabelText(/project name/i), "New Project");
-  await user.click(screen.getByRole("button", { name: /create/i }));
+  await user.click(screen.getByRole("button", { name: "Platform" }));
+  await user.click(screen.getByRole("button", { name: "Android" }));
+  await waitFor(() => expect(getReviews).toHaveBeenLastCalledWith({ year: currentYear, platform: "Android", projectId: null }));
 
-  await waitFor(() => expect(screen.getByRole("button", { name: "New Project" })).toHaveClass("btn-primary"));
-  expect(getProjectReviews).toHaveBeenCalledWith("p3");
+  await user.click(screen.getByRole("button", { name: /reset filters/i }));
+
+  await waitFor(() => expect(getReviews).toHaveBeenLastCalledWith({ year: currentYear, platform: null, projectId: null }));
+  expect(screen.getByRole("button", { name: "Platform" })).toHaveTextContent("All platforms");
 });
 
-test("the platform link carries the selected project id as router state", async () => {
-  getProjects.mockResolvedValue(projects);
+test("renders the overview and results table once reviews load", async () => {
+  getReviews.mockResolvedValue([
+    { id: "r1", project_name: "Moove", platform: ".NET", status: "pending_approval", created_at: "2026-08-01T00:00:00Z", total_score_pct: 80, category_scores: [] },
+  ]);
   renderDashboard();
 
-  const link = await screen.findByRole("link", { name: /android/i });
-  // react-router encodes Link state onto the underlying history entry, not
-  // a plain DOM attribute -- assert via the rendered element's internal
-  // state prop is impractical here, so this is covered end-to-end by
-  // AndroidReviewFlow/ReviewPage tests reading location.state instead.
-  expect(link).toHaveAttribute("href", "/review/android");
+  expect(await screen.findByText("Final Score")).toBeInTheDocument();
+  expect(screen.getByText("Moove")).toBeInTheDocument();
 });
 
-test("defaults to Ollama highlighted when models are available, same as before", async () => {
-  getProjects.mockResolvedValue(projects);
+test("clicking Start review opens the dialog", async () => {
+  const user = userEvent.setup();
   renderDashboard();
 
-  await waitFor(() => expect(screen.getByRole("button", { name: "Ollama (local)" })).toHaveClass("btn-primary"));
-  expect(getLlmProvider()).toBe("ollama");
-});
+  await user.click(screen.getByRole("button", { name: /start review/i }));
 
-test("seeds localStorage from the fetched org default when nothing was explicitly chosen", async () => {
-  getProjects.mockResolvedValue(projects);
-  getLlmProviderSettings.mockResolvedValue({ default_llm_provider: "azure", default_ollama_model: null });
-  renderDashboard();
-
-  await waitFor(() => expect(screen.getByRole("button", { name: "Azure OpenAI" })).toHaveClass("btn-primary"));
-  expect(getLlmProvider()).toBe("azure");
+  expect(screen.getByText("Start a review")).toBeInTheDocument();
 });
 
 test("renders a Settings link pointing at /settings", async () => {
-  getProjects.mockResolvedValue(projects);
   renderDashboard();
 
   expect(await screen.findByRole("link", { name: /settings/i })).toHaveAttribute("href", "/settings");
 });
 
 test("renders the review-insights chat widget", async () => {
-  getProjects.mockResolvedValue(projects);
   renderDashboard();
 
   expect(await screen.findByRole("button", { name: /open review insights chat/i })).toBeInTheDocument();
 });
 
-test("does not override a provider the user already picked in a previous session", async () => {
-  localStorage.setItem("llmProvider", "azure");
-  getProjects.mockResolvedValue(projects);
-  getLlmProviderSettings.mockResolvedValue({ default_llm_provider: "ollama", default_ollama_model: null });
+test("shows one combined empty-state message, not the overview/table, when no reviews match", async () => {
+  getReviews.mockResolvedValue([]);
   renderDashboard();
 
-  await waitFor(() => expect(screen.getByRole("button", { name: "Azure OpenAI" })).toHaveClass("btn-primary"));
-  expect(getLlmProvider()).toBe("azure");
+  expect(await screen.findByText(/no reviews match these filters/i)).toBeInTheDocument();
+  expect(screen.queryByText("Final Score")).not.toBeInTheDocument();
+});
+
+test("renaming a project updates it in the Project dropdown", async () => {
+  const user = userEvent.setup();
+  const updated = { id: "p1", name: "Payments Team" };
+  updateProject.mockResolvedValue(updated);
+  renderDashboard();
+
+  await user.click(screen.getByRole("button", { name: "Project" }));
+  await user.click(screen.getByRole("button", { name: "Payments Service" }));
+  await waitFor(() => expect(getReviews).toHaveBeenLastCalledWith({ year: currentYear, platform: null, projectId: "p1" }));
+
+  await user.click(screen.getByRole("button", { name: /rename payments service/i }));
+  await user.clear(screen.getByLabelText(/project name/i));
+  await user.type(screen.getByLabelText(/project name/i), "Payments Team");
+  await user.click(screen.getByRole("button", { name: /save/i }));
+
+  await waitFor(() => expect(screen.getByRole("button", { name: "Project" })).toHaveTextContent("Payments Team"));
 });
