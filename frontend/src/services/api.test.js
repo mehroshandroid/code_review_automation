@@ -3,6 +3,7 @@ import {
   createReview, getProgress, getDownloadUrl, getOllamaModels, createProject, updateProject, getProjects, getProjectReviews, getReview, updateReview,
   getLlmProviderSettings, updateLlmProviderSettings, getClauseChecklists, upsertClauseChecklist, deleteClauseChecklist,
   getSampleTemplates, uploadSampleTemplate, deleteSampleTemplate, previewSampleTemplate, sendChatMessage,
+  getReviews, getReviewYears,
 } from "./api";
 
 jest.mock("axios");
@@ -398,5 +399,39 @@ describe("sendChatMessage", () => {
 
     const [, body] = axios.post.mock.calls[0];
     expect(body.history).toEqual([]);
+  });
+});
+
+describe("getReviews", () => {
+  it("sends year, platform, and projectId as query params and returns the reviews list", async () => {
+    const reviews = [{ id: "r1", platform: ".NET", project_name: "Moove" }];
+    axios.get.mockResolvedValue({ data: { reviews } });
+
+    const result = await getReviews({ year: 2025, platform: ".NET", projectId: "p1" });
+
+    expect(result).toEqual(reviews);
+    expect(axios.get).toHaveBeenCalledWith(expect.stringContaining("/reviews"), {
+      params: { year: 2025, platform: ".NET", project_id: "p1" },
+    });
+  });
+
+  it("omits platform and project_id from params when not provided", async () => {
+    axios.get.mockResolvedValue({ data: { reviews: [] } });
+
+    await getReviews({ year: 2025 });
+
+    const [, config] = axios.get.mock.calls[0];
+    expect(config.params).toEqual({ year: 2025 });
+  });
+});
+
+describe("getReviewYears", () => {
+  it("fetches the distinct years with review data", async () => {
+    axios.get.mockResolvedValue({ data: { years: [2024, 2025] } });
+
+    const result = await getReviewYears();
+
+    expect(result).toEqual([2024, 2025]);
+    expect(axios.get).toHaveBeenCalledWith(expect.stringContaining("/reviews/years"));
   });
 });

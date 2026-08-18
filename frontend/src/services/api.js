@@ -127,3 +127,16 @@ export async function sendChatMessage(message, history = []) {
   });
   return response.data;
 }
+
+export async function getReviews({ year, platform, projectId } = {}) {
+  const params = { year };
+  if (platform) params.platform = platform;
+  if (projectId) params.project_id = projectId;
+  const response = await axios.get(`${API_BASE_URL}/reviews`, { params });
+  return response.data.reviews;
+}
+
+export async function getReviewYears() {
+  const response = await axios.get(`${API_BASE_URL}/reviews/years`);
+  return response.data.years;
+}
