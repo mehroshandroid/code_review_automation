@@ -1,8 +1,8 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import ProjectDashboardPage from "./ProjectDashboardPage";
-import { getProjects, getReviews, getReviewYears, updateProject } from "../services/api";
+import { getProjects, getReviews, getReviewYears, updateProject, uploadCompletedReview } from "../services/api";
 
 jest.mock("../services/api", () => ({
   ...jest.requireActual("../services/api"),
@@ -10,6 +10,7 @@ jest.mock("../services/api", () => ({
   getReviews: jest.fn(),
   getReviewYears: jest.fn(),
   updateProject: jest.fn(),
+  uploadCompletedReview: jest.fn(),
 }));
 
 const projects = [
@@ -24,6 +25,7 @@ beforeEach(() => {
   getProjects.mockResolvedValue(projects);
   getReviewYears.mockResolvedValue([currentYear - 1, currentYear]);
   getReviews.mockResolvedValue([]);
+  uploadCompletedReview.mockResolvedValue({ id: "r1" });
 });
 
 function renderDashboard() {
@@ -91,6 +93,35 @@ test("clicking Start review opens the dialog", async () => {
   await user.click(screen.getByRole("button", { name: /start review/i }));
 
   expect(screen.getByText("Start a review")).toBeInTheDocument();
+});
+
+test("clicking Upload review opens the upload dialog", async () => {
+  const user = userEvent.setup();
+  renderDashboard();
+
+  await user.click(screen.getByRole("button", { name: /upload review/i }));
+
+  expect(screen.getByText("Upload a completed review")).toBeInTheDocument();
+});
+
+test("a successful upload refetches reviews for the current filters", async () => {
+  const user = userEvent.setup();
+  renderDashboard();
+  await screen.findByRole("button", { name: "Platform" });
+  getReviews.mockClear();
+
+  await user.click(screen.getByRole("button", { name: /upload review/i }));
+  const dialog = screen.getByText("Upload a completed review").closest(".dialog");
+  await user.click(within(dialog).getByRole("button", { name: "Project" }));
+  await user.click(screen.getByRole("button", { name: "Payments Service" }));
+  await user.click(within(dialog).getByRole("button", { name: "Android" }));
+  const file = new File(["dummy"], "review.xlsx", { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+  await user.upload(screen.getByLabelText(/choose review sheet/i), file);
+
+  // getReviews was cleared right before this flow started, so exactly one
+  // new call (from the refreshKey bump) is expected here, not a running total.
+  await waitFor(() => expect(getReviews).toHaveBeenCalledTimes(1));
+  expect(screen.queryByText("Upload a completed review")).not.toBeInTheDocument();
 });
 
 test("renders a Settings link pointing at /settings", async () => {

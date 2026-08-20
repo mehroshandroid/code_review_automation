@@ -2,8 +2,10 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import DashboardFilters from "../components/DashboardFilters";
 import DashboardOverview from "../components/DashboardOverview";
+import DashboardCategoryTrends from "../components/DashboardCategoryTrends";
 import DashboardResultsTable from "../components/DashboardResultsTable";
 import StartReviewDialog from "../components/StartReviewDialog";
+import UploadReviewDialog from "../components/UploadReviewDialog";
 import ChatWidget from "../components/ChatWidget";
 import { GearIcon } from "../icons";
 import { getProjects, getReviews, getReviewYears } from "../services/api";
@@ -20,6 +22,8 @@ export default function ProjectDashboardPage() {
   const [projectId, setProjectId] = useState(null);
   const [reviews, setReviews] = useState(null); // null = still loading
   const [startReviewOpen, setStartReviewOpen] = useState(false);
+  const [uploadReviewOpen, setUploadReviewOpen] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -40,7 +44,7 @@ export default function ProjectDashboardPage() {
       .then((result) => { if (!cancelled) setReviews(result); })
       .catch(() => { if (!cancelled) setReviews([]); });
     return () => { cancelled = true; };
-  }, [year, platform, projectId]);
+  }, [year, platform, projectId, refreshKey]);
 
   function handleProjectCreated(project) {
     setProjects((current) => [project, ...current]);
@@ -73,7 +77,10 @@ export default function ProjectDashboardPage() {
           <p style={{ margin: 0, color: "var(--color-text-muted)", maxWidth: "60ch", fontSize: 16, lineHeight: 1.6 }}>
             Filter review history by year, platform, and project.
           </p>
-          <button type="button" className="btn btn-primary" onClick={() => setStartReviewOpen(true)}>Start review</button>
+          <div style={{ display: "flex", gap: "var(--space-2)" }}>
+            <button type="button" className="btn" onClick={() => setUploadReviewOpen(true)}>Upload review</button>
+            <button type="button" className="btn btn-primary" onClick={() => setStartReviewOpen(true)}>Start review</button>
+          </div>
         </header>
 
         <DashboardFilters
@@ -92,6 +99,7 @@ export default function ProjectDashboardPage() {
           ) : (
             <>
               <DashboardOverview reviews={reviews} />
+              <DashboardCategoryTrends reviews={reviews} />
               <DashboardResultsTable reviews={reviews} />
             </>
           )
@@ -103,6 +111,15 @@ export default function ProjectDashboardPage() {
           projects={projects}
           onProjectCreated={handleProjectCreated}
           onClose={() => setStartReviewOpen(false)}
+        />
+      )}
+
+      {uploadReviewOpen && (
+        <UploadReviewDialog
+          projects={projects}
+          onProjectCreated={handleProjectCreated}
+          onUploaded={() => setRefreshKey((key) => key + 1)}
+          onClose={() => setUploadReviewOpen(false)}
         />
       )}
 
