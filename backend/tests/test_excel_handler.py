@@ -11,6 +11,8 @@ from app.analyzer.excel_handler import (
     generate_review_excel,
     populate_metadata,
     populate_scores,
+    read_metadata,
+    read_scores,
 )
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
@@ -380,6 +382,109 @@ def test_populate_scores_against_the_real_sample_template(tmp_path: Path):
     assert ws["C40"].value == datetime.datetime(2026, 7, 24)
 
 
+
+
+def test_read_scores_returns_percent_points_matching_the_filled_in_cells(tmp_path: Path):
+    template_path = tmp_path / "template.xlsx"
+    _build_template(template_path)
+    ws = load_workbook(template_path).active
+    categories, descriptions = discover_structure(ws)
+    ws["D4"].value = 1
+    ws["G4"].value = None
+    ws["D5"].value = 0
+    ws["G5"].value = "Formatting is inconsistent."
+
+    scores_by_category = read_scores(ws, categories, descriptions)
+
+    assert scores_by_category["1"]["sub_scores"]["1.1"] == {"score": 1, "remark": None}
+    assert scores_by_category["1"]["sub_scores"]["1.2"] == {"score": 0, "remark": "Formatting is inconsistent."}
+    assert scores_by_category["1"]["percent_points"] == 50.0
+
+
+def test_read_scores_raises_when_a_score_cell_is_blank(tmp_path: Path):
+    template_path = tmp_path / "template.xlsx"
+    _build_template(template_path)
+    ws = load_workbook(template_path).active
+    categories, descriptions = discover_structure(ws)
+    ws["D4"].value = 1
+    # D5 (sub-criterion 1.2's score cell) intentionally left blank.
+
+    try:
+        read_scores(ws, categories, descriptions)
+        assert False, "expected ValueError"
+    except ValueError as exc:
+        assert "1.2" in str(exc)
+        assert "no score" in str(exc).lower()
+
+
+def test_read_scores_raises_on_a_non_binary_score(tmp_path: Path):
+    template_path = tmp_path / "template.xlsx"
+    _build_template(template_path)
+    ws = load_workbook(template_path).active
+    categories, descriptions = discover_structure(ws)
+    ws["D4"].value = 0.5
+    ws["D5"].value = 1
+
+    try:
+        read_scores(ws, categories, descriptions)
+        assert False, "expected ValueError"
+    except ValueError as exc:
+        assert "1.1" in str(exc)
+        assert "0 or 1" in str(exc)
+
+
+def test_read_metadata_returns_reviewer_and_date(tmp_path: Path):
+    template_path = tmp_path / "template.xlsx"
+    _build_template(template_path)
+    ws = load_workbook(template_path).active
+    ws["C8"].value = "Jane Doe"
+    ws["C9"].value = datetime.date(2026, 7, 24)
+
+    reviewer_name, review_date = read_metadata(ws)
+
+    assert reviewer_name == "Jane Doe"
+    assert review_date == datetime.date(2026, 7, 24)
+
+
+def test_read_metadata_parses_a_plain_string_date():
+    wb = Workbook()
+    ws = wb.active
+    ws.append(["Clause", None, "Weight", "Avg Points", "Final Points", "% Points", "Remarks"])
+    ws.append([None, "Reviewers: ", "Jane Doe", None, None, None, None])
+    ws.append([None, "Dated", "2026-07-24", None, None, None, None])
+
+    reviewer_name, review_date = read_metadata(ws)
+
+    assert reviewer_name == "Jane Doe"
+    assert review_date == datetime.date(2026, 7, 24)
+
+
+def test_read_metadata_raises_when_reviewer_cell_is_blank(tmp_path: Path):
+    template_path = tmp_path / "template.xlsx"
+    _build_template(template_path)
+    ws = load_workbook(template_path).active
+    ws["C8"].value = None  # overrides _build_template's "<reviewer Name>" placeholder
+    ws["C9"].value = datetime.date(2026, 7, 24)
+
+    try:
+        read_metadata(ws)
+        assert False, "expected ValueError"
+    except ValueError as exc:
+        assert "reviewer" in str(exc).lower()
+
+
+def test_read_metadata_raises_when_date_cell_is_blank_or_unparseable(tmp_path: Path):
+    template_path = tmp_path / "template.xlsx"
+    _build_template(template_path)
+    ws = load_workbook(template_path).active
+    ws["C8"].value = "Jane Doe"
+    ws["C9"].value = "not a date"
+
+    try:
+        read_metadata(ws)
+        assert False, "expected ValueError"
+    except ValueError as exc:
+        assert "date" in str(exc).lower()
 
 
 def test_discover_structure_reads_categories_and_descriptions_positionally(tmp_path: Path):

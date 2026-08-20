@@ -235,6 +235,81 @@ def populate_metadata(
                 _set_cell(ws, cell.row, cell.column + 1, review_date)
 
 
+def read_scores(ws, categories: dict, descriptions: dict) -> dict:
+    """Mirrors populate_scores: reads each sub-criterion's score/remark cell
+    (instead of writing them) for the rows discover_structure found, then
+    runs the result through aggregate_category_scores exactly like the live
+    scoring path does. Raises ValueError if a sub-criterion's score cell is
+    blank or not 0/1 -- a hand-filled sheet must follow the same binary
+    scoring convention the app itself writes.
+    """
+    header_row = _find_header_row(ws)
+    columns = _resolve_columns(ws, header_row)
+    id_col = columns["id"]
+    score_col = columns["avg_points"]
+    remarks_col = columns["remarks"]
+
+    category_sub_ids = {cid: category["sub_criteria"] for cid, category in categories.items()}
+    sub_scores_by_category = {cid: {} for cid in categories}
+    for category_id, _category_row, sub_id, sub_row in _iter_positional_sub_rows(ws, header_row, id_col, category_sub_ids):
+        score = ws.cell(row=sub_row, column=score_col).value
+        if score is None:
+            description = descriptions.get(sub_id, sub_id)
+            raise ValueError(f"Clause {sub_id} ({description}) has no score filled in.")
+        if score not in (0, 1):
+            raise ValueError(f"Clause {sub_id} has an invalid score ({score}); expected 0 or 1.")
+        remark = ws.cell(row=sub_row, column=remarks_col).value
+        sub_scores_by_category[category_id][sub_id] = {"score": score, "remark": remark}
+
+    return {cid: aggregate_category_scores(sub_scores) for cid, sub_scores in sub_scores_by_category.items()}
+
+
+DATE_STRING_FORMATS = ["%Y-%m-%d", "%m/%d/%Y", "%d/%m/%Y"]
+
+
+def _parse_review_date(value):
+    if isinstance(value, datetime.datetime):
+        return value.date()
+    if isinstance(value, datetime.date):
+        return value
+    if isinstance(value, str):
+        text = value.strip()
+        for fmt in DATE_STRING_FORMATS:
+            try:
+                return datetime.datetime.strptime(text, fmt).date()
+            except ValueError:
+                continue
+    return None
+
+
+def read_metadata(ws) -> tuple[str, datetime.date]:
+    """Mirrors populate_metadata: label-searches for the 'Reviewers:' and
+    'Dated:' cells and returns their values (instead of writing to them).
+    Raises ValueError if either cell is blank, or the date cell isn't a
+    recognizable date (a native Excel date, or a plain YYYY-MM-DD /
+    MM/DD/YYYY / DD/MM/YYYY string).
+    """
+    reviewer_name = None
+    review_date = None
+    for row in ws.iter_rows():
+        for cell in row:
+            if not isinstance(cell.value, str):
+                continue
+            text = cell.value.strip().lower()
+            if text.startswith(REVIEWERS_LABEL):
+                value = ws.cell(row=cell.row, column=cell.column + 1).value
+                reviewer_name = str(value).strip() if value not in (None, "") else None
+            elif text == DATED_LABEL:
+                value = ws.cell(row=cell.row, column=cell.column + 1).value
+                review_date = _parse_review_date(value)
+
+    if not reviewer_name:
+        raise ValueError('Sheet is missing a reviewer name (the "Reviewers:" cell is blank).')
+    if review_date is None:
+        raise ValueError('Sheet is missing a valid review date (the "Dated:" cell is blank or not a recognizable date).')
+    return reviewer_name, review_date
+
+
 def generate_review_excel(
     template_path: Path,
     output_path: Path,
