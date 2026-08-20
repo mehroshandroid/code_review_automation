@@ -145,6 +145,74 @@ async def test_persist_review_result_records_an_error_status(session):
     assert review.result_data == {"error": "Ollama request timed out"}
 
 
+async def test_persist_review_result_stores_reviewer_and_approval_fields(session):
+    approved_at = datetime(2026, 7, 24, tzinfo=timezone.utc)
+    review = await crud.persist_review_result(
+        session,
+        review_id="r1",
+        project_id=None,
+        platform="Android",
+        status="approved",
+        project_name="MyApp",
+        created_at=approved_at,
+        completed_at=approved_at,
+        total_score_pct=90.0,
+        llm_provider="manual_upload",
+        llm_model=None,
+        compile_check_mode="none",
+        source="manual_upload",
+        workbook_path=None,
+        result_data={"category_scores": []},
+        created_by="Jane Doe",
+        approved_by="Jane Doe",
+        approved_at=approved_at,
+    )
+
+    assert review.created_by == "Jane Doe"
+    assert review.approved_by == "Jane Doe"
+    # SQLite (this test's in-memory dialect) doesn't round-trip tzinfo the
+    # way Postgres does -- compare the naive form, matching how this file's
+    # other datetime-bearing assertions already avoid tz-aware equality.
+    assert review.approved_at == approved_at.replace(tzinfo=None)
+
+
+async def test_persist_review_result_defaults_reviewer_and_approval_fields_to_none(session):
+    review = await crud.persist_review_result(
+        session,
+        review_id="r1",
+        project_id=None,
+        platform="Android",
+        status="pending_approval",
+        project_name="MyApp",
+        created_at=datetime.now(timezone.utc),
+        completed_at=None,
+        total_score_pct=None,
+        llm_provider="azure",
+        llm_model=None,
+        compile_check_mode="compiler",
+        source="upload",
+        workbook_path=None,
+        result_data={},
+    )
+
+    assert review.created_by is None
+    assert review.approved_by is None
+    assert review.approved_at is None
+
+
+async def test_get_project_returns_it_by_id(session):
+    await crud.create_project(session, project_id="p1", name="Payments Service")
+
+    project = await crud.get_project(session, "p1")
+
+    assert project.id == "p1"
+    assert project.name == "Payments Service"
+
+
+async def test_get_project_returns_none_when_not_found(session):
+    assert await crud.get_project(session, "missing") is None
+
+
 async def _persist(session, review_id, project_id=None, platform="Android", created_at=None, total_score_pct=None, status="pending_approval"):
     return await crud.persist_review_result(
         session,
