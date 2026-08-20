@@ -140,3 +140,12 @@ export async function getReviewYears() {
   const response = await axios.get(`${API_BASE_URL}/reviews/years`);
   return response.data.years;
 }
+
+export async function uploadCompletedReview({ projectId, platform, file }) {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("projectId", projectId);
+  formData.append("platform", platform);
+  const response = await axios.post(`${API_BASE_URL}/reviews/upload`, formData);
+  return response.data;
+}
