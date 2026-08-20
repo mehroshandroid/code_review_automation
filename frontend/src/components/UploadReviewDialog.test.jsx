@@ -31,11 +31,12 @@ test("platform cards are disabled until a project is chosen", async () => {
   expect(uploadCompletedReview).not.toHaveBeenCalled();
 });
 
-test("selecting a project, a platform, then a file uploads it and calls onUploaded then onClose", async () => {
+test("selecting a project, a platform, then a file uploads it, calls onUploaded, and shows a success message without auto-closing", async () => {
   const user = userEvent.setup();
   const onUploaded = jest.fn();
   const onClose = jest.fn();
-  uploadCompletedReview.mockResolvedValue({ id: "r1" });
+  const uploadedReview = { id: "r1", project_name: "Payments Service", platform: "Android", created_at: "2026-06-15T00:00:00Z" };
+  uploadCompletedReview.mockResolvedValue(uploadedReview);
   renderDialog({ onUploaded, onClose });
 
   await selectProject(user);
@@ -44,7 +45,11 @@ test("selecting a project, a platform, then a file uploads it and calls onUpload
   await user.upload(screen.getByLabelText(/choose review sheet/i), file);
 
   await waitFor(() => expect(uploadCompletedReview).toHaveBeenCalledWith({ projectId: "p1", platform: "Android", file }));
-  await waitFor(() => expect(onUploaded).toHaveBeenCalled());
+  await waitFor(() => expect(onUploaded).toHaveBeenCalledWith(uploadedReview));
+  expect(await screen.findByText(/uploaded successfully/i)).toBeInTheDocument();
+  expect(onClose).not.toHaveBeenCalled();
+
+  await user.click(screen.getByRole("button", { name: /done/i }));
   expect(onClose).toHaveBeenCalled();
 });
 
@@ -68,7 +73,7 @@ test("creating a project via the dialog selects it for the upload", async () => 
   const onProjectCreated = jest.fn();
   const newProject = { id: "p2", name: "New Project" };
   createProject.mockResolvedValue(newProject);
-  uploadCompletedReview.mockResolvedValue({ id: "r1" });
+  uploadCompletedReview.mockResolvedValue({ id: "r1", project_name: "New Project", platform: ".NET", created_at: "2026-06-15T00:00:00Z" });
   renderDialog({ onProjectCreated });
 
   await user.click(screen.getByRole("button", { name: "Project" }));

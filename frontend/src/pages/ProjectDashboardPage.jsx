@@ -60,6 +60,13 @@ export default function ProjectDashboardPage() {
     setProjectId(null);
   }
 
+  function handleReviewUploaded(review) {
+    setYear(new Date(review.created_at).getFullYear());
+    setPlatform(review.platform);
+    setProjectId(review.project_id);
+    setRefreshKey((key) => key + 1);
+  }
+
   return (
     <div style={{ minHeight: "100vh", background: "var(--color-bg)", fontFamily: "var(--font-body)", color: "var(--color-text)" }}>
       <nav className="nav">
@@ -118,7 +125,7 @@ export default function ProjectDashboardPage() {
         <UploadReviewDialog
           projects={projects}
           onProjectCreated={handleProjectCreated}
-          onUploaded={() => setRefreshKey((key) => key + 1)}
+          onUploaded={handleReviewUploaded}
           onClose={() => setUploadReviewOpen(false)}
         />
       )}

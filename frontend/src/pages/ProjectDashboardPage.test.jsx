@@ -104,11 +104,14 @@ test("clicking Upload review opens the upload dialog", async () => {
   expect(screen.getByText("Upload a completed review")).toBeInTheDocument();
 });
 
-test("a successful upload refetches reviews for the current filters", async () => {
+test("a successful upload jumps the dashboard filters to the uploaded review and shows a success message", async () => {
   const user = userEvent.setup();
+  const uploadedYear = currentYear - 1;
+  uploadCompletedReview.mockResolvedValue({
+    id: "r1", project_id: "p1", project_name: "Payments Service", platform: "Android", created_at: `${uploadedYear}-06-15T00:00:00Z`,
+  });
   renderDashboard();
   await screen.findByRole("button", { name: "Platform" });
-  getReviews.mockClear();
 
   await user.click(screen.getByRole("button", { name: /upload review/i }));
   const dialog = screen.getByText("Upload a completed review").closest(".dialog");
@@ -118,10 +121,12 @@ test("a successful upload refetches reviews for the current filters", async () =
   const file = new File(["dummy"], "review.xlsx", { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
   await user.upload(screen.getByLabelText(/choose review sheet/i), file);
 
-  // getReviews was cleared right before this flow started, so exactly one
-  // new call (from the refreshKey bump) is expected here, not a running total.
-  await waitFor(() => expect(getReviews).toHaveBeenCalledTimes(1));
+  expect(await screen.findByText(/uploaded successfully/i)).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: /done/i }));
+
   expect(screen.queryByText("Upload a completed review")).not.toBeInTheDocument();
+  await waitFor(() => expect(getReviews).toHaveBeenLastCalledWith({ year: uploadedYear, platform: "Android", projectId: "p1" }));
+  expect(screen.getByRole("button", { name: "Year" })).toHaveTextContent(String(uploadedYear));
 });
 
 test("renders a Settings link pointing at /settings", async () => {
