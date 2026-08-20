@@ -33,7 +33,7 @@ export default function DashboardFilters({
   }
 
   return (
-    <div className="card" style={{ padding: 20, display: "flex", gap: "var(--space-3)", alignItems: "flex-end", flexWrap: "wrap" }}>
+    <div className="card" style={{ padding: 20, display: "flex", flexDirection: "row", gap: "var(--space-3)", alignItems: "flex-end", flexWrap: "wrap" }}>
       <div className="field" style={{ minWidth: 140 }}>
         <label htmlFor="filterYear">Year</label>
         <SearchableSelect ariaLabel="Year" options={yearOptions} value={year} onChange={onYearChange} />
