@@ -417,7 +417,10 @@ def test_read_scores_raises_when_a_score_cell_is_blank(tmp_path: Path):
         assert "no score" in str(exc).lower()
 
 
-def test_read_scores_raises_on_a_non_binary_score(tmp_path: Path):
+def test_read_scores_accepts_partial_credit_scores_not_just_binary(tmp_path: Path):
+    # Older reviews used partial credit on the 0-1 scale rather than the
+    # current app's strict pass/fail -- an uploaded sheet must reproduce
+    # whatever scoring convention was actually used, not reject it.
     template_path = tmp_path / "template.xlsx"
     _build_template(template_path)
     ws = load_workbook(template_path).active
@@ -425,12 +428,26 @@ def test_read_scores_raises_on_a_non_binary_score(tmp_path: Path):
     ws["D4"].value = 0.5
     ws["D5"].value = 1
 
+    scores_by_category = read_scores(ws, categories, descriptions)
+
+    assert scores_by_category["1"]["sub_scores"]["1.1"]["score"] == 0.5
+    assert scores_by_category["1"]["percent_points"] == 75.0
+
+
+def test_read_scores_raises_on_a_non_numeric_score(tmp_path: Path):
+    template_path = tmp_path / "template.xlsx"
+    _build_template(template_path)
+    ws = load_workbook(template_path).active
+    categories, descriptions = discover_structure(ws)
+    ws["D4"].value = "not a number"
+    ws["D5"].value = 1
+
     try:
         read_scores(ws, categories, descriptions)
         assert False, "expected ValueError"
     except ValueError as exc:
         assert "1.1" in str(exc)
-        assert "0 or 1" in str(exc)
+        assert "non-numeric" in str(exc).lower()
 
 
 def test_read_metadata_returns_reviewer_and_date(tmp_path: Path):

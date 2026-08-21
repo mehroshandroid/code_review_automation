@@ -240,8 +240,10 @@ def read_scores(ws, categories: dict, descriptions: dict) -> dict:
     (instead of writing them) for the rows discover_structure found, then
     runs the result through aggregate_category_scores exactly like the live
     scoring path does. Raises ValueError if a sub-criterion's score cell is
-    blank or not 0/1 -- a hand-filled sheet must follow the same binary
-    scoring convention the app itself writes.
+    blank or not numeric. Any numeric value is accepted (not just 0/1) --
+    older reviews used partial credit on the same 0-1 scale rather than the
+    current app's strict pass/fail, and an uploaded sheet should reproduce
+    whatever scoring convention was actually used at the time.
     """
     header_row = _find_header_row(ws)
     columns = _resolve_columns(ws, header_row)
@@ -253,11 +255,11 @@ def read_scores(ws, categories: dict, descriptions: dict) -> dict:
     sub_scores_by_category = {cid: {} for cid in categories}
     for category_id, _category_row, sub_id, sub_row in _iter_positional_sub_rows(ws, header_row, id_col, category_sub_ids):
         score = ws.cell(row=sub_row, column=score_col).value
+        description = descriptions.get(sub_id, sub_id)
         if score is None:
-            description = descriptions.get(sub_id, sub_id)
             raise ValueError(f"Clause {sub_id} ({description}) has no score filled in.")
-        if score not in (0, 1):
-            raise ValueError(f"Clause {sub_id} has an invalid score ({score}); expected 0 or 1.")
+        if not isinstance(score, (int, float)) or isinstance(score, bool):
+            raise ValueError(f"Clause {sub_id} ({description}) has a non-numeric score ({score!r}).")
         remark = ws.cell(row=sub_row, column=remarks_col).value
         sub_scores_by_category[category_id][sub_id] = {"score": score, "remark": remark}
 
