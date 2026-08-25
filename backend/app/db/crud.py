@@ -268,3 +268,9 @@ async def update_user(
 async def count_users(session: AsyncSession) -> int:
     result = await session.execute(select(func.count()).select_from(User))
     return result.scalar_one()
+
+
+async def delete_user(session: AsyncSession, user_id: str) -> bool:
+    result = await session.execute(delete(User).where(User.id == user_id))
+    await session.commit()
+    return result.rowcount > 0

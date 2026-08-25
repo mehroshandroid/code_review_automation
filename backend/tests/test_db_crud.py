@@ -436,3 +436,16 @@ async def test_count_users_reflects_table_size(session):
     assert await crud.count_users(session) == 0
     await crud.create_user(session, user_id="u1", email="a@example.com", password_hash="h", role="admin")
     assert await crud.count_users(session) == 1
+
+
+async def test_delete_user_removes_it_and_returns_true(session):
+    await crud.create_user(session, user_id="u1", email="a@example.com", password_hash="h", role="user")
+
+    deleted = await crud.delete_user(session, "u1")
+
+    assert deleted is True
+    assert await crud.get_user_by_id(session, "u1") is None
+
+
+async def test_delete_user_returns_false_when_not_found(session):
+    assert await crud.delete_user(session, "missing") is False

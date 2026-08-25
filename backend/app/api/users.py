@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 
@@ -76,3 +76,14 @@ async def update_user(user_id: str, body: UpdateUserRequest, current_user=Depend
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
     return _user_to_dict(user)
+
+
+@router.delete("/api/users/{user_id}", status_code=204)
+async def delete_user(user_id: str, current_user=Depends(require_roles("admin"))):
+    if user_id == current_user.id:
+        raise HTTPException(status_code=400, detail="You cannot delete your own account.")
+    async with new_session() as session:
+        deleted = await crud.delete_user(session, user_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="User not found")
+    return Response(status_code=204)

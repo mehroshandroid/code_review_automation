@@ -118,3 +118,37 @@ def test_update_user_forbids_deactivating_yourself(test_sessionmaker):
     response = client.patch("/api/users/acting-admin", json={"is_active": False})
 
     assert response.status_code == 400
+
+
+def test_delete_user_removes_them_from_the_list(test_sessionmaker):
+    created = client.post("/api/users", json={"email": "one@example.com", "password": "correct horse", "role": "user"}).json()
+
+    response = client.delete(f"/api/users/{created['id']}")
+
+    assert response.status_code == 204
+    emails = [u["email"] for u in client.get("/api/users").json()["users"]]
+    assert "one@example.com" not in emails
+
+
+def test_delete_user_returns_404_for_an_unknown_id(test_sessionmaker):
+    response = client.delete("/api/users/does-not-exist")
+
+    assert response.status_code == 404
+
+
+def test_delete_user_forbids_deleting_yourself(test_sessionmaker):
+    admin = User(id="acting-admin", email="acting-admin@example.com", role="admin", is_active=True, password_hash="", created_at=None)
+    app.dependency_overrides[get_current_user] = lambda: admin
+
+    response = client.delete("/api/users/acting-admin")
+
+    assert response.status_code == 400
+
+
+def test_delete_user_requires_admin_role(test_sessionmaker):
+    non_admin = User(id="u2", email="reviewer@example.com", role="reviewer", is_active=True, password_hash="", created_at=None)
+    app.dependency_overrides[get_current_user] = lambda: non_admin
+
+    response = client.delete("/api/users/whoever")
+
+    assert response.status_code == 403

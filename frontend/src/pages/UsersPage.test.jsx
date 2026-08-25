@@ -2,7 +2,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import UsersPage from "./UsersPage";
-import { listUsers, createUser, updateUser } from "../services/api";
+import { listUsers, createUser, updateUser, deleteUser } from "../services/api";
 import { AuthContext } from "../context/AuthContext";
 
 jest.mock("../services/api", () => ({
@@ -10,6 +10,7 @@ jest.mock("../services/api", () => ({
   listUsers: jest.fn(),
   createUser: jest.fn(),
   updateUser: jest.fn(),
+  deleteUser: jest.fn(),
 }));
 
 const users = [
@@ -103,15 +104,17 @@ function renderAsUser(userId) {
   );
 }
 
-test("disables the role select and hides the deactivate button for your own row", async () => {
+test("disables the role select and hides the deactivate/delete buttons for your own row", async () => {
   renderAsUser("u1");
   await screen.findByText("admin@example.com");
 
   expect(screen.getByLabelText(/role for admin@example\.com/i)).toBeDisabled();
   expect(screen.queryByRole("button", { name: /deactivate admin@example\.com/i })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /delete admin@example\.com/i })).not.toBeInTheDocument();
   // Other rows are unaffected.
   expect(screen.getByLabelText(/role for reviewer@example\.com/i)).toBeEnabled();
   expect(screen.getByRole("button", { name: /deactivate reviewer@example\.com/i })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /delete reviewer@example\.com/i })).toBeInTheDocument();
 });
 
 test("setting a new password for a user calls updateUser with the password", async () => {
@@ -126,4 +129,27 @@ test("setting a new password for a user calls updateUser with the password", asy
   await user.click(within(dialog).getByRole("button", { name: /^save$/i }));
 
   await waitFor(() => expect(updateUser).toHaveBeenCalledWith("u2", { password: "a brand new password" }));
+});
+
+test("deleting a user calls deleteUser and refreshes the list", async () => {
+  const user = userEvent.setup();
+  deleteUser.mockResolvedValue();
+  renderPage();
+  await screen.findByText("reviewer@example.com");
+
+  await user.click(screen.getByRole("button", { name: /delete reviewer@example\.com/i }));
+
+  await waitFor(() => expect(deleteUser).toHaveBeenCalledWith("u2"));
+  await waitFor(() => expect(listUsers).toHaveBeenCalledTimes(2));
+});
+
+test("shows an error message instead of failing silently when delete is rejected", async () => {
+  const user = userEvent.setup();
+  deleteUser.mockRejectedValue({ response: { data: { detail: "You cannot delete your own account." } } });
+  renderPage();
+  await screen.findByText("reviewer@example.com");
+
+  await user.click(screen.getByRole("button", { name: /delete reviewer@example\.com/i }));
+
+  expect(await screen.findByText("You cannot delete your own account.")).toBeInTheDocument();
 });

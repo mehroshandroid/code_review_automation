@@ -194,3 +194,7 @@ export async function updateUser(userId, { role, isActive, password } = {}) {
   const response = await axios.patch(`${API_BASE_URL}/users/${userId}`, body);
   return response.data;
 }
+
+export async function deleteUser(userId) {
+  await axios.delete(`${API_BASE_URL}/users/${userId}`);
+}

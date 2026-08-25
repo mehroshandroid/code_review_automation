@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import TopNav from "../components/TopNav";
 import { useAuth } from "../context/AuthContext";
-import { listUsers, createUser, updateUser } from "../services/api";
+import { listUsers, createUser, updateUser, deleteUser } from "../services/api";
 
 const ROLES = ["admin", "reviewer", "user"];
 
@@ -141,6 +141,16 @@ export default function UsersPage() {
     await refresh();
   }
 
+  async function handleDelete(userId) {
+    setError("");
+    try {
+      await deleteUser(userId);
+      await refresh();
+    } catch (err) {
+      setError(err.response?.data?.detail || "Failed to delete user.");
+    }
+  }
+
   return (
     <div style={{ minHeight: "100vh", background: "var(--color-bg)" }}>
       <TopNav />
@@ -188,6 +198,14 @@ export default function UsersPage() {
                         <button type="button" className="btn btn-ghost" aria-label={`Set password for ${u.email}`} onClick={() => setPasswordDialogFor(u)}>
                           Set password
                         </button>
+                        {!isSelf && (
+                          <button
+                            type="button" className="btn btn-ghost" aria-label={`Delete ${u.email}`}
+                            style={{ color: "var(--color-brand-coral)" }} onClick={() => handleDelete(u.id)}
+                          >
+                            Delete
+                          </button>
+                        )}
                       </td>
                     </tr>
                   );
