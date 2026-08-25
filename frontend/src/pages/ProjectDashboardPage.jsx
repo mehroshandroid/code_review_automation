@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
 import DashboardFilters from "../components/DashboardFilters";
 import DashboardOverview from "../components/DashboardOverview";
 import DashboardCategoryTrends from "../components/DashboardCategoryTrends";
@@ -7,7 +6,7 @@ import DashboardResultsTable from "../components/DashboardResultsTable";
 import StartReviewDialog from "../components/StartReviewDialog";
 import UploadReviewDialog from "../components/UploadReviewDialog";
 import ChatWidget from "../components/ChatWidget";
-import { GearIcon } from "../icons";
+import NavActions from "../components/NavActions";
 import { getProjects, getReviews, getReviewYears } from "../services/api";
 
 function currentYear() {
@@ -76,7 +75,9 @@ export default function ProjectDashboardPage() {
           </svg>
         </span>
         <span className="nav-brand">Code Review Automation</span>
-        <Link to="/settings" className="btn btn-ghost" aria-label="Settings" style={{ marginLeft: "auto" }}><GearIcon /></Link>
+        <div style={{ marginLeft: "auto", display: "flex", gap: "var(--space-2)", alignItems: "center" }}>
+          <NavActions />
+        </div>
       </nav>
 
       <main style={{ maxWidth: 1600, margin: "0 auto", padding: "40px 16px 96px", display: "grid", gap: "var(--space-4)" }}>
