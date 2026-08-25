@@ -1,10 +1,11 @@
 import uuid
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 
 from app.api.reviews import _review_summary_to_dict
+from app.auth.dependencies import get_current_user, require_roles
 from app.db import crud
 from app.db.session import new_session
 
@@ -20,7 +21,7 @@ def _project_to_dict(project) -> dict:
 
 
 @router.post("/api/projects")
-async def create_project(body: CreateProjectRequest):
+async def create_project(body: CreateProjectRequest, user=Depends(get_current_user)):
     async with new_session() as session:
         try:
             project = await crud.create_project(session, project_id=str(uuid.uuid4()), name=body.name)
@@ -30,14 +31,14 @@ async def create_project(body: CreateProjectRequest):
 
 
 @router.get("/api/projects")
-async def list_projects():
+async def list_projects(user=Depends(get_current_user)):
     async with new_session() as session:
         projects = await crud.list_projects(session)
         return {"projects": [_project_to_dict(p) for p in projects]}
 
 
 @router.patch("/api/projects/{project_id}")
-async def update_project(project_id: str, body: CreateProjectRequest):
+async def update_project(project_id: str, body: CreateProjectRequest, user=Depends(require_roles("admin"))):
     async with new_session() as session:
         try:
             project = await crud.update_project_name(session, project_id=project_id, name=body.name)
@@ -49,7 +50,7 @@ async def update_project(project_id: str, body: CreateProjectRequest):
 
 
 @router.get("/api/projects/{project_id}/reviews")
-async def list_project_reviews(project_id: str):
+async def list_project_reviews(project_id: str, user=Depends(get_current_user)):
     async with new_session() as session:
         reviews = await crud.list_reviews_for_project(session, project_id)
         return {"reviews": [_review_summary_to_dict(r) for r in reviews]}
