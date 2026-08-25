@@ -4,6 +4,7 @@ import TopNav from "../components/TopNav";
 import ReportTable from "../components/ReportTable";
 import { DownloadIcon } from "../icons";
 import { getReview, getDownloadUrl, updateReview } from "../services/api";
+import { useAuth } from "../context/AuthContext";
 
 const STATUS_LABELS = {
   pending_approval: "Pending approval",
@@ -103,7 +104,9 @@ export default function ReviewReportPage() {
     }
   }
 
-  const canApprove = review && review.status !== "error" && review.category_scores.length > 0;
+  const { user } = useAuth();
+  const canApprove = review && review.status !== "error" && review.category_scores.length > 0
+    && user && (user.role === "admin" || user.role === "reviewer");
 
   return (
     <div style={{ minHeight: "100vh", background: "var(--color-bg)", fontFamily: "var(--font-body)", color: "var(--color-text)" }}>

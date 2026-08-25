@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import ReviewReportPage from "./ReviewReportPage";
 import { getReview, updateReview } from "../services/api";
+import { AuthContext } from "../context/AuthContext";
 
 jest.mock("../services/api", () => ({
   ...jest.requireActual("../services/api"),
@@ -183,4 +184,19 @@ test("shows an error message when saving edits fails", async () => {
   await user.click(screen.getByRole("button", { name: /save changes/i }));
 
   expect(await screen.findByText(/failed to save changes/i)).toBeInTheDocument();
+});
+
+test("hides the Approval card entirely for the user role", async () => {
+  getReview.mockResolvedValue(review);
+  render(
+    <AuthContext.Provider value={{ user: { id: "u1", email: "user@example.com", role: "user" }, loading: false, login: jest.fn(), logout: jest.fn() }}>
+      <MemoryRouter initialEntries={["/reports/r1"]}>
+        <Routes><Route path="/reports/:reviewId" element={<ReviewReportPage />} /></Routes>
+      </MemoryRouter>
+    </AuthContext.Provider>
+  );
+
+  await screen.findByText("Structure");
+  expect(screen.queryByText("Approval")).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /edit scores/i })).not.toBeInTheDocument();
 });
