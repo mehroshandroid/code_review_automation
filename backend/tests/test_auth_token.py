@@ -16,7 +16,13 @@ def test_create_and_decode_round_trips_the_user_id():
 
 def test_decode_raises_on_a_tampered_token():
     token = create_access_token("user-123")
-    tampered = token[:-1] + ("A" if token[-1] != "A" else "B")
+    # Flip a character in the middle of the signature, not the last one --
+    # base64url's final character of a segment carries unused padding bits,
+    # so some last-character substitutions decode to the same bytes and
+    # leave the signature valid, making a last-character tamper flaky.
+    middle = len(token) // 2
+    replacement = "A" if token[middle] != "A" else "B"
+    tampered = token[:middle] + replacement + token[middle + 1:]
 
     with pytest.raises(jwt.PyJWTError):
         decode_access_token(tampered)

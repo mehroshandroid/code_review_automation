@@ -1,7 +1,8 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from app.analyzer.openai_client import is_stub_mode
+from app.auth.dependencies import get_current_user
 from app.chatbot.agent import answer_question
 
 router = APIRouter()
@@ -18,7 +19,7 @@ class ChatRequest(BaseModel):
 
 
 @router.post("/api/chat")
-async def chat(body: ChatRequest):
+async def chat(body: ChatRequest, user=Depends(get_current_user)):
     if is_stub_mode():
         return {
             "answer": (
