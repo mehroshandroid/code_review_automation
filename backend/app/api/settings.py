@@ -2,15 +2,16 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, File, HTTPException, Response, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
 from openpyxl import load_workbook
 from pydantic import BaseModel
 
 from app.analyzer.excel_handler import discover_structure
+from app.auth.dependencies import require_roles
 from app.db import crud
 from app.db.session import new_session
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_roles("admin", "reviewer"))])
 
 DEFAULT_LLM_PROVIDER = "ollama"
 
