@@ -378,3 +378,61 @@ async def test_list_review_years_returns_empty_list_when_no_reviews(session):
     years = await crud.list_review_years(session)
 
     assert years == []
+
+
+async def test_create_user_persists_and_returns_it(session):
+    user = await crud.create_user(session, user_id="u1", email="admin@example.com", password_hash="hashed", role="admin")
+
+    assert user.id == "u1"
+    assert user.email == "admin@example.com"
+    assert user.role == "admin"
+    assert user.is_active is True
+    assert user.created_at is not None
+
+
+async def test_get_user_by_email_finds_it(session):
+    await crud.create_user(session, user_id="u1", email="admin@example.com", password_hash="hashed", role="admin")
+
+    user = await crud.get_user_by_email(session, "admin@example.com")
+
+    assert user.id == "u1"
+
+
+async def test_get_user_by_email_returns_none_when_not_found(session):
+    assert await crud.get_user_by_email(session, "missing@example.com") is None
+
+
+async def test_get_user_by_id_finds_it(session):
+    await crud.create_user(session, user_id="u1", email="admin@example.com", password_hash="hashed", role="admin")
+
+    user = await crud.get_user_by_id(session, "u1")
+
+    assert user.email == "admin@example.com"
+
+
+async def test_list_users_returns_newest_first(session):
+    await crud.create_user(session, user_id="u1", email="first@example.com", password_hash="h", role="user")
+    await crud.create_user(session, user_id="u2", email="second@example.com", password_hash="h", role="user")
+
+    users = await crud.list_users(session)
+
+    assert [u.email for u in users] == ["second@example.com", "first@example.com"]
+
+
+async def test_update_user_changes_role_and_active_flag(session):
+    await crud.create_user(session, user_id="u1", email="a@example.com", password_hash="h", role="user")
+
+    user = await crud.update_user(session, "u1", role="reviewer", is_active=False)
+
+    assert user.role == "reviewer"
+    assert user.is_active is False
+
+
+async def test_update_user_returns_none_when_not_found(session):
+    assert await crud.update_user(session, "missing", role="admin") is None
+
+
+async def test_count_users_reflects_table_size(session):
+    assert await crud.count_users(session) == 0
+    await crud.create_user(session, user_id="u1", email="a@example.com", password_hash="h", role="admin")
+    assert await crud.count_users(session) == 1

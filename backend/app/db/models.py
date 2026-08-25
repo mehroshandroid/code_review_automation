@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Numeric, String, UniqueConstraint
+from sqlalchemy import Boolean, JSON, DateTime, ForeignKey, Numeric, String, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -78,3 +78,14 @@ class SampleTemplate(Base):
     filename: Mapped[str] = mapped_column(String, nullable=False)
     file_path: Mapped[str] = mapped_column(String, nullable=False)
     uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    email: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    password_hash: Mapped[str] = mapped_column(String, nullable=False)
+    role: Mapped[str] = mapped_column(String, nullable=False)  # "admin" | "reviewer" | "user"
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
