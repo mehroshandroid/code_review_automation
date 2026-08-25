@@ -247,7 +247,10 @@ async def list_users(session: AsyncSession) -> list[User]:
     return list(result.scalars().all())
 
 
-async def update_user(session: AsyncSession, user_id: str, role: Optional[str] = None, is_active: Optional[bool] = None) -> Optional[User]:
+async def update_user(
+    session: AsyncSession, user_id: str,
+    role: Optional[str] = None, is_active: Optional[bool] = None, password_hash: Optional[str] = None,
+) -> Optional[User]:
     user = await session.get(User, user_id)
     if user is None:
         return None
@@ -255,6 +258,8 @@ async def update_user(session: AsyncSession, user_id: str, role: Optional[str] =
         user.role = role
     if is_active is not None:
         user.is_active = is_active
+    if password_hash is not None:
+        user.password_hash = password_hash
     await session.commit()
     await session.refresh(user)
     return user

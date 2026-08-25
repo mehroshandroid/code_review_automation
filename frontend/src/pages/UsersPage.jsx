@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import TopNav from "../components/TopNav";
+import { useAuth } from "../context/AuthContext";
 import { listUsers, createUser, updateUser } from "../services/api";
 
 const ROLES = ["admin", "reviewer", "user"];
@@ -55,9 +56,52 @@ function CreateUserDialog({ onSubmit, onClose }) {
   );
 }
 
+function SetPasswordDialog({ email, onSubmit, onClose }) {
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+    setError("");
+    setSubmitting(true);
+    try {
+      await onSubmit(password);
+      onClose();
+    } catch (err) {
+      setError(err.response?.data?.detail || "Failed to set password.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="dialog-backdrop" onClick={onClose}>
+      <div className="dialog" onClick={(event) => event.stopPropagation()}>
+        <div className="dialog-title">Set a new password</div>
+        <form onSubmit={handleSubmit} className="dialog-body" style={{ display: "grid", gap: "var(--space-3)" }}>
+          <p className="card-body" style={{ margin: 0 }}>New password for {email}</p>
+          <div className="field">
+            <label htmlFor="newPassword">New password</label>
+            <input id="newPassword" type="password" className="input" value={password} onChange={(e) => setPassword(e.target.value)} required />
+          </div>
+          {error && <p className="card-body" style={{ color: "var(--color-brand-coral)" }}>{error}</p>}
+          <div className="dialog-actions">
+            <button type="button" className="btn" onClick={onClose}>Cancel</button>
+            <button type="submit" className="btn btn-primary" disabled={submitting}>Save</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 export default function UsersPage() {
+  const { user: currentUser } = useAuth();
   const [users, setUsers] = useState(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [passwordDialogFor, setPasswordDialogFor] = useState(null);
+  const [error, setError] = useState("");
 
   function refresh() {
     return listUsers().then(setUsers);
@@ -73,12 +117,27 @@ export default function UsersPage() {
   }
 
   async function handleRoleChange(userId, role) {
-    await updateUser(userId, { role });
-    await refresh();
+    setError("");
+    try {
+      await updateUser(userId, { role });
+      await refresh();
+    } catch (err) {
+      setError(err.response?.data?.detail || "Failed to change role.");
+    }
   }
 
   async function handleToggleActive(userId, isActive) {
-    await updateUser(userId, { isActive });
+    setError("");
+    try {
+      await updateUser(userId, { isActive });
+      await refresh();
+    } catch (err) {
+      setError(err.response?.data?.detail || "Failed to update status.");
+    }
+  }
+
+  async function handleSetPassword(userId, password) {
+    await updateUser(userId, { password });
     await refresh();
   }
 
@@ -91,6 +150,8 @@ export default function UsersPage() {
           <button type="button" className="btn btn-primary" onClick={() => setShowCreate(true)}>Add user</button>
         </header>
 
+        {error && <p className="card-body" style={{ color: "var(--color-brand-coral)" }}>{error}</p>}
+
         {users && (
           <div className="card" style={{ padding: 20 }}>
             <table className="table">
@@ -98,31 +159,39 @@ export default function UsersPage() {
                 <tr><th>Email</th><th>Role</th><th>Status</th><th></th></tr>
               </thead>
               <tbody>
-                {users.map((u) => (
-                  <tr key={u.id}>
-                    <td>{u.email}</td>
-                    <td>
-                      <select
-                        aria-label={`Role for ${u.email}`} className="input" value={u.role}
-                        onChange={(e) => handleRoleChange(u.id, e.target.value)}
-                      >
-                        {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
-                      </select>
-                    </td>
-                    <td>{u.is_active ? "Active" : "Deactivated"}</td>
-                    <td>
-                      {u.is_active ? (
-                        <button type="button" className="btn btn-ghost" aria-label={`Deactivate ${u.email}`} onClick={() => handleToggleActive(u.id, false)}>
-                          Deactivate
+                {users.map((u) => {
+                  const isSelf = currentUser && u.id === currentUser.id;
+                  return (
+                    <tr key={u.id}>
+                      <td>{u.email}</td>
+                      <td>
+                        <select
+                          aria-label={`Role for ${u.email}`} className="input" value={u.role} disabled={isSelf}
+                          onChange={(e) => handleRoleChange(u.id, e.target.value)}
+                        >
+                          {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
+                        </select>
+                      </td>
+                      <td>{u.is_active ? "Active" : "Deactivated"}</td>
+                      <td style={{ display: "flex", gap: "var(--space-2)" }}>
+                        {!isSelf && (
+                          u.is_active ? (
+                            <button type="button" className="btn btn-ghost" aria-label={`Deactivate ${u.email}`} onClick={() => handleToggleActive(u.id, false)}>
+                              Deactivate
+                            </button>
+                          ) : (
+                            <button type="button" className="btn btn-ghost" aria-label={`Reactivate ${u.email}`} onClick={() => handleToggleActive(u.id, true)}>
+                              Reactivate
+                            </button>
+                          )
+                        )}
+                        <button type="button" className="btn btn-ghost" aria-label={`Set password for ${u.email}`} onClick={() => setPasswordDialogFor(u)}>
+                          Set password
                         </button>
-                      ) : (
-                        <button type="button" className="btn btn-ghost" aria-label={`Reactivate ${u.email}`} onClick={() => handleToggleActive(u.id, true)}>
-                          Reactivate
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -130,6 +199,14 @@ export default function UsersPage() {
       </main>
 
       {showCreate && <CreateUserDialog onSubmit={handleCreate} onClose={() => setShowCreate(false)} />}
+
+      {passwordDialogFor && (
+        <SetPasswordDialog
+          email={passwordDialogFor.email}
+          onSubmit={(password) => handleSetPassword(passwordDialogFor.id, password)}
+          onClose={() => setPasswordDialogFor(null)}
+        />
+      )}
     </div>
   );
 }

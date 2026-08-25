@@ -24,6 +24,7 @@ class CreateUserRequest(BaseModel):
 class UpdateUserRequest(BaseModel):
     role: str | None = None
     is_active: bool | None = None
+    password: str | None = None
 
 
 def _user_to_dict(user) -> dict:
@@ -58,11 +59,20 @@ async def list_users():
 
 
 @router.patch("/api/users/{user_id}")
-async def update_user(user_id: str, body: UpdateUserRequest):
+async def update_user(user_id: str, body: UpdateUserRequest, current_user=Depends(require_roles("admin"))):
     if body.role is not None and body.role not in ALLOWED_ROLES:
         raise HTTPException(status_code=400, detail=f"role must be one of {sorted(ALLOWED_ROLES)}")
+    if body.password is not None and len(body.password) < MIN_PASSWORD_LENGTH:
+        raise HTTPException(status_code=400, detail=f"password must be at least {MIN_PASSWORD_LENGTH} characters")
+    if user_id == current_user.id:
+        if body.role is not None and body.role != current_user.role:
+            raise HTTPException(status_code=400, detail="You cannot change your own role.")
+        if body.is_active is False:
+            raise HTTPException(status_code=400, detail="You cannot deactivate your own account.")
+
+    password_hash = hash_password(body.password) if body.password is not None else None
     async with new_session() as session:
-        user = await crud.update_user(session, user_id, role=body.role, is_active=body.is_active)
+        user = await crud.update_user(session, user_id, role=body.role, is_active=body.is_active, password_hash=password_hash)
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
     return _user_to_dict(user)

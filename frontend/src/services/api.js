@@ -186,10 +186,11 @@ export async function createUser(email, password, role) {
   return response.data;
 }
 
-export async function updateUser(userId, { role, isActive } = {}) {
+export async function updateUser(userId, { role, isActive, password } = {}) {
   const body = {};
   if (role !== undefined) body.role = role;
   if (isActive !== undefined) body.is_active = isActive;
+  if (password !== undefined) body.password = password;
   const response = await axios.patch(`${API_BASE_URL}/users/${userId}`, body);
   return response.data;
 }

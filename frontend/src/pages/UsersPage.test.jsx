@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import UsersPage from "./UsersPage";
 import { listUsers, createUser, updateUser } from "../services/api";
+import { AuthContext } from "../context/AuthContext";
 
 jest.mock("../services/api", () => ({
   ...jest.requireActual("../services/api"),
@@ -69,4 +70,60 @@ test("deactivating a user calls updateUser with isActive false", async () => {
   await user.click(screen.getByRole("button", { name: /deactivate reviewer@example\.com/i }));
 
   await waitFor(() => expect(updateUser).toHaveBeenCalledWith("u2", { isActive: false }));
+});
+
+test("shows an error message instead of failing silently when a role change is rejected", async () => {
+  const user = userEvent.setup();
+  updateUser.mockRejectedValue({ response: { data: { detail: "You don't have permission to do this" } } });
+  renderPage();
+  await screen.findByText("reviewer@example.com");
+
+  await user.selectOptions(screen.getByLabelText(/role for reviewer@example\.com/i), "user");
+
+  expect(await screen.findByText("You don't have permission to do this")).toBeInTheDocument();
+});
+
+test("shows an error message instead of failing silently when deactivating is rejected", async () => {
+  const user = userEvent.setup();
+  updateUser.mockRejectedValue({ response: { data: { detail: "Something went wrong" } } });
+  renderPage();
+  await screen.findByText("reviewer@example.com");
+
+  await user.click(screen.getByRole("button", { name: /deactivate reviewer@example\.com/i }));
+
+  expect(await screen.findByText("Something went wrong")).toBeInTheDocument();
+});
+
+function renderAsUser(userId) {
+  const value = { user: { id: userId, email: "whoever@example.com", role: "admin" }, loading: false, login: jest.fn(), logout: jest.fn() };
+  return render(
+    <AuthContext.Provider value={value}>
+      <MemoryRouter><UsersPage /></MemoryRouter>
+    </AuthContext.Provider>
+  );
+}
+
+test("disables the role select and hides the deactivate button for your own row", async () => {
+  renderAsUser("u1");
+  await screen.findByText("admin@example.com");
+
+  expect(screen.getByLabelText(/role for admin@example\.com/i)).toBeDisabled();
+  expect(screen.queryByRole("button", { name: /deactivate admin@example\.com/i })).not.toBeInTheDocument();
+  // Other rows are unaffected.
+  expect(screen.getByLabelText(/role for reviewer@example\.com/i)).toBeEnabled();
+  expect(screen.getByRole("button", { name: /deactivate reviewer@example\.com/i })).toBeInTheDocument();
+});
+
+test("setting a new password for a user calls updateUser with the password", async () => {
+  const user = userEvent.setup();
+  updateUser.mockResolvedValue(users[1]);
+  renderPage();
+  await screen.findByText("reviewer@example.com");
+
+  await user.click(screen.getByRole("button", { name: /set password for reviewer@example\.com/i }));
+  const dialog = screen.getByText("Set a new password").closest(".dialog");
+  await user.type(within(dialog).getByLabelText(/new password/i), "a brand new password");
+  await user.click(within(dialog).getByRole("button", { name: /^save$/i }));
+
+  await waitFor(() => expect(updateUser).toHaveBeenCalledWith("u2", { password: "a brand new password" }));
 });

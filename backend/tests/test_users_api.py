@@ -4,6 +4,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 import app.api.users as users_module
 from app.auth.dependencies import get_current_user
+from app.auth.hashing import verify_password
+from app.db import crud
 from app.db.models import Base, User
 from main import app
 
@@ -79,3 +81,40 @@ def test_update_user_returns_404_for_an_unknown_id(test_sessionmaker):
     response = client.patch("/api/users/does-not-exist", json={"role": "admin"})
 
     assert response.status_code == 404
+
+
+async def test_update_user_can_set_a_new_password(test_sessionmaker):
+    created = client.post("/api/users", json={"email": "one@example.com", "password": "correct horse", "role": "user"}).json()
+
+    response = client.patch(f"/api/users/{created['id']}", json={"password": "a brand new password"})
+
+    assert response.status_code == 200
+    async with test_sessionmaker() as session:
+        user = await crud.get_user_by_id(session, created["id"])
+    assert verify_password("a brand new password", user.password_hash)
+
+
+def test_update_user_rejects_a_short_new_password(test_sessionmaker):
+    created = client.post("/api/users", json={"email": "one@example.com", "password": "correct horse", "role": "user"}).json()
+
+    response = client.patch(f"/api/users/{created['id']}", json={"password": "short"})
+
+    assert response.status_code == 400
+
+
+def test_update_user_forbids_changing_your_own_role(test_sessionmaker):
+    admin = User(id="acting-admin", email="acting-admin@example.com", role="admin", is_active=True, password_hash="", created_at=None)
+    app.dependency_overrides[get_current_user] = lambda: admin
+
+    response = client.patch("/api/users/acting-admin", json={"role": "reviewer"})
+
+    assert response.status_code == 400
+
+
+def test_update_user_forbids_deactivating_yourself(test_sessionmaker):
+    admin = User(id="acting-admin", email="acting-admin@example.com", role="admin", is_active=True, password_hash="", created_at=None)
+    app.dependency_overrides[get_current_user] = lambda: admin
+
+    response = client.patch("/api/users/acting-admin", json={"is_active": False})
+
+    assert response.status_code == 400
