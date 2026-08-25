@@ -9,7 +9,7 @@ from datetime import date, datetime, timezone
 from io import BytesIO
 from pathlib import Path
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from openpyxl import load_workbook
 from pydantic import BaseModel
@@ -30,6 +30,7 @@ from app.analyzer.excel_handler import (
     read_scores,
 )
 from app.analyzer.llm_client import generate_general_remarks, score_category
+from app.auth.dependencies import get_current_user, require_roles
 from app.db import crud
 from app.db.session import new_session
 from app.utils.logger import get_logger
@@ -231,6 +232,7 @@ async def create_review(
     devopsPat: str | None = Form(None),
     devopsBranch: str | None = Form(None),
     projectId: str | None = Form(None),
+    user=Depends(get_current_user),
 ):
     review_id = str(uuid.uuid4())
     work_dir = Path(tempfile.mkdtemp(prefix=f"review_{review_id}_"))
@@ -524,14 +526,14 @@ def _review_summary_to_dict(review) -> dict:
 
 
 @router.get("/api/reviews")
-async def list_reviews(year: int, platform: str | None = None, project_id: str | None = None):
+async def list_reviews(year: int, platform: str | None = None, project_id: str | None = None, user=Depends(get_current_user)):
     async with new_session() as session:
         reviews = await crud.list_reviews(session, year=year, platform=platform, project_id=project_id)
     return {"reviews": [_review_summary_to_dict(review) for review in reviews]}
 
 
 @router.get("/api/reviews/years")
-async def list_review_years():
+async def list_review_years(user=Depends(get_current_user)):
     async with new_session() as session:
         years = await crud.list_review_years(session)
     return {"years": years}
@@ -542,6 +544,7 @@ async def upload_completed_review(
     file: UploadFile = File(...),
     projectId: str = Form(...),
     platform: str = Form(...),
+    user=Depends(get_current_user),
 ):
     if not (file.filename or "").lower().endswith(".xlsx"):
         raise HTTPException(status_code=400, detail="File must be an .xlsx workbook.")
@@ -618,7 +621,7 @@ async def upload_completed_review(
 
 
 @router.get("/api/reviews/{review_id}/progress")
-async def get_progress(review_id: str):
+async def get_progress(review_id: str, user=Depends(get_current_user)):
     state = _reviews.get(review_id)
     if state is None:
         raise HTTPException(status_code=404, detail="Unknown review_id")
@@ -670,7 +673,7 @@ def _review_to_dict(review) -> dict:
 
 
 @router.get("/api/reviews/{review_id}")
-async def get_review(review_id: str):
+async def get_review(review_id: str, user=Depends(get_current_user)):
     async with new_session() as session:
         review = await crud.get_review_by_id(session, review_id)
     if review is None:
@@ -679,7 +682,7 @@ async def get_review(review_id: str):
 
 
 @router.patch("/api/reviews/{review_id}")
-async def update_review(review_id: str, body: UpdateReviewRequest):
+async def update_review(review_id: str, body: UpdateReviewRequest, user=Depends(require_roles("admin", "reviewer"))):
     if body.status is not None and body.status not in ALLOWED_REVIEW_STATUSES:
         raise HTTPException(status_code=400, detail=f"status must be one of {sorted(ALLOWED_REVIEW_STATUSES)}")
 
@@ -698,7 +701,7 @@ async def update_review(review_id: str, body: UpdateReviewRequest):
 
 
 @router.get("/api/reviews/{review_id}/download")
-async def download_review(review_id: str):
+async def download_review(review_id: str, user=Depends(get_current_user)):
     state = _reviews.get(review_id)
     if state is not None and state["download_path"] is not None:
         path = Path(state["download_path"])
