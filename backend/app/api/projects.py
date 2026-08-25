@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 
+from app.api.reviews import _review_summary_to_dict
 from app.db import crud
 from app.db.session import new_session
 
@@ -45,17 +46,6 @@ async def update_project(project_id: str, body: CreateProjectRequest):
         if project is None:
             raise HTTPException(status_code=404, detail="Project not found")
         return _project_to_dict(project)
-
-
-def _review_summary_to_dict(review) -> dict:
-    return {
-        "id": review.id,
-        "platform": review.platform,
-        "status": review.status,
-        "created_at": review.created_at.isoformat(),
-        "completed_at": review.completed_at.isoformat() if review.completed_at else None,
-        "total_score_pct": float(review.total_score_pct) if review.total_score_pct is not None else None,
-    }
 
 
 @router.get("/api/projects/{project_id}/reviews")

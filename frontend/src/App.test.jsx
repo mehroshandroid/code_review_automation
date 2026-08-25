@@ -10,10 +10,10 @@ function renderAt(initialPath) {
   );
 }
 
-test("renders the project dashboard at / -- no projects yet since no backend is mocked here", async () => {
+test("renders the project dashboard at / -- no reviews match since no backend is mocked here", async () => {
   renderAt("/");
-  expect(await screen.findByText(/no projects yet/i)).toBeInTheDocument();
-  expect(screen.getByText(/create a project to get started/i)).toBeInTheDocument();
+  expect(await screen.findByText(/no reviews match these filters/i)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Year" })).toBeInTheDocument();
 });
 
 test("renders the Android review flow at /review/android", () => {
@@ -41,5 +41,5 @@ test("renders a placeholder banner for a not-yet-available platform", () => {
 
 test("redirects to / for an unknown platform id", async () => {
   renderAt("/review/nonsense");
-  expect(await screen.findByText(/no projects yet/i)).toBeInTheDocument();
+  expect(await screen.findByText(/no reviews match these filters/i)).toBeInTheDocument();
 });

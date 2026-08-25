@@ -6,6 +6,7 @@ import time
 import uuid
 import zipfile
 from datetime import date, datetime, timezone
+from io import BytesIO
 from pathlib import Path
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
@@ -25,6 +26,8 @@ from app.analyzer.excel_handler import (
     compute_total_score_pct,
     discover_structure,
     generate_review_excel,
+    read_metadata,
+    read_scores,
 )
 from app.analyzer.llm_client import generate_general_remarks, score_category
 from app.db import crud
@@ -500,6 +503,118 @@ async def _run_review(
         )
         if state["download_path"] is None:
             shutil.rmtree(work_dir, ignore_errors=True)
+
+
+def _review_summary_to_dict(review) -> dict:
+    result_data = review.result_data or {}
+    return {
+        "id": review.id,
+        "project_id": review.project_id,
+        "project_name": review.project_name,
+        "platform": review.platform,
+        "status": review.status,
+        "created_at": review.created_at.isoformat(),
+        "completed_at": review.completed_at.isoformat() if review.completed_at else None,
+        "total_score_pct": float(review.total_score_pct) if review.total_score_pct is not None else None,
+        "category_scores": [
+            {"id": category.get("id"), "name": category.get("name"), "percent_points": category.get("percent_points")}
+            for category in result_data.get("category_scores", [])
+        ],
+    }
+
+
+@router.get("/api/reviews")
+async def list_reviews(year: int, platform: str | None = None, project_id: str | None = None):
+    async with new_session() as session:
+        reviews = await crud.list_reviews(session, year=year, platform=platform, project_id=project_id)
+    return {"reviews": [_review_summary_to_dict(review) for review in reviews]}
+
+
+@router.get("/api/reviews/years")
+async def list_review_years():
+    async with new_session() as session:
+        years = await crud.list_review_years(session)
+    return {"years": years}
+
+
+@router.post("/api/reviews/upload")
+async def upload_completed_review(
+    file: UploadFile = File(...),
+    projectId: str = Form(...),
+    platform: str = Form(...),
+):
+    if not (file.filename or "").lower().endswith(".xlsx"):
+        raise HTTPException(status_code=400, detail="File must be an .xlsx workbook.")
+
+    async with new_session() as session:
+        project = await crud.get_project(session, projectId)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found.")
+
+    file_bytes = await file.read()
+    try:
+        wb = load_workbook(BytesIO(file_bytes))
+    except Exception:
+        raise HTTPException(status_code=400, detail="That file doesn't look like a valid .xlsx workbook.")
+    ws = wb.active
+
+    try:
+        categories, descriptions = discover_structure(ws)
+        scores_by_category = read_scores(ws, categories, descriptions)
+        reviewer_name, review_date = read_metadata(ws)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    category_scores = [
+        {
+            "id": category_id,
+            "name": category["name"],
+            "percent_points": scores_by_category[category_id]["percent_points"],
+            "sub_criteria": [
+                {
+                    "id": sub_id,
+                    "description": descriptions.get(sub_id),
+                    "score": scores_by_category[category_id]["sub_scores"][sub_id]["score"],
+                    "remark": scores_by_category[category_id]["sub_scores"][sub_id]["remark"],
+                }
+                for sub_id in category["sub_criteria"]
+            ],
+        }
+        for category_id, category in categories.items()
+    ]
+    total_score_pct = compute_total_score_pct(scores_by_category)
+
+    review_id = str(uuid.uuid4())
+    artifacts_dir = _review_artifacts_dir()
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    workbook_path = artifacts_dir / f"{review_id}.xlsx"
+    workbook_path.write_bytes(file_bytes)
+
+    review_datetime = datetime.combine(review_date, datetime.min.time(), tzinfo=timezone.utc)
+
+    async with new_session() as session:
+        review = await crud.persist_review_result(
+            session,
+            review_id=review_id,
+            project_id=projectId,
+            platform=platform,
+            status="approved",
+            project_name=project.name,
+            created_at=review_datetime,
+            completed_at=review_datetime,
+            total_score_pct=total_score_pct,
+            llm_provider="manual_upload",
+            llm_model=None,
+            compile_check_mode="none",
+            source="manual_upload",
+            workbook_path=str(workbook_path),
+            result_data={"category_scores": category_scores},
+            created_by=reviewer_name,
+            approved_by=reviewer_name,
+            approved_at=review_datetime,
+        )
+
+    return _review_summary_to_dict(review)
 
 
 @router.get("/api/reviews/{review_id}/progress")

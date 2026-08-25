@@ -119,3 +119,33 @@ export async function previewSampleTemplate(platform) {
   const response = await axios.get(`${API_BASE_URL}/settings/sample-templates/${platform}/preview`);
   return response.data.categories;
 }
+
+export async function sendChatMessage(message, history = []) {
+  const response = await axios.post(`${API_BASE_URL}/chat`, {
+    message,
+    history: history.map((entry) => ({ role: entry.role, content: entry.content })),
+  });
+  return response.data;
+}
+
+export async function getReviews({ year, platform, projectId } = {}) {
+  const params = { year };
+  if (platform) params.platform = platform;
+  if (projectId) params.project_id = projectId;
+  const response = await axios.get(`${API_BASE_URL}/reviews`, { params });
+  return response.data.reviews;
+}
+
+export async function getReviewYears() {
+  const response = await axios.get(`${API_BASE_URL}/reviews/years`);
+  return response.data.years;
+}
+
+export async function uploadCompletedReview({ projectId, platform, file }) {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("projectId", projectId);
+  formData.append("platform", platform);
+  const response = await axios.post(`${API_BASE_URL}/reviews/upload`, formData);
+  return response.data;
+}
