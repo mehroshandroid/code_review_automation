@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import ChatWidget from "./ChatWidget";
@@ -173,14 +173,64 @@ test("renders markdown in the assistant's answer instead of showing raw syntax",
   expect(screen.getAllByRole("listitem")).toHaveLength(2);
 });
 
-test("the chat panel is resizable via CSS resize, with sane min/max bounds", async () => {
+test("shows a resize handle positioned at the top-left corner (the corner that actually moves, since the panel is anchored bottom-right)", async () => {
   const user = userEvent.setup();
   renderWidget();
 
   await user.click(screen.getByRole("button", { name: /open review insights chat/i }));
 
+  const handle = screen.getByLabelText(/resize chat window/i);
+  expect(handle).toHaveStyle({ position: "absolute", top: "0px", left: "0px" });
+});
+
+test("dragging the resize handle up and to the left grows the panel", async () => {
+  const user = userEvent.setup();
+  renderWidget();
+  await user.click(screen.getByRole("button", { name: /open review insights chat/i }));
+
+  const handle = screen.getByLabelText(/resize chat window/i);
   const panel = screen.getByLabelText(/ask a question/i).closest(".card");
-  expect(panel).toHaveStyle({ resize: "both", overflow: "auto" });
-  expect(panel.style.minWidth).toBeTruthy();
-  expect(panel.style.minHeight).toBeTruthy();
+  const startWidth = parseInt(panel.style.width, 10);
+  const startHeight = parseInt(panel.style.height, 10);
+
+  fireEvent.mouseDown(handle, { clientX: 300, clientY: 300 });
+  fireEvent.mouseMove(window, { clientX: 200, clientY: 180 });
+  fireEvent.mouseUp(window);
+
+  expect(parseInt(panel.style.width, 10)).toBe(startWidth + 100);
+  expect(parseInt(panel.style.height, 10)).toBe(startHeight + 120);
+});
+
+test("dragging the resize handle down and to the right shrinks the panel, clamped to a minimum size", async () => {
+  const user = userEvent.setup();
+  renderWidget();
+  await user.click(screen.getByRole("button", { name: /open review insights chat/i }));
+
+  const handle = screen.getByLabelText(/resize chat window/i);
+  const panel = screen.getByLabelText(/ask a question/i).closest(".card");
+
+  fireEvent.mouseDown(handle, { clientX: 0, clientY: 0 });
+  fireEvent.mouseMove(window, { clientX: 2000, clientY: 2000 });
+  fireEvent.mouseUp(window);
+
+  expect(parseInt(panel.style.width, 10)).toBe(320);
+  expect(parseInt(panel.style.height, 10)).toBe(320);
+});
+
+test("mouse movement after releasing the resize handle no longer resizes the panel", async () => {
+  const user = userEvent.setup();
+  renderWidget();
+  await user.click(screen.getByRole("button", { name: /open review insights chat/i }));
+
+  const handle = screen.getByLabelText(/resize chat window/i);
+  const panel = screen.getByLabelText(/ask a question/i).closest(".card");
+
+  fireEvent.mouseDown(handle, { clientX: 300, clientY: 300 });
+  fireEvent.mouseMove(window, { clientX: 200, clientY: 200 });
+  fireEvent.mouseUp(window);
+  const widthAfterDrag = panel.style.width;
+
+  fireEvent.mouseMove(window, { clientX: 50, clientY: 50 });
+
+  expect(panel.style.width).toBe(widthAfterDrag);
 });
