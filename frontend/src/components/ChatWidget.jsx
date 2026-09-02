@@ -80,7 +80,7 @@ export default function ChatWidget() {
     function handleMouseMove(event) {
       if (!dragRef.current) return;
       const { startX, startY, startWidth, startHeight } = dragRef.current;
-      const maxWidth = Math.min(640, window.innerWidth * 0.9);
+      const maxWidth = window.innerWidth * 0.75;
       const maxHeight = window.innerHeight * 0.9;
       setSize({
         width: Math.min(maxWidth, Math.max(MIN_WIDTH, startWidth + (startX - event.clientX))),

@@ -217,6 +217,21 @@ test("dragging the resize handle down and to the right shrinks the panel, clampe
   expect(parseInt(panel.style.height, 10)).toBe(320);
 });
 
+test("the max width scales with the viewport instead of a small fixed cap", async () => {
+  const user = userEvent.setup();
+  renderWidget();
+  await user.click(screen.getByRole("button", { name: /open review insights chat/i }));
+
+  const handle = screen.getByLabelText(/resize chat window/i);
+  const panel = screen.getByLabelText(/ask a question/i).closest(".card");
+
+  fireEvent.mouseDown(handle, { clientX: 5000, clientY: 300 });
+  fireEvent.mouseMove(window, { clientX: -5000, clientY: 300 });
+  fireEvent.mouseUp(window);
+
+  expect(parseInt(panel.style.width, 10)).toBe(Math.round(window.innerWidth * 0.75));
+});
+
 test("mouse movement after releasing the resize handle no longer resizes the panel", async () => {
   const user = userEvent.setup();
   renderWidget();
