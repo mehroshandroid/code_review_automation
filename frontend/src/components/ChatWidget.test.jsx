@@ -154,3 +154,33 @@ test("does not send an empty or whitespace-only message", async () => {
   expect(screen.getByRole("button", { name: /send/i })).toBeDisabled();
   expect(sendChatMessage).not.toHaveBeenCalled();
 });
+
+test("renders markdown in the assistant's answer instead of showing raw syntax", async () => {
+  const user = userEvent.setup();
+  sendChatMessage.mockResolvedValue({
+    answer: "The **Reliability** category failed most often:\n\n- Missing null checks\n- No retry logic",
+    sources: [],
+  });
+  renderWidget();
+
+  await user.click(screen.getByRole("button", { name: /open review insights chat/i }));
+  await user.type(screen.getByLabelText(/ask a question/i), "question");
+  await user.click(screen.getByRole("button", { name: /send/i }));
+
+  const bold = await screen.findByText("Reliability");
+  expect(bold.tagName).toBe("STRONG");
+  expect(screen.queryByText(/\*\*Reliability\*\*/)).not.toBeInTheDocument();
+  expect(screen.getAllByRole("listitem")).toHaveLength(2);
+});
+
+test("the chat panel is resizable via CSS resize, with sane min/max bounds", async () => {
+  const user = userEvent.setup();
+  renderWidget();
+
+  await user.click(screen.getByRole("button", { name: /open review insights chat/i }));
+
+  const panel = screen.getByLabelText(/ask a question/i).closest(".card");
+  expect(panel).toHaveStyle({ resize: "both", overflow: "auto" });
+  expect(panel.style.minWidth).toBeTruthy();
+  expect(panel.style.minHeight).toBeTruthy();
+});

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import Markdown from "markdown-to-jsx";
 import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { ChatIcon, SpinnerIcon } from "../icons";
 import { sendChatMessage } from "../services/api";
@@ -113,7 +114,8 @@ export default function ChatWidget() {
       className="card elev-md"
       style={{
         position: "fixed", bottom: 24, right: 24, width: 360, height: 480,
-        display: "flex", flexDirection: "column", padding: 0, overflow: "hidden", zIndex: 100,
+        minWidth: 320, minHeight: 320, maxWidth: "min(640px, 90vw)", maxHeight: "90vh",
+        display: "flex", flexDirection: "column", padding: 0, overflow: "auto", resize: "both", zIndex: 100,
       }}
     >
       <div style={{
@@ -133,7 +135,7 @@ export default function ChatWidget() {
         )}
         {messages.map((message, index) => (
           <div key={index} style={{ textAlign: message.role === "user" ? "right" : "left" }}>
-            <p
+            <div
               className="card-body"
               style={{
                 display: "inline-block", margin: 0, padding: "8px 12px", borderRadius: 12, textAlign: "left",
@@ -141,8 +143,8 @@ export default function ChatWidget() {
                 color: message.role === "user" ? "#fff" : (message.isError ? "var(--color-brand-coral)" : "var(--color-text)"),
               }}
             >
-              {message.content}
-            </p>
+              {message.role === "assistant" ? <Markdown>{message.content}</Markdown> : message.content}
+            </div>
             {message.sources && message.sources.length > 0 && (
               <>
                 <SourcesTable sources={message.sources} onSelectReview={handleSelectReview} />
