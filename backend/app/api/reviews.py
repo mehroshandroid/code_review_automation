@@ -1,4 +1,5 @@
 import asyncio
+import json
 import os
 import shutil
 import tempfile
@@ -232,6 +233,7 @@ async def create_review(
     devopsPat: str | None = Form(None),
     devopsBranch: str | None = Form(None),
     projectId: str | None = Form(None),
+    clauseChecklistOverrides: str | None = Form(None),
     user=Depends(get_current_user),
 ):
     review_id = str(uuid.uuid4())
@@ -248,6 +250,16 @@ async def create_review(
         input_error = "Provide either a project zip file or an Azure DevOps repo URL + PAT, not neither."
     else:
         input_error = None
+
+    clause_overrides: dict = {}
+    if input_error is None and clauseChecklistOverrides:
+        if user.role not in ("admin", "reviewer"):
+            input_error = "Only admin/reviewer accounts can adjust clause guidance for a review."
+        else:
+            try:
+                clause_overrides = json.loads(clauseChecklistOverrides)
+            except json.JSONDecodeError:
+                input_error = "clauseChecklistOverrides must be valid JSON."
 
     if input_error:
         shutil.rmtree(work_dir, ignore_errors=True)
@@ -306,7 +318,7 @@ async def create_review(
         _run_review(
             review_id, work_dir, zip_path, template_path, zip_valid, template_valid, project_name,
             llmProvider, ollamaModel, compileCheckMode, platform,
-            devopsRepoUrl, devopsPat, devopsBranch, project_id=projectId,
+            devopsRepoUrl, devopsPat, devopsBranch, project_id=projectId, clause_overrides=clause_overrides,
         )
     )
     return {"review_id": review_id, "status": "processing"}
@@ -328,6 +340,7 @@ async def _run_review(
     devops_pat: str | None = None,
     devops_branch: str | None = None,
     project_id: str | None = None,
+    clause_overrides: dict | None = None,
 ) -> None:
     state = _reviews[review_id]
     extract_dir = work_dir / "extracted"
@@ -434,6 +447,8 @@ async def _run_review(
         t2 = time.monotonic()
         state["phase"] = "scoring"
         clause_checklists = await _load_clause_checklists()
+        for sub_id, text in (clause_overrides or {}).items():
+            clause_checklists[(platform, sub_id)] = text
         scores_by_category = {}
         category_count = len(categories)
         for index, (category_id, category) in enumerate(categories.items()):
