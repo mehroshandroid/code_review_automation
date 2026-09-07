@@ -17,7 +17,7 @@ axios.interceptors.response.use(
 
 export async function createReview(
   androidZip, excelTemplate, llmProvider, ollamaModel, compileCheckMode, platform,
-  devopsRepoUrl, devopsPat, devopsBranch, projectId
+  devopsRepoUrl, devopsPat, devopsBranch, projectId, clauseChecklistOverrides
 ) {
   const formData = new FormData();
   if (androidZip) formData.append("androidZip", androidZip);
@@ -30,8 +30,19 @@ export async function createReview(
   if (devopsPat) formData.append("devopsPat", devopsPat);
   if (devopsBranch) formData.append("devopsBranch", devopsBranch);
   if (projectId) formData.append("projectId", projectId);
+  if (clauseChecklistOverrides && Object.keys(clauseChecklistOverrides).length > 0) {
+    formData.append("clauseChecklistOverrides", JSON.stringify(clauseChecklistOverrides));
+  }
   const response = await axios.post(`${API_BASE_URL}/reviews`, formData);
   return response.data;
+}
+
+export async function getClausePreview({ platform, file }) {
+  const formData = new FormData();
+  formData.append("platform", platform);
+  if (file) formData.append("file", file);
+  const response = await axios.post(`${API_BASE_URL}/reviews/clause-preview`, formData);
+  return response.data.categories;
 }
 
 export async function getProgress(reviewId) {
