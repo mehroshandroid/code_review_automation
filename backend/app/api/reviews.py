@@ -620,6 +620,43 @@ async def upload_completed_review(
     return _review_summary_to_dict(review)
 
 
+@router.post("/api/reviews/clause-preview")
+async def clause_preview(
+    platform: str = Form(...),
+    file: UploadFile | None = File(None),
+    user=Depends(require_roles("admin", "reviewer")),
+):
+    template_bytes, _ = await _resolve_excel_template(file, platform)
+    if template_bytes is None:
+        raise HTTPException(status_code=404, detail="No sample template configured for this platform and no file uploaded.")
+
+    try:
+        worksheet = load_workbook(BytesIO(template_bytes)).active
+        categories, descriptions = discover_structure(worksheet)
+    except Exception:
+        raise HTTPException(status_code=422, detail="Could not read this sheet's clause structure")
+
+    clause_checklists = await _load_clause_checklists()
+
+    return {
+        "categories": [
+            {
+                "id": category_id,
+                "name": category["name"],
+                "sub_criteria": [
+                    {
+                        "id": sub_id,
+                        "description": descriptions.get(sub_id, ""),
+                        "checklist_text": clause_checklists.get((platform, sub_id)),
+                    }
+                    for sub_id in category["sub_criteria"]
+                ],
+            }
+            for category_id, category in categories.items()
+        ]
+    }
+
+
 @router.get("/api/reviews/{review_id}/progress")
 async def get_progress(review_id: str, user=Depends(get_current_user)):
     state = _reviews.get(review_id)
