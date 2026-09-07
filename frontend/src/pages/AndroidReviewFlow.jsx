@@ -23,7 +23,7 @@ export default function AndroidReviewFlow({ platform = { id: "android", label: "
   const [bottomView, setBottomView] = useState("report"); // report | debug
   const [reviewMeta, setReviewMeta] = useState(null); // { llmProvider, llmModel, source, compileCheckMode }
 
-  const handleUpload = useCallback(async ({ androidZip, excelTemplate, devopsRepoUrl, devopsPat, devopsBranch }) => {
+  const handleUpload = useCallback(async ({ androidZip, excelTemplate, devopsRepoUrl, devopsPat, devopsBranch, clauseChecklistOverrides }) => {
     setState("uploading");
     setErrorMessage("");
     try {
@@ -41,7 +41,7 @@ export default function AndroidReviewFlow({ platform = { id: "android", label: "
 
       const result = await createReview(
         androidZip, excelTemplate, effectiveProvider, effectiveModel, compileCheckMode, platform.label,
-        devopsRepoUrl, devopsPat, devopsBranch, projectId
+        devopsRepoUrl, devopsPat, devopsBranch, projectId, clauseChecklistOverrides
       );
       if (result.status === "error") {
         setErrorMessage(result.error || "Upload failed");
