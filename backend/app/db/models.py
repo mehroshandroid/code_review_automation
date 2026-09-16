@@ -46,6 +46,12 @@ class PlatformReview(Base):
     created_by: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     approved_by: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     approved_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Who's assigned to review this specific review -- a real reference to a
+    # User account (not the free-text created_by/approved_by above, which
+    # belong to a separate, unrelated feature: uploading an already-completed
+    # sheet). A real FK, not a denormalized name/email, so it stays correct
+    # if the assigned user's email changes and to support emailing them later.
+    reviewer_id: Mapped[Optional[str]] = mapped_column(ForeignKey("users.id"), nullable=True)
 
     project: Mapped[Optional["Project"]] = relationship(back_populates="platform_reviews")
 

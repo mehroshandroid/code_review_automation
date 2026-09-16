@@ -57,6 +57,10 @@ class UpdateReviewRequest(BaseModel):
     status: str | None = None
 
 
+class UpdateReviewerRequest(BaseModel):
+    reviewer_id: str | None = None
+
+
 def _recompute_category_scores(category_scores: list[dict]) -> tuple[list[dict], float | None]:
     """Recomputes each category's percent_points from its (possibly
     just-edited) sub-criteria scores, and the overall total_score_pct as the
@@ -742,6 +746,7 @@ def _review_to_dict(review) -> dict:
         "stats": result_data.get("stats", {}),
         "error": result_data.get("error"),
         "approved_at": review.approved_at.isoformat() if review.approved_at else None,
+        "reviewer_id": review.reviewer_id,
     }
 
 
@@ -768,6 +773,28 @@ async def update_review(review_id: str, body: UpdateReviewRequest, user=Depends(
         review = await crud.update_review(
             session, review_id, category_scores=category_scores, total_score_pct=total_score_pct, status=body.status,
         )
+    if review is None:
+        raise HTTPException(status_code=404, detail="Review not found")
+    return _review_to_dict(review)
+
+
+@router.get("/api/reviewers")
+async def list_reviewers(user=Depends(get_current_user)):
+    async with new_session() as session:
+        candidates = await crud.list_reviewer_candidates(session)
+    return {"reviewers": [{"id": candidate.id, "email": candidate.email} for candidate in candidates]}
+
+
+@router.patch("/api/reviews/{review_id}/reviewer")
+async def update_review_reviewer(review_id: str, body: UpdateReviewerRequest, user=Depends(get_current_user)):
+    if body.reviewer_id is not None:
+        async with new_session() as session:
+            candidate = await crud.get_user_by_id(session, body.reviewer_id)
+        if candidate is None or not candidate.is_active or candidate.role not in ("admin", "reviewer"):
+            raise HTTPException(status_code=400, detail="reviewer_id must be an active admin or reviewer account.")
+
+    async with new_session() as session:
+        review = await crud.set_review_reviewer(session, review_id, body.reviewer_id)
     if review is None:
         raise HTTPException(status_code=404, detail="Review not found")
     return _review_to_dict(review)

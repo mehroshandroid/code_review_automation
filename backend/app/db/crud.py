@@ -147,6 +147,25 @@ async def update_review(
     return review
 
 
+async def list_reviewer_candidates(session: AsyncSession) -> list[User]:
+    result = await session.execute(
+        select(User)
+        .where(User.role.in_(["admin", "reviewer"]), User.is_active.is_(True))
+        .order_by(User.email)
+    )
+    return list(result.scalars().all())
+
+
+async def set_review_reviewer(session: AsyncSession, review_id: str, reviewer_id: Optional[str]) -> Optional[PlatformReview]:
+    review = await session.get(PlatformReview, review_id)
+    if review is None:
+        return None
+    review.reviewer_id = reviewer_id
+    await session.commit()
+    await session.refresh(review)
+    return review
+
+
 # --- org_settings (singleton, id=1) ---
 
 _ORG_SETTINGS_ID = 1

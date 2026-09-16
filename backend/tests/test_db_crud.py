@@ -317,6 +317,47 @@ async def test_update_review_returns_none_when_review_does_not_exist(session):
     assert review is None
 
 
+async def test_set_review_reviewer_updates_the_reviewer_id(session):
+    await _persist(session, "r1")
+
+    review = await crud.set_review_reviewer(session, "r1", "u1")
+
+    assert review.reviewer_id == "u1"
+
+
+async def test_set_review_reviewer_can_clear_it_back_to_unassigned(session):
+    await _persist(session, "r1")
+    await crud.set_review_reviewer(session, "r1", "u1")
+
+    review = await crud.set_review_reviewer(session, "r1", None)
+
+    assert review.reviewer_id is None
+
+
+async def test_set_review_reviewer_returns_none_when_review_does_not_exist(session):
+    review = await crud.set_review_reviewer(session, "does-not-exist", "u1")
+
+    assert review is None
+
+
+async def test_list_reviewer_candidates_returns_only_active_admins_and_reviewers(session):
+    await crud.create_user(session, user_id="u1", email="admin@example.com", password_hash="h", role="admin")
+    await crud.create_user(session, user_id="u2", email="reviewer@example.com", password_hash="h", role="reviewer")
+    await crud.create_user(session, user_id="u3", email="plain-user@example.com", password_hash="h", role="user")
+    inactive = await crud.create_user(session, user_id="u4", email="inactive@example.com", password_hash="h", role="admin")
+    await crud.update_user(session, inactive.id, is_active=False)
+
+    candidates = await crud.list_reviewer_candidates(session)
+
+    assert [c.email for c in candidates] == ["admin@example.com", "reviewer@example.com"]
+
+
+async def test_list_reviewer_candidates_returns_empty_list_when_none_qualify(session):
+    await crud.create_user(session, user_id="u1", email="plain-user@example.com", password_hash="h", role="user")
+
+    assert await crud.list_reviewer_candidates(session) == []
+
+
 async def test_list_reviews_filters_by_year(session):
     await _persist(session, "r1", created_at=datetime(2025, 6, 1, tzinfo=timezone.utc))
     await _persist(session, "r2", created_at=datetime(2024, 6, 1, tzinfo=timezone.utc))
