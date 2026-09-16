@@ -153,6 +153,9 @@ async def test_run_review_merges_per_review_overrides_onto_org_checklists(monkey
 
     # The override wins for 1.1; nothing else in the org dict is touched.
     assert captured_checklists == [{(".NET", "1.1"): "Reviewer's override for this run only"}]
+    # The final merged guidance actually used is stashed on state, keyed by
+    # sub_id only (platform is redundant -- a review is already one platform).
+    assert _reviews[review_id]["clause_checklists"] == {"1.1": "Reviewer's override for this run only"}
 
 
 async def test_run_review_override_still_applies_when_org_checklist_load_fails(monkeypatch):

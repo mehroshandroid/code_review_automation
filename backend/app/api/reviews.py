@@ -98,6 +98,7 @@ def _new_review_state() -> dict:
         "lint_issues": [],
         "compile_status": None,
         "source": None,
+        "clause_checklists": {},
     }
 
 
@@ -193,6 +194,7 @@ async def _persist_review_result(
                 "lint_issues": state["lint_issues"],
                 "compile_status": state["compile_status"],
                 "stats": state["stats"],
+                "clause_checklists": state.get("clause_checklists", {}),
             }
             if completed
             else {"error": state["error"]}
@@ -449,6 +451,10 @@ async def _run_review(
         clause_checklists = await _load_clause_checklists()
         for sub_id, text in (clause_overrides or {}).items():
             clause_checklists[(platform, sub_id)] = text
+        state["clause_checklists"] = {
+            sub_id: text for (checklist_platform, sub_id), text in clause_checklists.items()
+            if checklist_platform == platform
+        }
         scores_by_category = {}
         category_count = len(categories)
         for index, (category_id, category) in enumerate(categories.items()):

@@ -49,6 +49,7 @@ async def test_persists_a_completed_review_with_pending_approval_status(captured
     state["lint_issues"] = []
     state["compile_status"] = "ok"
     state["stats"] = {"total_time_ms": 1000}
+    state["clause_checklists"] = {"1.6": "Check target sdk version"}
 
     work_dir = Path(tempfile.mkdtemp())
     output_path = work_dir / "output.xlsx"
@@ -72,6 +73,7 @@ async def test_persists_a_completed_review_with_pending_approval_status(captured
     assert call["source"] == "upload"
     assert call["result_data"]["warnings"] == ["Outdated SDK"]
     assert call["result_data"]["category_scores"] == state["category_scores"]
+    assert call["result_data"]["clause_checklists"] == {"1.6": "Check target sdk version"}
     assert "code_context" not in call["result_data"]
     assert "prompt_log" not in call["result_data"]
 

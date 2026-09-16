@@ -213,7 +213,7 @@ async def test_get_project_returns_none_when_not_found(session):
     assert await crud.get_project(session, "missing") is None
 
 
-async def _persist(session, review_id, project_id=None, platform="Android", created_at=None, total_score_pct=None, status="pending_approval"):
+async def _persist(session, review_id, project_id=None, platform="Android", created_at=None, total_score_pct=None, status="pending_approval", result_data=None):
     return await crud.persist_review_result(
         session,
         review_id=review_id,
@@ -229,7 +229,7 @@ async def _persist(session, review_id, project_id=None, platform="Android", crea
         compile_check_mode="compiler",
         source="upload",
         workbook_path=None,
-        result_data={"category_scores": []},
+        result_data=result_data if result_data is not None else {"category_scores": []},
     )
 
 
@@ -353,6 +353,20 @@ async def test_list_reviews_includes_errored_reviews(session):
     reviews = await crud.list_reviews(session, year=2025)
 
     assert sorted(r.id for r in reviews) == ["r1", "r2"]
+
+
+async def test_get_latest_review_for_platform_returns_the_most_recent_one(session):
+    await _persist(session, "r1", platform="Android", created_at=datetime(2025, 1, 1, tzinfo=timezone.utc))
+    await _persist(session, "r2", platform="Android", created_at=datetime(2025, 6, 1, tzinfo=timezone.utc))
+    await _persist(session, "r3", platform=".NET", created_at=datetime(2025, 9, 1, tzinfo=timezone.utc))
+
+    review = await crud.get_latest_review_for_platform(session, "Android")
+
+    assert review.id == "r2"
+
+
+async def test_get_latest_review_for_platform_returns_none_when_no_reviews_exist(session):
+    assert await crud.get_latest_review_for_platform(session, "Android") is None
 
 
 async def test_list_reviews_orders_newest_first(session):

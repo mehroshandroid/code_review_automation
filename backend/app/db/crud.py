@@ -109,6 +109,17 @@ async def list_reviews(
     return list(result.scalars().all())
 
 
+async def get_latest_review_for_platform(session: AsyncSession, platform: str) -> Optional[PlatformReview]:
+    query = (
+        select(PlatformReview)
+        .where(PlatformReview.platform.ilike(platform))
+        .order_by(PlatformReview.created_at.desc())
+        .limit(1)
+    )
+    result = await session.execute(query)
+    return result.scalars().first()
+
+
 async def list_review_years(session: AsyncSession) -> list[int]:
     result = await session.execute(select(extract("year", PlatformReview.created_at)).distinct())
     return sorted({int(year) for (year,) in result.all()})
