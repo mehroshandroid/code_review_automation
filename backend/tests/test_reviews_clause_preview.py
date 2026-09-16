@@ -1,4 +1,5 @@
 import io
+from datetime import datetime, timezone
 
 import pytest
 from fastapi.testclient import TestClient
@@ -7,6 +8,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 import app.api.reviews as reviews_module
 from app.auth.dependencies import get_current_user
+from app.db import crud
 from app.db.models import Base, User
 from main import app
 
@@ -77,6 +79,81 @@ def test_clause_preview_falls_back_to_the_stored_default_template(test_sessionma
 
     assert response.status_code == 200
     assert len(response.json()["categories"]) == 1
+
+
+async def _persist(sessionmaker, review_id, platform, created_at, result_data):
+    async with sessionmaker() as session:
+        await crud.persist_review_result(
+            session,
+            review_id=review_id,
+            project_id=None,
+            platform=platform,
+            status="pending_approval",
+            project_name="Test",
+            created_at=created_at,
+            completed_at=created_at,
+            total_score_pct=None,
+            llm_provider="azure",
+            llm_model=None,
+            compile_check_mode="compiler",
+            source="upload",
+            workbook_path=None,
+            result_data=result_data,
+        )
+
+
+async def test_clause_preview_uses_the_most_recent_reviews_guidance_over_org_defaults(test_sessionmaker, monkeypatch):
+
+    await _persist(
+        test_sessionmaker, "r1", ".NET", datetime(2026, 1, 1, tzinfo=timezone.utc),
+        {"clause_checklists": {"1.1": "Guidance from last review"}},
+    )
+
+    async def fake_load_clause_checklists():
+        # Org-wide guidance IS configured, but must lose to the last review's
+        # guidance -- confirms "last review wins once one exists" rather than
+        # only being a fallback for clauses org-wide leaves empty.
+        return {(".NET", "1.1"): "Org default that should be overridden"}
+
+    monkeypatch.setattr(reviews_module, "_load_clause_checklists", fake_load_clause_checklists)
+
+    response = client.post(
+        "/api/reviews/clause-preview",
+        files={"file": ("template.xlsx", _build_xlsx_bytes(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        data={"platform": ".NET"},
+    )
+
+    assert response.status_code == 200
+    sub_criteria = response.json()["categories"][0]["sub_criteria"]
+    by_id = {s["id"]: s["checklist_text"] for s in sub_criteria}
+    assert by_id["1.1"] == "Guidance from last review"
+    assert by_id["1.2"] is None
+
+
+async def test_clause_preview_falls_back_to_org_defaults_when_latest_review_has_no_clause_checklists(test_sessionmaker, monkeypatch):
+
+    # An older review persisted before this feature existed (or one that
+    # errored before reaching scoring) has no "clause_checklists" key at all.
+    await _persist(
+        test_sessionmaker, "r1", ".NET", datetime(2026, 1, 1, tzinfo=timezone.utc),
+        {"category_scores": []},
+    )
+
+    async def fake_load_clause_checklists():
+        return {(".NET", "1.1"): "Org default"}
+
+    monkeypatch.setattr(reviews_module, "_load_clause_checklists", fake_load_clause_checklists)
+
+    response = client.post(
+        "/api/reviews/clause-preview",
+        files={"file": ("template.xlsx", _build_xlsx_bytes(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        data={"platform": ".NET"},
+    )
+
+    assert response.status_code == 200
+    sub_criteria = response.json()["categories"][0]["sub_criteria"]
+    by_id = {s["id"]: s["checklist_text"] for s in sub_criteria}
+    assert by_id["1.1"] == "Org default"
 
 
 def test_clause_preview_returns_404_when_no_template_available(test_sessionmaker, monkeypatch):

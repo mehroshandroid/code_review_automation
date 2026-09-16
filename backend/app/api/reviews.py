@@ -657,7 +657,22 @@ async def clause_preview(
     except Exception:
         raise HTTPException(status_code=422, detail="Could not read this sheet's clause structure")
 
-    clause_checklists = await _load_clause_checklists()
+    # Once any review has run for this platform, its actual clause guidance
+    # takes over entirely -- org-wide settings only apply until the first
+    # review exists (or if that latest review never reached scoring, e.g.
+    # it errored, or predates this field existing).
+    async with new_session() as session:
+        latest_review = await crud.get_latest_review_for_platform(session, platform)
+    latest_review_checklists = (latest_review.result_data or {}).get("clause_checklists") if latest_review else None
+
+    if latest_review_checklists:
+        checklist_text_by_sub_id = latest_review_checklists
+    else:
+        org_checklists = await _load_clause_checklists()
+        checklist_text_by_sub_id = {
+            sub_id: text for (checklist_platform, sub_id), text in org_checklists.items()
+            if checklist_platform == platform
+        }
 
     return {
         "categories": [
@@ -668,7 +683,7 @@ async def clause_preview(
                     {
                         "id": sub_id,
                         "description": descriptions.get(sub_id, ""),
-                        "checklist_text": clause_checklists.get((platform, sub_id)),
+                        "checklist_text": checklist_text_by_sub_id.get(sub_id),
                     }
                     for sub_id in category["sub_criteria"]
                 ],
