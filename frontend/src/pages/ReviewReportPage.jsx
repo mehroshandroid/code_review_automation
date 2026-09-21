@@ -3,7 +3,8 @@ import { useParams } from "react-router-dom";
 import TopNav from "../components/TopNav";
 import ReportTable from "../components/ReportTable";
 import { DownloadIcon } from "../icons";
-import { getReview, getDownloadUrl, updateReview } from "../services/api";
+import { getReview, getDownloadUrl, updateReview, getReviewers, setReviewReviewer } from "../services/api";
+import { useAuth } from "../context/AuthContext";
 
 const STATUS_LABELS = {
   pending_approval: "Pending approval",
@@ -31,6 +32,9 @@ export default function ReviewReportPage() {
   const [saveError, setSaveError] = useState("");
   const [statusSaving, setStatusSaving] = useState(false);
   const [statusError, setStatusError] = useState("");
+  const [reviewers, setReviewers] = useState([]);
+  const [reviewerSaving, setReviewerSaving] = useState(false);
+  const [reviewerError, setReviewerError] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -42,6 +46,28 @@ export default function ReviewReportPage() {
       .catch(() => { if (!cancelled) setNotFound(true); });
     return () => { cancelled = true; };
   }, [reviewId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    getReviewers()
+      .then((result) => { if (!cancelled) setReviewers(result); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  async function handleChangeReviewer(event) {
+    const reviewerId = event.target.value || null;
+    setReviewerSaving(true);
+    setReviewerError("");
+    try {
+      const updated = await setReviewReviewer(reviewId, reviewerId);
+      setReview(updated);
+    } catch (err) {
+      setReviewerError("Failed to update reviewer");
+    } finally {
+      setReviewerSaving(false);
+    }
+  }
 
   function handleStartEdit() {
     setDraftCategoryScores(cloneCategoryScores(review.category_scores));
@@ -103,7 +129,9 @@ export default function ReviewReportPage() {
     }
   }
 
-  const canApprove = review && review.status !== "error" && review.category_scores.length > 0;
+  const { user } = useAuth();
+  const canApprove = review && review.status !== "error" && review.category_scores.length > 0
+    && user && (user.role === "admin" || user.role === "reviewer");
 
   return (
     <div style={{ minHeight: "100vh", background: "var(--color-bg)", fontFamily: "var(--font-body)", color: "var(--color-text)" }}>
@@ -149,6 +177,25 @@ export default function ReviewReportPage() {
                 <p className="card-body" style={{ color: "var(--color-brand-coral)", marginTop: "var(--space-3)" }}>{review.error}</p>
               )}
             </header>
+
+            <div className="card card-subtle" style={{ padding: 20, marginBottom: "var(--space-4)" }}>
+              <div className="card-kicker">Reviewer</div>
+              <div style={{ display: "flex", gap: "var(--space-2)", marginTop: "var(--space-3)", alignItems: "center", flexWrap: "wrap" }}>
+                <select
+                  aria-label="Reviewer"
+                  className="input"
+                  value={review.reviewer_id || ""}
+                  disabled={reviewerSaving}
+                  onChange={handleChangeReviewer}
+                >
+                  <option value="">Unassigned</option>
+                  {reviewers.map((reviewer) => (
+                    <option key={reviewer.id} value={reviewer.id}>{reviewer.email}</option>
+                  ))}
+                </select>
+              </div>
+              {reviewerError && <p className="card-body" style={{ color: "var(--color-brand-coral)", marginTop: "var(--space-2)" }}>{reviewerError}</p>}
+            </div>
 
             {canApprove && (
               <div className="card card-subtle" style={{ padding: 20, marginBottom: "var(--space-4)" }}>

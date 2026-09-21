@@ -1,6 +1,16 @@
+import datetime as _dt
+
 import pytest
 
 import app.api.reviews as reviews_module
+from app.auth.dependencies import get_current_user
+from app.db.models import User
+from main import app as _app
+
+_DEFAULT_TEST_USER = User(
+    id="test-admin", email="test-admin@example.com", role="admin",
+    is_active=True, password_hash="", created_at=_dt.datetime.now(_dt.timezone.utc),
+)
 
 
 @pytest.fixture(autouse=True)
@@ -30,3 +40,18 @@ def _stub_load_clause_checklists(monkeypatch):
         return {}
 
     monkeypatch.setattr(reviews_module, "_load_clause_checklists", _empty)
+
+
+@pytest.fixture(autouse=True)
+def _default_authenticated_user():
+    """Every existing test was written before auth existed and expects full
+    access -- default every test to a fake admin via FastAPI's dependency
+    override mechanism (not a real login/cookie), so locking down a router
+    in a later task doesn't require touching that router's existing tests.
+    Tests that specifically cover permission enforcement override this
+    themselves (see e.g. test_auth_dependencies.py, and the *_permissions.py
+    files added in later tasks).
+    """
+    _app.dependency_overrides[get_current_user] = lambda: _DEFAULT_TEST_USER
+    yield
+    _app.dependency_overrides.pop(get_current_user, None)

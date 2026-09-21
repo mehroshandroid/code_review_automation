@@ -2,6 +2,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import DashboardFilters from "./DashboardFilters";
 import { createProject, updateProject } from "../services/api";
+import { AuthContext } from "../context/AuthContext";
 
 jest.mock("../services/api");
 
@@ -118,4 +119,34 @@ test("renaming the selected project calls updateProject and onProjectRenamed", a
 
   expect(updateProject).toHaveBeenCalledWith("p1", "Payments Team");
   expect(onProjectRenamed).toHaveBeenCalledWith(updated);
+});
+
+function renderWithRole(role, overrides = {}) {
+  const value = { user: { id: "u1", email: `${role}@example.com`, role }, loading: false, login: jest.fn(), logout: jest.fn() };
+  return render(
+    <AuthContext.Provider value={value}>
+      <DashboardFilters
+        year={2026} years={[2025, 2026]} onYearChange={jest.fn()}
+        platform={null} onPlatformChange={jest.fn()}
+        projectId={null} projects={projects} onProjectChange={jest.fn()} onProjectCreated={jest.fn()} onProjectRenamed={jest.fn()}
+        onReset={jest.fn()}
+        {...overrides}
+      />
+    </AuthContext.Provider>
+  );
+}
+
+test("hides the rename button for a reviewer even with a project selected", () => {
+  renderWithRole("reviewer", { projectId: "p1" });
+  expect(screen.queryByRole("button", { name: /rename/i })).not.toBeInTheDocument();
+});
+
+test("hides the rename button for the user role even with a project selected", () => {
+  renderWithRole("user", { projectId: "p1" });
+  expect(screen.queryByRole("button", { name: /rename/i })).not.toBeInTheDocument();
+});
+
+test("shows the rename button for admin with a project selected", () => {
+  renderWithRole("admin", { projectId: "p1" });
+  expect(screen.getByRole("button", { name: /rename/i })).toBeInTheDocument();
 });

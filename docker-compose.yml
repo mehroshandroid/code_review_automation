@@ -22,6 +22,10 @@ services:
       # iOS (/lint) and Android local mode (/android-lint).
       - MAC_BUILD_AGENT_URL=http://host.docker.internal:8100
       - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/codereviews
+      - ADMIN_EMAIL=admin@example.com
+      - ADMIN_PASSWORD=change-me-please
+      - AUTH_SECRET_KEY=dev-only-secret-change-in-production
+      - COOKIE_SECURE=false
       - REVIEW_ARTIFACTS_DIR=/data/reviews
       - SAMPLE_TEMPLATES_DIR=/data/sample-templates
     volumes:

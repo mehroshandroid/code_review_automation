@@ -3,6 +3,7 @@ import SearchableSelect from "./SearchableSelect";
 import ProjectDialog from "./ProjectDialog";
 import { PLATFORMS } from "../platforms";
 import { createProject, updateProject } from "../services/api";
+import { useAuth } from "../context/AuthContext";
 
 const ALL_PLATFORMS_OPTION = { value: null, label: "All platforms" };
 const ALL_PROJECTS_OPTION = { value: null, label: "All projects" };
@@ -15,6 +16,8 @@ export default function DashboardFilters({
 }) {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showRenameDialog, setShowRenameDialog] = useState(false);
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
 
   const yearOptions = years.map((y) => ({ value: y, label: String(y) }));
   const platformOptions = [ALL_PLATFORMS_OPTION, ...PLATFORMS.map((p) => ({ value: p.label, label: p.label }))];
@@ -51,7 +54,7 @@ export default function DashboardFilters({
               onAddNew={() => setShowCreateDialog(true)} addNewLabel="+ Add new project"
             />
           </div>
-          {selectedProject && (
+          {selectedProject && isAdmin && (
             <button
               type="button" className="btn btn-ghost" aria-label={`Rename ${selectedProject.name}`}
               style={{ flexShrink: 0 }}

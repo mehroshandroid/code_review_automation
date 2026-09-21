@@ -2,10 +2,10 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import delete, extract, select
+from sqlalchemy import delete, extract, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import ClauseChecklist, OrgSettings, PlatformReview, Project, SampleTemplate
+from app.db.models import ClauseChecklist, OrgSettings, PlatformReview, Project, SampleTemplate, User
 
 
 async def create_project(session: AsyncSession, project_id: str, name: str) -> Project:
@@ -109,6 +109,17 @@ async def list_reviews(
     return list(result.scalars().all())
 
 
+async def get_latest_review_for_platform(session: AsyncSession, platform: str) -> Optional[PlatformReview]:
+    query = (
+        select(PlatformReview)
+        .where(PlatformReview.platform.ilike(platform))
+        .order_by(PlatformReview.created_at.desc())
+        .limit(1)
+    )
+    result = await session.execute(query)
+    return result.scalars().first()
+
+
 async def list_review_years(session: AsyncSession) -> list[int]:
     result = await session.execute(select(extract("year", PlatformReview.created_at)).distinct())
     return sorted({int(year) for (year,) in result.all()})
@@ -131,6 +142,25 @@ async def update_review(
         review.status = status
         if status == "approved" and review.approved_at is None:
             review.approved_at = datetime.now(timezone.utc)
+    await session.commit()
+    await session.refresh(review)
+    return review
+
+
+async def list_reviewer_candidates(session: AsyncSession) -> list[User]:
+    result = await session.execute(
+        select(User)
+        .where(User.role.in_(["admin", "reviewer"]), User.is_active.is_(True))
+        .order_by(User.email)
+    )
+    return list(result.scalars().all())
+
+
+async def set_review_reviewer(session: AsyncSession, review_id: str, reviewer_id: Optional[str]) -> Optional[PlatformReview]:
+    review = await session.get(PlatformReview, review_id)
+    if review is None:
+        return None
+    review.reviewer_id = reviewer_id
     await session.commit()
     await session.refresh(review)
     return review
@@ -218,5 +248,59 @@ async def upsert_sample_template(
 
 async def delete_sample_template(session: AsyncSession, platform: str) -> bool:
     result = await session.execute(delete(SampleTemplate).where(SampleTemplate.platform == platform))
+    await session.commit()
+    return result.rowcount > 0
+
+
+async def create_user(session: AsyncSession, user_id: str, email: str, password_hash: str, role: str) -> User:
+    user = User(
+        id=user_id, email=email, password_hash=password_hash, role=role,
+        is_active=True, created_at=datetime.now(timezone.utc),
+    )
+    session.add(user)
+    await session.commit()
+    await session.refresh(user)
+    return user
+
+
+async def get_user_by_email(session: AsyncSession, email: str) -> Optional[User]:
+    result = await session.execute(select(User).where(User.email == email))
+    return result.scalar_one_or_none()
+
+
+async def get_user_by_id(session: AsyncSession, user_id: str) -> Optional[User]:
+    return await session.get(User, user_id)
+
+
+async def list_users(session: AsyncSession) -> list[User]:
+    result = await session.execute(select(User).order_by(User.created_at.desc()))
+    return list(result.scalars().all())
+
+
+async def update_user(
+    session: AsyncSession, user_id: str,
+    role: Optional[str] = None, is_active: Optional[bool] = None, password_hash: Optional[str] = None,
+) -> Optional[User]:
+    user = await session.get(User, user_id)
+    if user is None:
+        return None
+    if role is not None:
+        user.role = role
+    if is_active is not None:
+        user.is_active = is_active
+    if password_hash is not None:
+        user.password_hash = password_hash
+    await session.commit()
+    await session.refresh(user)
+    return user
+
+
+async def count_users(session: AsyncSession) -> int:
+    result = await session.execute(select(func.count()).select_from(User))
+    return result.scalar_one()
+
+
+async def delete_user(session: AsyncSession, user_id: str) -> bool:
+    result = await session.execute(delete(User).where(User.id == user_id))
     await session.commit()
     return result.rowcount > 0

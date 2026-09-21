@@ -8,6 +8,8 @@ from openpyxl import Workbook
 
 import app.api.reviews as reviews_module
 from app.api.reviews import _new_review_state, _reviews, _run_review
+from app.auth.dependencies import get_current_user
+from app.db.models import User
 from main import app
 
 client = TestClient(app)
@@ -1101,3 +1103,44 @@ async def test_run_review_dotnet_static_mode_skips_build_check_and_scores_1_4_vi
     sub_1_4 = next(s for s in category_1["sub_criteria"] if s["id"] == "1.4")
     assert sub_1_4["score"] == 1
     assert sub_1_4["remark"] == "stub"
+
+
+def test_create_review_rejects_malformed_clause_overrides_json(monkeypatch):
+    monkeypatch.delenv("AZURE_OPENAI_KEY", raising=False)
+    with TestClient(app) as test_client:
+        response = test_client.post(
+            "/api/reviews",
+            files={
+                "androidZip": ("project.zip", _build_zip_bytes(), "application/zip"),
+                "excelTemplate": ("template.xlsx", _build_xlsx_bytes(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+            },
+            data={"clauseChecklistOverrides": "not valid json"},
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "error"
+        state = reviews_module._reviews[body["review_id"]]
+        assert "clauseChecklistOverrides must be valid JSON" in state["error"]
+
+
+def test_create_review_rejects_clause_overrides_from_a_non_privileged_role(monkeypatch):
+    monkeypatch.delenv("AZURE_OPENAI_KEY", raising=False)
+    non_privileged = User(id="u1", email="u@example.com", role="user", is_active=True, password_hash="", created_at=None)
+    app.dependency_overrides[get_current_user] = lambda: non_privileged
+    try:
+        with TestClient(app) as test_client:
+            response = test_client.post(
+                "/api/reviews",
+                files={
+                    "androidZip": ("project.zip", _build_zip_bytes(), "application/zip"),
+                    "excelTemplate": ("template.xlsx", _build_xlsx_bytes(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+                },
+                data={"clauseChecklistOverrides": '{"1.1": "text"}'},
+            )
+            assert response.status_code == 200
+            body = response.json()
+            assert body["status"] == "error"
+            state = reviews_module._reviews[body["review_id"]]
+            assert "Only admin/reviewer accounts" in state["error"]
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)

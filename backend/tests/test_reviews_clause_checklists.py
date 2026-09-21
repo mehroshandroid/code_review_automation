@@ -114,3 +114,83 @@ async def test_run_review_passes_loaded_checklists_through_to_score_category(mon
     )
 
     assert captured_checklists == [checklists]
+
+
+async def test_run_review_merges_per_review_overrides_onto_org_checklists(monkeypatch):
+    review_id = "override-merge-check"
+    work_dir = Path(tempfile.mkdtemp(prefix=f"review_{review_id}_"))
+    zip_path = work_dir / "project.zip"
+    template_path = work_dir / "template.xlsx"
+    zip_path.write_bytes(_build_dotnet_zip_bytes())
+    template_path.write_bytes(_build_xlsx_bytes())
+
+    _reviews[review_id] = _new_review_state()
+
+    async def fake_load_clause_checklists():
+        return {(".NET", "1.1"): "Org default for 1.1"}
+
+    captured_checklists = []
+
+    async def fake_score_category(provider, category_name, sub_criteria, descriptions, code_snippets, model=None, platform="Android", checklists=None):
+        captured_checklists.append(checklists)
+        sub_results = {sub_id: {"score": 1, "remark": ""} for sub_id in sub_criteria}
+        prompt_info = {"label": category_name, "prompt_text": "stub", "tokens": {
+            "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "cached_tokens": 0,
+        }}
+        return sub_results, prompt_info
+
+    async def fake_check_dotnet_build_warnings(zip_path_arg):
+        return {"status": "ok", "warning_count": 0, "issues": []}
+
+    monkeypatch.setattr(reviews_module, "_load_clause_checklists", fake_load_clause_checklists)
+    monkeypatch.setattr(reviews_module, "score_category", fake_score_category)
+    monkeypatch.setattr(reviews_module, "check_dotnet_build_warnings", fake_check_dotnet_build_warnings)
+
+    await _run_review(
+        review_id, work_dir, zip_path, template_path, zip_valid=True, template_valid=True, project_name="Test",
+        platform=".NET", clause_overrides={"1.1": "Reviewer's override for this run only"},
+    )
+
+    # The override wins for 1.1; nothing else in the org dict is touched.
+    assert captured_checklists == [{(".NET", "1.1"): "Reviewer's override for this run only"}]
+    # The final merged guidance actually used is stashed on state, keyed by
+    # sub_id only (platform is redundant -- a review is already one platform).
+    assert _reviews[review_id]["clause_checklists"] == {"1.1": "Reviewer's override for this run only"}
+
+
+async def test_run_review_override_still_applies_when_org_checklist_load_fails(monkeypatch):
+    review_id = "override-survives-db-outage"
+    work_dir = Path(tempfile.mkdtemp(prefix=f"review_{review_id}_"))
+    zip_path = work_dir / "project.zip"
+    template_path = work_dir / "template.xlsx"
+    zip_path.write_bytes(_build_dotnet_zip_bytes())
+    template_path.write_bytes(_build_xlsx_bytes())
+
+    _reviews[review_id] = _new_review_state()
+
+    async def fake_load_clause_checklists():
+        return {}  # matches the real function's DB-outage-safe empty-dict behavior
+
+    captured_checklists = []
+
+    async def fake_score_category(provider, category_name, sub_criteria, descriptions, code_snippets, model=None, platform="Android", checklists=None):
+        captured_checklists.append(checklists)
+        sub_results = {sub_id: {"score": 1, "remark": ""} for sub_id in sub_criteria}
+        prompt_info = {"label": category_name, "prompt_text": "stub", "tokens": {
+            "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "cached_tokens": 0,
+        }}
+        return sub_results, prompt_info
+
+    async def fake_check_dotnet_build_warnings(zip_path_arg):
+        return {"status": "ok", "warning_count": 0, "issues": []}
+
+    monkeypatch.setattr(reviews_module, "_load_clause_checklists", fake_load_clause_checklists)
+    monkeypatch.setattr(reviews_module, "score_category", fake_score_category)
+    monkeypatch.setattr(reviews_module, "check_dotnet_build_warnings", fake_check_dotnet_build_warnings)
+
+    await _run_review(
+        review_id, work_dir, zip_path, template_path, zip_valid=True, template_valid=True, project_name="Test",
+        platform=".NET", clause_overrides={"1.1": "Reviewer's override"},
+    )
+
+    assert captured_checklists == [{(".NET", "1.1"): "Reviewer's override"}]

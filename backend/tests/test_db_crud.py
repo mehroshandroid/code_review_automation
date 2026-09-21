@@ -213,7 +213,7 @@ async def test_get_project_returns_none_when_not_found(session):
     assert await crud.get_project(session, "missing") is None
 
 
-async def _persist(session, review_id, project_id=None, platform="Android", created_at=None, total_score_pct=None, status="pending_approval"):
+async def _persist(session, review_id, project_id=None, platform="Android", created_at=None, total_score_pct=None, status="pending_approval", result_data=None):
     return await crud.persist_review_result(
         session,
         review_id=review_id,
@@ -229,7 +229,7 @@ async def _persist(session, review_id, project_id=None, platform="Android", crea
         compile_check_mode="compiler",
         source="upload",
         workbook_path=None,
-        result_data={"category_scores": []},
+        result_data=result_data if result_data is not None else {"category_scores": []},
     )
 
 
@@ -317,6 +317,47 @@ async def test_update_review_returns_none_when_review_does_not_exist(session):
     assert review is None
 
 
+async def test_set_review_reviewer_updates_the_reviewer_id(session):
+    await _persist(session, "r1")
+
+    review = await crud.set_review_reviewer(session, "r1", "u1")
+
+    assert review.reviewer_id == "u1"
+
+
+async def test_set_review_reviewer_can_clear_it_back_to_unassigned(session):
+    await _persist(session, "r1")
+    await crud.set_review_reviewer(session, "r1", "u1")
+
+    review = await crud.set_review_reviewer(session, "r1", None)
+
+    assert review.reviewer_id is None
+
+
+async def test_set_review_reviewer_returns_none_when_review_does_not_exist(session):
+    review = await crud.set_review_reviewer(session, "does-not-exist", "u1")
+
+    assert review is None
+
+
+async def test_list_reviewer_candidates_returns_only_active_admins_and_reviewers(session):
+    await crud.create_user(session, user_id="u1", email="admin@example.com", password_hash="h", role="admin")
+    await crud.create_user(session, user_id="u2", email="reviewer@example.com", password_hash="h", role="reviewer")
+    await crud.create_user(session, user_id="u3", email="plain-user@example.com", password_hash="h", role="user")
+    inactive = await crud.create_user(session, user_id="u4", email="inactive@example.com", password_hash="h", role="admin")
+    await crud.update_user(session, inactive.id, is_active=False)
+
+    candidates = await crud.list_reviewer_candidates(session)
+
+    assert [c.email for c in candidates] == ["admin@example.com", "reviewer@example.com"]
+
+
+async def test_list_reviewer_candidates_returns_empty_list_when_none_qualify(session):
+    await crud.create_user(session, user_id="u1", email="plain-user@example.com", password_hash="h", role="user")
+
+    assert await crud.list_reviewer_candidates(session) == []
+
+
 async def test_list_reviews_filters_by_year(session):
     await _persist(session, "r1", created_at=datetime(2025, 6, 1, tzinfo=timezone.utc))
     await _persist(session, "r2", created_at=datetime(2024, 6, 1, tzinfo=timezone.utc))
@@ -355,6 +396,20 @@ async def test_list_reviews_includes_errored_reviews(session):
     assert sorted(r.id for r in reviews) == ["r1", "r2"]
 
 
+async def test_get_latest_review_for_platform_returns_the_most_recent_one(session):
+    await _persist(session, "r1", platform="Android", created_at=datetime(2025, 1, 1, tzinfo=timezone.utc))
+    await _persist(session, "r2", platform="Android", created_at=datetime(2025, 6, 1, tzinfo=timezone.utc))
+    await _persist(session, "r3", platform=".NET", created_at=datetime(2025, 9, 1, tzinfo=timezone.utc))
+
+    review = await crud.get_latest_review_for_platform(session, "Android")
+
+    assert review.id == "r2"
+
+
+async def test_get_latest_review_for_platform_returns_none_when_no_reviews_exist(session):
+    assert await crud.get_latest_review_for_platform(session, "Android") is None
+
+
 async def test_list_reviews_orders_newest_first(session):
     await _persist(session, "r1", created_at=datetime(2025, 6, 1, tzinfo=timezone.utc))
     await _persist(session, "r2", created_at=datetime(2025, 1, 1, tzinfo=timezone.utc))
@@ -378,3 +433,74 @@ async def test_list_review_years_returns_empty_list_when_no_reviews(session):
     years = await crud.list_review_years(session)
 
     assert years == []
+
+
+async def test_create_user_persists_and_returns_it(session):
+    user = await crud.create_user(session, user_id="u1", email="admin@example.com", password_hash="hashed", role="admin")
+
+    assert user.id == "u1"
+    assert user.email == "admin@example.com"
+    assert user.role == "admin"
+    assert user.is_active is True
+    assert user.created_at is not None
+
+
+async def test_get_user_by_email_finds_it(session):
+    await crud.create_user(session, user_id="u1", email="admin@example.com", password_hash="hashed", role="admin")
+
+    user = await crud.get_user_by_email(session, "admin@example.com")
+
+    assert user.id == "u1"
+
+
+async def test_get_user_by_email_returns_none_when_not_found(session):
+    assert await crud.get_user_by_email(session, "missing@example.com") is None
+
+
+async def test_get_user_by_id_finds_it(session):
+    await crud.create_user(session, user_id="u1", email="admin@example.com", password_hash="hashed", role="admin")
+
+    user = await crud.get_user_by_id(session, "u1")
+
+    assert user.email == "admin@example.com"
+
+
+async def test_list_users_returns_newest_first(session):
+    await crud.create_user(session, user_id="u1", email="first@example.com", password_hash="h", role="user")
+    await crud.create_user(session, user_id="u2", email="second@example.com", password_hash="h", role="user")
+
+    users = await crud.list_users(session)
+
+    assert [u.email for u in users] == ["second@example.com", "first@example.com"]
+
+
+async def test_update_user_changes_role_and_active_flag(session):
+    await crud.create_user(session, user_id="u1", email="a@example.com", password_hash="h", role="user")
+
+    user = await crud.update_user(session, "u1", role="reviewer", is_active=False)
+
+    assert user.role == "reviewer"
+    assert user.is_active is False
+
+
+async def test_update_user_returns_none_when_not_found(session):
+    assert await crud.update_user(session, "missing", role="admin") is None
+
+
+async def test_count_users_reflects_table_size(session):
+    assert await crud.count_users(session) == 0
+    await crud.create_user(session, user_id="u1", email="a@example.com", password_hash="h", role="admin")
+    assert await crud.count_users(session) == 1
+
+
+async def test_delete_user_removes_it_and_returns_true(session):
+    await crud.create_user(session, user_id="u1", email="a@example.com", password_hash="h", role="user")
+
+    deleted = await crud.delete_user(session, "u1")
+
+    assert deleted is True
+    assert await crud.get_user_by_id(session, "u1") is None
+
+
+async def test_delete_user_returns_false_when_not_found(session):
+    assert await crud.delete_user(session, "missing") is False

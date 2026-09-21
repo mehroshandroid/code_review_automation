@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Numeric, String, UniqueConstraint
+from sqlalchemy import Boolean, JSON, DateTime, ForeignKey, Numeric, String, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -46,6 +46,12 @@ class PlatformReview(Base):
     created_by: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     approved_by: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     approved_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Who's assigned to review this specific review -- a real reference to a
+    # User account (not the free-text created_by/approved_by above, which
+    # belong to a separate, unrelated feature: uploading an already-completed
+    # sheet). A real FK, not a denormalized name/email, so it stays correct
+    # if the assigned user's email changes and to support emailing them later.
+    reviewer_id: Mapped[Optional[str]] = mapped_column(ForeignKey("users.id"), nullable=True)
 
     project: Mapped[Optional["Project"]] = relationship(back_populates="platform_reviews")
 
@@ -78,3 +84,14 @@ class SampleTemplate(Base):
     filename: Mapped[str] = mapped_column(String, nullable=False)
     file_path: Mapped[str] = mapped_column(String, nullable=False)
     uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    email: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    password_hash: Mapped[str] = mapped_column(String, nullable=False)
+    role: Mapped[str] = mapped_column(String, nullable=False)  # "admin" | "reviewer" | "user"
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

@@ -1,4 +1,5 @@
 import asyncio
+import json
 import os
 import shutil
 import tempfile
@@ -9,7 +10,7 @@ from datetime import date, datetime, timezone
 from io import BytesIO
 from pathlib import Path
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from openpyxl import load_workbook
 from pydantic import BaseModel
@@ -30,6 +31,7 @@ from app.analyzer.excel_handler import (
     read_scores,
 )
 from app.analyzer.llm_client import generate_general_remarks, score_category
+from app.auth.dependencies import get_current_user, require_roles
 from app.db import crud
 from app.db.session import new_session
 from app.utils.logger import get_logger
@@ -53,6 +55,10 @@ ALLOWED_REVIEW_STATUSES = {"pending_approval", "approved", "completed"}
 class UpdateReviewRequest(BaseModel):
     category_scores: list[dict] | None = None
     status: str | None = None
+
+
+class UpdateReviewerRequest(BaseModel):
+    reviewer_id: str | None = None
 
 
 def _recompute_category_scores(category_scores: list[dict]) -> tuple[list[dict], float | None]:
@@ -96,6 +102,7 @@ def _new_review_state() -> dict:
         "lint_issues": [],
         "compile_status": None,
         "source": None,
+        "clause_checklists": {},
     }
 
 
@@ -191,6 +198,7 @@ async def _persist_review_result(
                 "lint_issues": state["lint_issues"],
                 "compile_status": state["compile_status"],
                 "stats": state["stats"],
+                "clause_checklists": state.get("clause_checklists", {}),
             }
             if completed
             else {"error": state["error"]}
@@ -231,6 +239,8 @@ async def create_review(
     devopsPat: str | None = Form(None),
     devopsBranch: str | None = Form(None),
     projectId: str | None = Form(None),
+    clauseChecklistOverrides: str | None = Form(None),
+    user=Depends(get_current_user),
 ):
     review_id = str(uuid.uuid4())
     work_dir = Path(tempfile.mkdtemp(prefix=f"review_{review_id}_"))
@@ -246,6 +256,16 @@ async def create_review(
         input_error = "Provide either a project zip file or an Azure DevOps repo URL + PAT, not neither."
     else:
         input_error = None
+
+    clause_overrides: dict = {}
+    if input_error is None and clauseChecklistOverrides:
+        if user.role not in ("admin", "reviewer"):
+            input_error = "Only admin/reviewer accounts can adjust clause guidance for a review."
+        else:
+            try:
+                clause_overrides = json.loads(clauseChecklistOverrides)
+            except json.JSONDecodeError:
+                input_error = "clauseChecklistOverrides must be valid JSON."
 
     if input_error:
         shutil.rmtree(work_dir, ignore_errors=True)
@@ -304,7 +324,7 @@ async def create_review(
         _run_review(
             review_id, work_dir, zip_path, template_path, zip_valid, template_valid, project_name,
             llmProvider, ollamaModel, compileCheckMode, platform,
-            devopsRepoUrl, devopsPat, devopsBranch, project_id=projectId,
+            devopsRepoUrl, devopsPat, devopsBranch, project_id=projectId, clause_overrides=clause_overrides,
         )
     )
     return {"review_id": review_id, "status": "processing"}
@@ -326,6 +346,7 @@ async def _run_review(
     devops_pat: str | None = None,
     devops_branch: str | None = None,
     project_id: str | None = None,
+    clause_overrides: dict | None = None,
 ) -> None:
     state = _reviews[review_id]
     extract_dir = work_dir / "extracted"
@@ -432,6 +453,12 @@ async def _run_review(
         t2 = time.monotonic()
         state["phase"] = "scoring"
         clause_checklists = await _load_clause_checklists()
+        for sub_id, text in (clause_overrides or {}).items():
+            clause_checklists[(platform, sub_id)] = text
+        state["clause_checklists"] = {
+            sub_id: text for (checklist_platform, sub_id), text in clause_checklists.items()
+            if checklist_platform == platform
+        }
         scores_by_category = {}
         category_count = len(categories)
         for index, (category_id, category) in enumerate(categories.items()):
@@ -524,14 +551,14 @@ def _review_summary_to_dict(review) -> dict:
 
 
 @router.get("/api/reviews")
-async def list_reviews(year: int, platform: str | None = None, project_id: str | None = None):
+async def list_reviews(year: int, platform: str | None = None, project_id: str | None = None, user=Depends(get_current_user)):
     async with new_session() as session:
         reviews = await crud.list_reviews(session, year=year, platform=platform, project_id=project_id)
     return {"reviews": [_review_summary_to_dict(review) for review in reviews]}
 
 
 @router.get("/api/reviews/years")
-async def list_review_years():
+async def list_review_years(user=Depends(get_current_user)):
     async with new_session() as session:
         years = await crud.list_review_years(session)
     return {"years": years}
@@ -542,6 +569,7 @@ async def upload_completed_review(
     file: UploadFile = File(...),
     projectId: str = Form(...),
     platform: str = Form(...),
+    user=Depends(get_current_user),
 ):
     if not (file.filename or "").lower().endswith(".xlsx"):
         raise HTTPException(status_code=400, detail="File must be an .xlsx workbook.")
@@ -617,8 +645,60 @@ async def upload_completed_review(
     return _review_summary_to_dict(review)
 
 
+@router.post("/api/reviews/clause-preview")
+async def clause_preview(
+    platform: str = Form(...),
+    file: UploadFile | None = File(None),
+    user=Depends(require_roles("admin", "reviewer")),
+):
+    template_bytes, _ = await _resolve_excel_template(file, platform)
+    if template_bytes is None:
+        raise HTTPException(status_code=404, detail="No sample template configured for this platform and no file uploaded.")
+
+    try:
+        worksheet = load_workbook(BytesIO(template_bytes)).active
+        categories, descriptions = discover_structure(worksheet)
+    except Exception:
+        raise HTTPException(status_code=422, detail="Could not read this sheet's clause structure")
+
+    # Once any review has run for this platform, its actual clause guidance
+    # takes over entirely -- org-wide settings only apply until the first
+    # review exists (or if that latest review never reached scoring, e.g.
+    # it errored, or predates this field existing).
+    async with new_session() as session:
+        latest_review = await crud.get_latest_review_for_platform(session, platform)
+    latest_review_checklists = (latest_review.result_data or {}).get("clause_checklists") if latest_review else None
+
+    if latest_review_checklists:
+        checklist_text_by_sub_id = latest_review_checklists
+    else:
+        org_checklists = await _load_clause_checklists()
+        checklist_text_by_sub_id = {
+            sub_id: text for (checklist_platform, sub_id), text in org_checklists.items()
+            if checklist_platform == platform
+        }
+
+    return {
+        "categories": [
+            {
+                "id": category_id,
+                "name": category["name"],
+                "sub_criteria": [
+                    {
+                        "id": sub_id,
+                        "description": descriptions.get(sub_id, ""),
+                        "checklist_text": checklist_text_by_sub_id.get(sub_id),
+                    }
+                    for sub_id in category["sub_criteria"]
+                ],
+            }
+            for category_id, category in categories.items()
+        ]
+    }
+
+
 @router.get("/api/reviews/{review_id}/progress")
-async def get_progress(review_id: str):
+async def get_progress(review_id: str, user=Depends(get_current_user)):
     state = _reviews.get(review_id)
     if state is None:
         raise HTTPException(status_code=404, detail="Unknown review_id")
@@ -666,11 +746,12 @@ def _review_to_dict(review) -> dict:
         "stats": result_data.get("stats", {}),
         "error": result_data.get("error"),
         "approved_at": review.approved_at.isoformat() if review.approved_at else None,
+        "reviewer_id": review.reviewer_id,
     }
 
 
 @router.get("/api/reviews/{review_id}")
-async def get_review(review_id: str):
+async def get_review(review_id: str, user=Depends(get_current_user)):
     async with new_session() as session:
         review = await crud.get_review_by_id(session, review_id)
     if review is None:
@@ -679,7 +760,7 @@ async def get_review(review_id: str):
 
 
 @router.patch("/api/reviews/{review_id}")
-async def update_review(review_id: str, body: UpdateReviewRequest):
+async def update_review(review_id: str, body: UpdateReviewRequest, user=Depends(require_roles("admin", "reviewer"))):
     if body.status is not None and body.status not in ALLOWED_REVIEW_STATUSES:
         raise HTTPException(status_code=400, detail=f"status must be one of {sorted(ALLOWED_REVIEW_STATUSES)}")
 
@@ -697,8 +778,30 @@ async def update_review(review_id: str, body: UpdateReviewRequest):
     return _review_to_dict(review)
 
 
+@router.get("/api/reviewers")
+async def list_reviewers(user=Depends(get_current_user)):
+    async with new_session() as session:
+        candidates = await crud.list_reviewer_candidates(session)
+    return {"reviewers": [{"id": candidate.id, "email": candidate.email} for candidate in candidates]}
+
+
+@router.patch("/api/reviews/{review_id}/reviewer")
+async def update_review_reviewer(review_id: str, body: UpdateReviewerRequest, user=Depends(get_current_user)):
+    if body.reviewer_id is not None:
+        async with new_session() as session:
+            candidate = await crud.get_user_by_id(session, body.reviewer_id)
+        if candidate is None or not candidate.is_active or candidate.role not in ("admin", "reviewer"):
+            raise HTTPException(status_code=400, detail="reviewer_id must be an active admin or reviewer account.")
+
+    async with new_session() as session:
+        review = await crud.set_review_reviewer(session, review_id, body.reviewer_id)
+    if review is None:
+        raise HTTPException(status_code=404, detail="Review not found")
+    return _review_to_dict(review)
+
+
 @router.get("/api/reviews/{review_id}/download")
-async def download_review(review_id: str):
+async def download_review(review_id: str, user=Depends(get_current_user)):
     state = _reviews.get(review_id)
     if state is not None and state["download_path"] is not None:
         path = Path(state["download_path"])

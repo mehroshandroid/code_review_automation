@@ -1,18 +1,21 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import UploadForm from "./UploadForm";
+import { AuthContext } from "../context/AuthContext";
 import { getCompileCheckMode } from "../services/compileCheckModeStorage";
-import { getSampleTemplates } from "../services/api";
+import { getSampleTemplates, getClausePreview } from "../services/api";
 
 jest.mock("../services/api", () => ({
   ...jest.requireActual("../services/api"),
   getSampleTemplates: jest.fn(),
+  getClausePreview: jest.fn(),
 }));
 
 beforeEach(() => {
   localStorage.clear();
   getSampleTemplates.mockReset();
   getSampleTemplates.mockResolvedValue([]);
+  getClausePreview.mockReset();
 });
 
 function buildFile(name, type) {
@@ -32,6 +35,7 @@ test("calls onSubmit with both files when extensions are valid", async () => {
 
   expect(onSubmit).toHaveBeenCalledWith({
     androidZip: zip, excelTemplate: xlsx, devopsRepoUrl: null, devopsPat: null, devopsBranch: null,
+    clauseChecklistOverrides: {},
   });
 });
 
@@ -197,6 +201,7 @@ test("calls onSubmit with the DevOps fields (and a null androidZip) in DevOps mo
     devopsRepoUrl: "https://dev.azure.com/myorg/MyProject/_git/my-repo",
     devopsPat: "fake-pat",
     devopsBranch: "release/1.0",
+    clauseChecklistOverrides: {},
   });
 });
 
@@ -249,6 +254,7 @@ test("submits with excelTemplate: null when the default template is used", async
 
   expect(onSubmit).toHaveBeenCalledWith({
     androidZip: zip, excelTemplate: null, devopsRepoUrl: null, devopsPat: null, devopsBranch: null,
+    clauseChecklistOverrides: {},
   });
 });
 
@@ -288,4 +294,64 @@ test("'Use default instead' reverts back to the default after choosing a differe
   await user.click(screen.getByRole("button", { name: /start review/i }));
 
   expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ excelTemplate: null }));
+});
+
+function renderAsRole(role, props = {}) {
+  const value = { user: { id: "u1", email: "a@example.com", role }, loading: false, login: jest.fn(), logout: jest.fn() };
+  return render(
+    <AuthContext.Provider value={value}>
+      <UploadForm onSubmit={jest.fn()} platformLabel="Android" {...props} />
+    </AuthContext.Provider>
+  );
+}
+
+test("hides the clause guidance section for the user role", () => {
+  renderAsRole("user");
+  expect(screen.queryByRole("button", { name: /adjust clause guidance/i })).not.toBeInTheDocument();
+});
+
+test("reviewer can expand the clause guidance section, pre-filled from the preview endpoint", async () => {
+  const user = userEvent.setup();
+  getClausePreview.mockResolvedValue([
+    { id: "1", name: "Code Structure", sub_criteria: [{ id: "1.1", description: "Clear naming", checklist_text: "Org default text" }] },
+  ]);
+  renderAsRole("reviewer");
+
+  const zip = buildFile("project.zip", "application/zip");
+  const xlsx = buildFile("template.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  await user.upload(screen.getByLabelText(/android project/i), zip);
+  await user.upload(screen.getByLabelText(/scoring template/i), xlsx);
+  await user.click(screen.getByRole("button", { name: /adjust clause guidance/i }));
+
+  expect(await screen.findByLabelText(/1\.1/)).toHaveValue("Org default text");
+  expect(getClausePreview).toHaveBeenCalledWith({ platform: "Android", file: xlsx });
+});
+
+test("submitting with an edited clause includes it in clauseChecklistOverrides, and leaves other clauses out", async () => {
+  const user = userEvent.setup();
+  getClausePreview.mockResolvedValue([
+    {
+      id: "1", name: "Code Structure",
+      sub_criteria: [
+        { id: "1.1", description: "Clear naming", checklist_text: "Org default" },
+        { id: "1.2", description: "Clean structure", checklist_text: "Untouched default" },
+      ],
+    },
+  ]);
+  const onSubmit = jest.fn();
+  renderAsRole("admin", { onSubmit });
+
+  const zip = buildFile("project.zip", "application/zip");
+  const xlsx = buildFile("template.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  await user.upload(screen.getByLabelText(/android project/i), zip);
+  await user.upload(screen.getByLabelText(/scoring template/i), xlsx);
+  await user.click(screen.getByRole("button", { name: /adjust clause guidance/i }));
+  const field = await screen.findByLabelText(/1\.1/);
+  await user.clear(field);
+  await user.type(field, "Custom guidance for this run");
+  await user.click(screen.getByRole("button", { name: /start review/i }));
+
+  expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({
+    clauseChecklistOverrides: { "1.1": "Custom guidance for this run" },
+  }));
 });

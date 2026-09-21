@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { GearIcon } from "../icons";
+import NavActions from "./NavActions";
 
 export default function TopNav() {
   return (
@@ -12,7 +12,9 @@ export default function TopNav() {
         </span>
         <span className="nav-brand">Code Review Automation</span>
       </Link>
-      <Link to="/settings" className="btn btn-ghost" aria-label="Settings" style={{ marginLeft: "auto" }}><GearIcon /></Link>
+      <div style={{ marginLeft: "auto", display: "flex", gap: "var(--space-2)", alignItems: "center" }}>
+        <NavActions />
+      </div>
       <Link to="/" className="btn btn-ghost">← Home</Link>
     </nav>
   );

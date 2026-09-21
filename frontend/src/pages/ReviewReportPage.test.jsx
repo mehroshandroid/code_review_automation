@@ -2,13 +2,20 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import ReviewReportPage from "./ReviewReportPage";
-import { getReview, updateReview } from "../services/api";
+import { getReview, updateReview, getReviewers, setReviewReviewer } from "../services/api";
+import { AuthContext } from "../context/AuthContext";
 
 jest.mock("../services/api", () => ({
   ...jest.requireActual("../services/api"),
   getReview: jest.fn(),
   updateReview: jest.fn(),
+  getReviewers: jest.fn(),
+  setReviewReviewer: jest.fn(),
 }));
+
+beforeEach(() => {
+  getReviewers.mockResolvedValue([]);
+});
 
 function renderReport(reviewId = "r1") {
   return render(
@@ -41,6 +48,7 @@ const review = {
   compile_status: "ok",
   stats: {},
   error: null,
+  reviewer_id: null,
 };
 
 test("renders the review's project name, platform, and score once loaded", async () => {
@@ -183,4 +191,78 @@ test("shows an error message when saving edits fails", async () => {
   await user.click(screen.getByRole("button", { name: /save changes/i }));
 
   expect(await screen.findByText(/failed to save changes/i)).toBeInTheDocument();
+});
+
+test("hides the Approval card entirely for the user role", async () => {
+  getReview.mockResolvedValue(review);
+  render(
+    <AuthContext.Provider value={{ user: { id: "u1", email: "user@example.com", role: "user" }, loading: false, login: jest.fn(), logout: jest.fn() }}>
+      <MemoryRouter initialEntries={["/reports/r1"]}>
+        <Routes><Route path="/reports/:reviewId" element={<ReviewReportPage />} /></Routes>
+      </MemoryRouter>
+    </AuthContext.Provider>
+  );
+
+  await screen.findByText("Structure");
+  expect(screen.queryByText("Approval")).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /edit scores/i })).not.toBeInTheDocument();
+});
+
+test("shows the reviewer dropdown, defaulting to Unassigned, populated from getReviewers", async () => {
+  getReview.mockResolvedValue(review);
+  getReviewers.mockResolvedValue([
+    { id: "u1", email: "alice@example.com" },
+    { id: "u2", email: "bob@example.com" },
+  ]);
+  renderReport();
+
+  await screen.findByText("Moove");
+  const select = await screen.findByLabelText("Reviewer");
+  expect(select).toHaveValue("");
+  expect(screen.getByRole("option", { name: "Unassigned" })).toBeInTheDocument();
+  expect(screen.getByRole("option", { name: "alice@example.com" })).toBeInTheDocument();
+  expect(screen.getByRole("option", { name: "bob@example.com" })).toBeInTheDocument();
+});
+
+test("picking a reviewer calls setReviewReviewer and reflects the update", async () => {
+  const user = userEvent.setup();
+  getReview.mockResolvedValue(review);
+  getReviewers.mockResolvedValue([{ id: "u1", email: "alice@example.com" }]);
+  setReviewReviewer.mockResolvedValue({ ...review, reviewer_id: "u1" });
+  renderReport();
+
+  await screen.findByText("Moove");
+  const select = await screen.findByLabelText("Reviewer");
+  await user.selectOptions(select, "u1");
+
+  await waitFor(() => expect(setReviewReviewer).toHaveBeenCalledWith("r1", "u1"));
+  await waitFor(() => expect(select).toHaveValue("u1"));
+});
+
+test("shows the reviewer dropdown even for the user role, alongside the hidden Approval card", async () => {
+  getReview.mockResolvedValue(review);
+  getReviewers.mockResolvedValue([{ id: "u1", email: "alice@example.com" }]);
+  render(
+    <AuthContext.Provider value={{ user: { id: "u1", email: "user@example.com", role: "user" }, loading: false, login: jest.fn(), logout: jest.fn() }}>
+      <MemoryRouter initialEntries={["/reports/r1"]}>
+        <Routes><Route path="/reports/:reviewId" element={<ReviewReportPage />} /></Routes>
+      </MemoryRouter>
+    </AuthContext.Provider>
+  );
+
+  expect(await screen.findByLabelText("Reviewer")).toBeInTheDocument();
+});
+
+test("shows an error message when assigning a reviewer fails", async () => {
+  const user = userEvent.setup();
+  getReview.mockResolvedValue(review);
+  getReviewers.mockResolvedValue([{ id: "u1", email: "alice@example.com" }]);
+  setReviewReviewer.mockRejectedValue(new Error("network error"));
+  renderReport();
+
+  await screen.findByText("Moove");
+  const select = await screen.findByLabelText("Reviewer");
+  await user.selectOptions(select, "u1");
+
+  expect(await screen.findByText(/failed to update reviewer/i)).toBeInTheDocument();
 });

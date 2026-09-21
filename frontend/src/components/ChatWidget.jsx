@@ -1,8 +1,14 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import Markdown from "markdown-to-jsx";
 import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { ChatIcon, SpinnerIcon } from "../icons";
 import { sendChatMessage } from "../services/api";
+
+const DEFAULT_WIDTH = 360;
+const DEFAULT_HEIGHT = 480;
+const MIN_WIDTH = 320;
+const MIN_HEIGHT = 320;
 
 function formatDate(isoString) {
   return new Date(isoString).toLocaleDateString();
@@ -61,7 +67,41 @@ export default function ChatWidget() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [size, setSize] = useState({ width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT });
+  const dragRef = useRef(null);
   const navigate = useNavigate();
+
+  // The panel is anchored bottom-right (position: fixed; bottom/right), so
+  // the top-left corner is the one that actually moves as it resizes --
+  // native CSS `resize` always puts its handle at the bottom-right corner
+  // with no way to relocate it, so this drives width/height by hand from a
+  // handle placed where users actually expect to grab it.
+  useEffect(() => {
+    function handleMouseMove(event) {
+      if (!dragRef.current) return;
+      const { startX, startY, startWidth, startHeight } = dragRef.current;
+      const maxWidth = window.innerWidth * 0.75;
+      const maxHeight = window.innerHeight * 0.9;
+      setSize({
+        width: Math.min(maxWidth, Math.max(MIN_WIDTH, startWidth + (startX - event.clientX))),
+        height: Math.min(maxHeight, Math.max(MIN_HEIGHT, startHeight + (startY - event.clientY))),
+      });
+    }
+    function handleMouseUp() {
+      dragRef.current = null;
+    }
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, []);
+
+  function handleResizeStart(event) {
+    event.preventDefault();
+    dragRef.current = { startX: event.clientX, startY: event.clientY, startWidth: size.width, startHeight: size.height };
+  }
 
   async function handleSend(event) {
     event.preventDefault();
@@ -112,10 +152,25 @@ export default function ChatWidget() {
     <div
       className="card elev-md"
       style={{
-        position: "fixed", bottom: 24, right: 24, width: 360, height: 480,
+        position: "fixed", bottom: 24, right: 24, width: size.width, height: size.height,
         display: "flex", flexDirection: "column", padding: 0, overflow: "hidden", zIndex: 100,
       }}
     >
+      <div
+        role="presentation"
+        aria-label="Resize chat window"
+        onMouseDown={handleResizeStart}
+        style={{
+          position: "absolute", top: 0, left: 0, width: 18, height: 18,
+          cursor: "nwse-resize", zIndex: 101, display: "flex", alignItems: "flex-start", justifyContent: "flex-start",
+          color: "var(--color-text-muted)",
+        }}
+      >
+        <svg width="12" height="12" viewBox="0 0 12 12" style={{ margin: 3 }}>
+          <path d="M1 11 L11 1 M4.5 11 L11 4.5 M8 11 L11 8" stroke="currentColor" strokeWidth="1.3" fill="none" />
+        </svg>
+      </div>
+
       <div style={{
         display: "flex", alignItems: "center", justifyContent: "space-between",
         padding: "var(--space-3) var(--space-4)", borderBottom: "1px solid var(--color-divider)",
@@ -133,7 +188,7 @@ export default function ChatWidget() {
         )}
         {messages.map((message, index) => (
           <div key={index} style={{ textAlign: message.role === "user" ? "right" : "left" }}>
-            <p
+            <div
               className="card-body"
               style={{
                 display: "inline-block", margin: 0, padding: "8px 12px", borderRadius: 12, textAlign: "left",
@@ -141,8 +196,8 @@ export default function ChatWidget() {
                 color: message.role === "user" ? "#fff" : (message.isError ? "var(--color-brand-coral)" : "var(--color-text)"),
               }}
             >
-              {message.content}
-            </p>
+              {message.role === "assistant" ? <Markdown>{message.content}</Markdown> : message.content}
+            </div>
             {message.sources && message.sources.length > 0 && (
               <>
                 <SourcesTable sources={message.sources} onSelectReview={handleSelectReview} />

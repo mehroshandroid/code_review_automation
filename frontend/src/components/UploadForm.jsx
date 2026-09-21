@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import { FileIcon, ArrowRightIcon } from "../icons";
+import { useAuth } from "../context/AuthContext";
+import ClauseGuidanceEditor from "./ClauseGuidanceEditor";
 import { getCompileCheckMode, setCompileCheckMode } from "../services/compileCheckModeStorage";
-import { getSampleTemplates } from "../services/api";
+import { getSampleTemplates, getClausePreview } from "../services/api";
 
 export default function UploadForm({ onSubmit, disabled, disabledLabel = "Starting review…", showCompileCheckToggle = false, platformLabel = "Android" }) {
   const [sourceMode, setSourceMode] = useState("upload"); // upload | devops
@@ -28,6 +30,27 @@ export default function UploadForm({ onSubmit, disabled, disabledLabel = "Starti
 
   const usingDefaultTemplate = !!defaultTemplate && !useOwnTemplate;
 
+  const { user } = useAuth();
+  const canAdjustClauses = user?.role === "admin" || user?.role === "reviewer";
+  const [showClauseEditor, setShowClauseEditor] = useState(false);
+  const [clauseCategories, setClauseCategories] = useState(null);
+  const [clauseOverrides, setClauseOverrides] = useState({});
+
+  useEffect(() => {
+    if (!canAdjustClauses || !showClauseEditor) return;
+    const effectiveFile = usingDefaultTemplate ? null : excelTemplate;
+    if (!usingDefaultTemplate && !excelTemplate) {
+      setClauseCategories(null);
+      return;
+    }
+    let cancelled = false;
+    setClauseOverrides({});
+    getClausePreview({ platform: platformLabel, file: effectiveFile })
+      .then((categories) => { if (!cancelled) setClauseCategories(categories); })
+      .catch(() => { if (!cancelled) setClauseCategories(null); });
+    return () => { cancelled = true; };
+  }, [canAdjustClauses, showClauseEditor, usingDefaultTemplate, excelTemplate, platformLabel]);
+
   function handleSubmit(event) {
     event.preventDefault();
     if (sourceMode === "upload") {
@@ -50,6 +73,7 @@ export default function UploadForm({ onSubmit, disabled, disabledLabel = "Starti
       devopsRepoUrl: sourceMode === "devops" ? devopsRepoUrl : null,
       devopsPat: sourceMode === "devops" ? devopsPat : null,
       devopsBranch: sourceMode === "devops" ? (devopsBranch || null) : null,
+      clauseChecklistOverrides: clauseOverrides,
     });
   }
 
@@ -185,6 +209,23 @@ export default function UploadForm({ onSubmit, disabled, disabledLabel = "Starti
           )}
         </div>
       </div>
+
+      {canAdjustClauses && (
+        <div style={{ marginTop: "var(--space-4)" }}>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={() => setShowClauseEditor((current) => !current)}
+          >
+            {showClauseEditor ? "Hide" : "Adjust"} clause guidance for this review
+          </button>
+          {showClauseEditor && clauseCategories && (
+            <div style={{ marginTop: "var(--space-3)" }}>
+              <ClauseGuidanceEditor categories={clauseCategories} onChange={setClauseOverrides} />
+            </div>
+          )}
+        </div>
+      )}
 
       {showCompileCheckToggle && (
         <div style={{ marginTop: "var(--space-4)" }}>
