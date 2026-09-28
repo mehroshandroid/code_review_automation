@@ -92,3 +92,19 @@ async def test_logout_clears_the_session_so_me_then_rejects(test_sessionmaker):
 
     assert logout_response.status_code == 200
     assert me_response.status_code == 401
+
+
+def test_microsoft_login_redirects_to_the_authorization_url_and_sets_a_state_cookie(test_sessionmaker, monkeypatch):
+    captured = {}
+
+    def fake_get_authorization_url(state):
+        captured["state"] = state
+        return "https://login.microsoftonline.com/mock-tenant/authorize?mock=1"
+
+    monkeypatch.setattr(auth_module.microsoft_auth, "get_authorization_url", fake_get_authorization_url)
+
+    response = client.get("/api/auth/microsoft/login", follow_redirects=False)
+
+    assert response.status_code == 307
+    assert response.headers["location"] == "https://login.microsoftonline.com/mock-tenant/authorize?mock=1"
+    assert response.cookies["sso_state"] == captured["state"]

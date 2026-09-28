@@ -1,8 +1,11 @@
 import os
+import secrets
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 
+from app.auth import microsoft as microsoft_auth
 from app.auth.dependencies import COOKIE_NAME, get_current_user
 from app.auth.hashing import verify_password
 from app.auth.token import create_access_token
@@ -12,6 +15,8 @@ from app.db.session import new_session
 router = APIRouter()
 
 SEVEN_DAYS_SECONDS = 7 * 24 * 60 * 60
+SSO_STATE_COOKIE = "sso_state"
+SSO_STATE_MAX_AGE_SECONDS = 10 * 60
 
 
 class LoginRequest(BaseModel):
@@ -39,6 +44,18 @@ async def login(body: LoginRequest, response: Response):
         secure=_cookie_secure(), max_age=SEVEN_DAYS_SECONDS,
     )
     return _user_to_dict(user)
+
+
+@router.get("/api/auth/microsoft/login")
+async def microsoft_login():
+    state = secrets.token_urlsafe(24)
+    authorization_url = microsoft_auth.get_authorization_url(state)
+    redirect_response = RedirectResponse(url=authorization_url)
+    redirect_response.set_cookie(
+        key=SSO_STATE_COOKIE, value=state, httponly=True, samesite="lax",
+        secure=_cookie_secure(), max_age=SSO_STATE_MAX_AGE_SECONDS,
+    )
+    return redirect_response
 
 
 @router.post("/api/auth/logout")
