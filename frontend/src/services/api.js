@@ -59,6 +59,10 @@ export function getDownloadUrl(downloadPath) {
   return `${API_ORIGIN}${downloadPath}`;
 }
 
+export function getMicrosoftLoginUrl() {
+  return `${API_BASE_URL}/auth/microsoft/login`;
+}
+
 export async function createProject(name) {
   const response = await axios.post(`${API_BASE_URL}/projects`, { name });
   return response.data;
