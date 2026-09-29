@@ -1,5 +1,6 @@
 import os
 import secrets
+import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
@@ -56,6 +57,46 @@ async def microsoft_login():
         secure=_cookie_secure(), max_age=SSO_STATE_MAX_AGE_SECONDS,
     )
     return redirect_response
+
+
+@router.get("/api/auth/microsoft/callback")
+async def microsoft_callback(
+    request: Request, code: str | None = None, state: str | None = None, error: str | None = None,
+):
+    failure = RedirectResponse(url=f"{microsoft_auth.frontend_base_url()}/login?error=sso_failed")
+    failure.delete_cookie(SSO_STATE_COOKIE)
+
+    cookie_state = request.cookies.get(SSO_STATE_COOKIE)
+    if error or not code or not state or not cookie_state or state != cookie_state:
+        return failure
+
+    try:
+        claims = microsoft_auth.exchange_code_for_claims(code)
+    except ValueError:
+        return failure
+
+    email = claims.get("email") or claims.get("preferred_username")
+    if not email:
+        return failure
+
+    async with new_session() as session:
+        user = await crud.get_user_by_email(session, email)
+        if user is None:
+            user = await crud.create_user(
+                session, user_id=str(uuid.uuid4()), email=email, password_hash="", role="user",
+            )
+
+    if not user.is_active:
+        return failure
+
+    token = create_access_token(user.id)
+    success = RedirectResponse(url=f"{microsoft_auth.frontend_base_url()}/")
+    success.delete_cookie(SSO_STATE_COOKIE)
+    success.set_cookie(
+        key=COOKIE_NAME, value=token, httponly=True, samesite="lax",
+        secure=_cookie_secure(), max_age=SEVEN_DAYS_SECONDS,
+    )
+    return success
 
 
 @router.post("/api/auth/logout")
