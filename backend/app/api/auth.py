@@ -12,8 +12,10 @@ from app.auth.hashing import verify_password
 from app.auth.token import create_access_token
 from app.db import crud
 from app.db.session import new_session
+from app.utils.logger import get_logger
 
 router = APIRouter()
+logger = get_logger(__name__)
 
 SEVEN_DAYS_SECONDS = 7 * 24 * 60 * 60
 SSO_STATE_COOKIE = "sso_state"
@@ -67,16 +69,25 @@ async def microsoft_callback(
     failure.delete_cookie(SSO_STATE_COOKIE)
 
     cookie_state = request.cookies.get(SSO_STATE_COOKIE)
-    if error or not code or not state or not cookie_state or state != cookie_state:
+    if error:
+        logger.warning("Microsoft SSO callback: Microsoft reported an error: %s", error)
+        return failure
+    if not code or not state or not cookie_state or state != cookie_state:
+        logger.warning(
+            "Microsoft SSO callback: missing/mismatched state (has_code=%s, has_state=%s, has_cookie=%s, match=%s)",
+            bool(code), bool(state), bool(cookie_state), state == cookie_state,
+        )
         return failure
 
     try:
         claims = microsoft_auth.exchange_code_for_claims(code)
-    except ValueError:
+    except ValueError as exc:
+        logger.warning("Microsoft SSO callback: token exchange failed: %s", exc)
         return failure
 
     email = claims.get("email") or claims.get("preferred_username")
     if not email:
+        logger.warning("Microsoft SSO callback: no email or preferred_username claim in %s", sorted(claims.keys()))
         return failure
 
     async with new_session() as session:
@@ -87,6 +98,7 @@ async def microsoft_callback(
             )
 
     if not user.is_active:
+        logger.warning("Microsoft SSO callback: account for %s is deactivated", email)
         return failure
 
     token = create_access_token(user.id)
