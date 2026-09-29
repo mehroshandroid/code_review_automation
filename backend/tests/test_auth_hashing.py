@@ -18,3 +18,7 @@ def test_verify_password_returns_false_for_the_wrong_password():
 
 def test_hash_password_is_salted_so_the_same_password_hashes_differently(monkeypatch):
     assert hash_password("same password") != hash_password("same password")
+
+
+def test_verify_password_returns_false_instead_of_raising_for_a_malformed_hash():
+    assert verify_password("anything", "") is False

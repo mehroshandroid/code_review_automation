@@ -26,6 +26,11 @@ services:
       - ADMIN_PASSWORD=change-me-please
       - AUTH_SECRET_KEY=dev-only-secret-change-in-production
       - COOKIE_SECURE=false
+      - AZURE_AD_TENANT_ID=${AZURE_AD_TENANT_ID:-}
+      - AZURE_AD_CLIENT_ID=${AZURE_AD_CLIENT_ID:-}
+      - AZURE_AD_CLIENT_SECRET=${AZURE_AD_CLIENT_SECRET:-}
+      - AZURE_AD_REDIRECT_URI=${AZURE_AD_REDIRECT_URI:-http://localhost:8000/api/auth/microsoft/callback}
+      - FRONTEND_BASE_URL=http://localhost:3000
       - REVIEW_ARTIFACTS_DIR=/data/reviews
       - SAMPLE_TEMPLATES_DIR=/data/sample-templates
     volumes:
