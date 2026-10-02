@@ -253,6 +253,49 @@ cd frontend && npm start
 
 Without `AZURE_OPENAI_KEY` set, the backend runs in stub mode end-to-end — useful for exercising the full pipeline (extraction, analysis, Excel writing, frontend states) without hitting Azure OpenAI at all.
 
+### Optional: `mac_build_agent` for real iOS/Android compile-time checks
+
+A small FastAPI service that runs natively on your Mac (never in
+Docker), so the review pipeline can do real compile-time checks that
+need tooling only a real macOS machine has:
+
+- **iOS** — builds with `xcodebuild` (no Xcode CLI tools exist in a
+  Linux container).
+- **Android (local mode)** — builds with Gradle/Lint using your own
+  Android SDK, as a faster, non-emulated alternative to the Dockerized
+  `compiler` service (which is forced to `linux/amd64` and runs under
+  emulation on Apple Silicon).
+
+**Prerequisites:**
+- **iOS builds:** Xcode installed, with the command line tools set up
+  (`xcode-select -p` should print a path under `/Applications/Xcode.app`).
+- **Android local builds:** an Android SDK installed. The agent looks for
+  it via `$ANDROID_HOME`, then `$ANDROID_SDK_ROOT`, then
+  `~/Library/Android/sdk` (Android Studio's default install location) —
+  if you already have Android Studio set up, this just works.
+- Python 3.
+
+**Run it:**
+```bash
+cd mac_build_agent
+python3 -m venv venv               # one-time setup
+venv/bin/pip install -r requirements.txt
+
+venv/bin/uvicorn main:app --host 0.0.0.0 --port 8100
+```
+Leave this running in its own terminal tab while you use the app — the
+backend container is already configured (`MAC_BUILD_AGENT_URL` in
+`docker-compose.yml`) to reach it at `http://host.docker.internal:8100`.
+
+To confirm it's up: `curl http://localhost:8100/health` → `{"status":"ok"}`.
+
+If it's not running, nothing breaks: both checkers gracefully report
+`"status": "unavailable"` and the review still completes — clause 1.4
+just won't get a real compile-time score for that run. Selecting "Static
+file analysis" or the Docker-based "Compile-time lint" for Android never
+needs this agent at all. See `mac_build_agent/README.md` for the full
+endpoint contract, live build-log streaming, and disk/cache notes.
+
 ### Optional: "Claude CLI (local)" as an LLM provider
 
 Selecting **Claude CLI (local)** when starting a review routes scoring
