@@ -72,6 +72,16 @@ test("shows the previously-selected provider highlighted when models are availab
   await waitFor(() => expect(screen.getByRole("button", { name: "Ollama (local)" })).toHaveClass("btn-primary"));
 });
 
+test("shows a Claude CLI (local) provider option that can be selected", async () => {
+  const user = userEvent.setup();
+  renderDialog();
+  await screen.findByText("Android");
+
+  await user.click(screen.getByRole("button", { name: "Claude CLI (local)" }));
+
+  expect(screen.getByRole("button", { name: "Claude CLI (local)" })).toHaveClass("btn-primary");
+});
+
 test("creating a project via the dialog selects it and calls onProjectCreated", async () => {
   const user = userEvent.setup();
   const onProjectCreated = jest.fn();
