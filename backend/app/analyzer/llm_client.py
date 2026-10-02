@@ -1,4 +1,4 @@
-from app.analyzer import ollama_client, openai_client
+from app.analyzer import claude_cli_client, ollama_client, openai_client
 
 
 async def score_category(
@@ -9,6 +9,10 @@ async def score_category(
         return await ollama_client.score_category(
             category_name, sub_criteria, descriptions, code_snippets, model=model, platform=platform, checklists=checklists,
         )
+    if provider == "claude":
+        return await claude_cli_client.score_category(
+            category_name, sub_criteria, descriptions, code_snippets, platform=platform, checklists=checklists,
+        )
     return await openai_client.score_category(
         category_name, sub_criteria, descriptions, code_snippets, platform=platform, checklists=checklists,
     )
@@ -17,4 +21,6 @@ async def score_category(
 async def generate_general_remarks(provider: str, category_results: dict, model: str | None = None, platform: str = "Android") -> tuple:
     if provider == "ollama":
         return await ollama_client.generate_general_remarks(category_results, model=model, platform=platform)
+    if provider == "claude":
+        return await claude_cli_client.generate_general_remarks(category_results, platform=platform)
     return await openai_client.generate_general_remarks(category_results, platform=platform)
