@@ -252,3 +252,40 @@ cd frontend && npm start
 ```
 
 Without `AZURE_OPENAI_KEY` set, the backend runs in stub mode end-to-end — useful for exercising the full pipeline (extraction, analysis, Excel writing, frontend states) without hitting Azure OpenAI at all.
+
+### Optional: "Claude CLI (local)" as an LLM provider
+
+Selecting **Claude CLI (local)** when starting a review routes scoring
+through your own machine's already-authenticated `claude` CLI session
+(the same one you use interactively, e.g. in VS Code) instead of Azure
+OpenAI or Ollama. Nothing beyond your normal Claude usage gets billed —
+no API key, no separate account.
+
+**Prerequisite:** the `claude` CLI installed and logged in (`claude
+login`). If you can already run `claude` interactively, you're set — no
+extra account or key needed.
+
+**Run it** (native on your machine, never in Docker — it needs your
+locally authenticated session, which a container can't see):
+```bash
+cd claude_cli_agent
+python3 -m venv venv               # one-time setup
+venv/bin/pip install -r requirements.txt
+
+venv/bin/uvicorn main:app --host 0.0.0.0 --port 8200
+```
+Leave this running in its own terminal tab while you use the app — the
+backend container is already configured (`CLAUDE_CLI_AGENT_URL` in
+`docker-compose.yml`) to reach it at `http://host.docker.internal:8200`.
+
+If it's not running, nothing breaks: selecting that provider just
+produces a placeholder `[STUB]`-prefixed score/remark for each category,
+the same way Azure OpenAI degrades to stub mode with no key configured.
+
+See `claude_cli_agent/README.md` for exactly what each call can and can't
+do (tool access is disabled and confined to a throwaway temp directory),
+and for real cost/latency expectations — a plain CLI invocation loads
+Claude Code's default context before answering at all, so this provider
+is noticeably slower and pricier per review than Azure/Ollama. Pick it
+when you specifically want Claude's judgment on a review, not as a
+default.
