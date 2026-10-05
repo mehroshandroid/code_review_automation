@@ -410,6 +410,19 @@ async def test_get_latest_review_for_platform_returns_none_when_no_reviews_exist
     assert await crud.get_latest_review_for_platform(session, "Android") is None
 
 
+async def test_delete_review_removes_it_and_returns_true(session):
+    await _persist(session, "r1")
+
+    deleted = await crud.delete_review(session, "r1")
+
+    assert deleted is True
+    assert await crud.get_review_by_id(session, "r1") is None
+
+
+async def test_delete_review_returns_false_when_not_found(session):
+    assert await crud.delete_review(session, "does-not-exist") is False
+
+
 async def test_list_reviews_orders_newest_first(session):
     await _persist(session, "r1", created_at=datetime(2025, 6, 1, tzinfo=timezone.utc))
     await _persist(session, "r2", created_at=datetime(2025, 1, 1, tzinfo=timezone.utc))
