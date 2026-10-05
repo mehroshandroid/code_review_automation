@@ -63,7 +63,7 @@ degrades to stub mode when no key is configured.
 Every call runs as:
 
 ```
-claude --print --output-format json --max-turns 1 --restricted --permission-prompts none "<prompt>"
+claude --print --output-format json --max-turns 10 --max-budget-usd 1.0 --restricted --permission-prompts none "<prompt>"
 ```
 
 from a **freshly created, empty temporary directory** that's deleted
@@ -74,6 +74,16 @@ filesystem (not inside Docker), there's nothing there for it to read, and
 nothing it writes outlives the request. `--permission-prompts none`
 denies anything that would otherwise need an answer, so a call can never
 hang waiting for a human who isn't present.
+
+`--max-turns` is intentionally generous (10), not a low number: Claude's
+own internal response construction can genuinely need several turns to
+finalize an answer to a single, non-agentic question, and a low guessed
+limit just truncates the response mid-way (`error_max_turns`, empty
+result) -- confirmed by reproducing exactly that failure against real
+scoring prompts this app sends. `--max-budget-usd 1.0` is the real safety
+backstop instead, capping spend per call rather than guessing a turn
+count; `--restricted` already means there's no tool-use loop for a high
+turn count to meaningfully enable.
 
 ## Cost and latency, in practice
 

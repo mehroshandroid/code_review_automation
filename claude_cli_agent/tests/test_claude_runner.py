@@ -85,7 +85,7 @@ async def test_run_claude_builds_the_expected_command_and_uses_an_empty_cwd(monk
     assert result == {"status": "ok", "result": "ok"}
     assert captured["command"] == [
         "claude", "--print", "--output-format", "json",
-        "--max-turns", "1", "--restricted", "--permission-prompts", "none",
+        "--max-turns", "10", "--max-budget-usd", "1.0", "--restricted", "--permission-prompts", "none",
         "score this code",
     ]
     assert captured["cwd_is_dir"] is True

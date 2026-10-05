@@ -1,11 +1,24 @@
 import asyncio
 import json
+import logging
 import shutil
 import tempfile
 from pathlib import Path
 
 TIMEOUT_SECONDS = 300
-MAX_TURNS = 1
+# Claude's own internal response construction can genuinely need several
+# turns to finalize an answer to a single, non-agentic question -- a real
+# scoring prompt was reproduced needing 5 turns before finishing (not a
+# tool-use loop; --restricted blocks all tool use regardless of turn
+# count). A low, guessed turn limit just truncates a response mid-way
+# (confirmed: max_turns=1 and max_turns=3 both failed with
+# "error_max_turns" and an empty result on prompts this app actually
+# sends). Bounding cost via --max-budget-usd instead of a turn count is
+# the real safety backstop here; MAX_TURNS stays generous so normal
+# completion is never cut short.
+MAX_TURNS = 10
+MAX_BUDGET_USD = 1.00
+logger = logging.getLogger("uvicorn.error")
 
 
 async def _run_subprocess(command: list, cwd: Path, timeout_seconds: float) -> dict:
@@ -33,15 +46,19 @@ async def _run_subprocess(command: list, cwd: Path, timeout_seconds: float) -> d
 def _parse_claude_output(run_result: dict) -> dict:
     if run_result["returncode"] != 0:
         message = run_result["stderr"].strip() or "claude CLI exited with a non-zero status."
+        logger.warning("claude_runner: claude CLI exited %s: %s", run_result["returncode"], message)
         return {"status": "error", "message": message}
 
     try:
         parsed = json.loads(run_result["stdout"])
     except ValueError:
+        logger.warning("claude_runner: claude CLI stdout wasn't valid JSON: %r", run_result["stdout"][:2000])
         return {"status": "error", "message": "claude CLI returned output that wasn't valid JSON."}
 
     if parsed.get("is_error"):
-        return {"status": "error", "message": parsed.get("result") or "claude CLI reported an error."}
+        message = parsed.get("result") or "claude CLI reported an error."
+        logger.warning("claude_runner: claude CLI reported is_error (subtype=%s): %s", parsed.get("subtype"), message)
+        return {"status": "error", "message": message}
 
     return {"status": "ok", "result": parsed.get("result", "")}
 
@@ -66,7 +83,8 @@ async def run_claude(prompt: str) -> dict:
     work_dir = Path(tempfile.mkdtemp(prefix="claude_cli_"))
     command = [
         "claude", "--print", "--output-format", "json",
-        "--max-turns", str(MAX_TURNS), "--restricted", "--permission-prompts", "none",
+        "--max-turns", str(MAX_TURNS), "--max-budget-usd", str(MAX_BUDGET_USD),
+        "--restricted", "--permission-prompts", "none",
         prompt,
     ]
     try:
