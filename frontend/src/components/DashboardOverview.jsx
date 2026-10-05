@@ -31,16 +31,18 @@ export default function DashboardOverview({ reviews }) {
   return (
     <div className="card" style={{ padding: 20 }}>
       <div className="card-kicker-muted" style={{ marginBottom: "var(--space-3)" }}>Overview</div>
-      <div style={{ display: "flex", gap: "var(--space-5)", flexWrap: "wrap", alignItems: "flex-start" }}>
-        <div style={{ display: "grid", justifyItems: "center" }}>
+      <div style={{ display: "flex", gap: "var(--space-5)", alignItems: "flex-start" }}>
+        <div style={{ display: "grid", justifyItems: "center", flexShrink: 0 }}>
           <ProgressRing value={overallAverage} label="Final Score" size={250} strokeWidth={16} />
           <p className="card-body" style={{ margin: "6px 0 0" }}>
             Based on {scored.length} review{scored.length === 1 ? "" : "s"}
           </p>
         </div>
-        <div style={{ display: "flex", gap: "var(--space-4)", flexWrap: "wrap", alignItems: "flex-start" }}>
+        <div style={{ display: "flex", gap: "var(--space-4)", alignItems: "flex-start", overflowX: "auto", minWidth: 0, paddingBottom: 8 }}>
           {categoryAverages.map(({ name, average: categoryAverage }) => (
-            <ProgressRing key={name} value={categoryAverage} label={name} size={150} strokeWidth={10} />
+            <div key={name} style={{ flexShrink: 0 }}>
+              <ProgressRing value={categoryAverage} label={name} size={150} strokeWidth={10} />
+            </div>
           ))}
         </div>
       </div>
