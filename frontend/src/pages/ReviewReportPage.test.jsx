@@ -2,8 +2,14 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import ReviewReportPage from "./ReviewReportPage";
-import { getReview, updateReview, getReviewers, setReviewReviewer } from "../services/api";
+import { getReview, updateReview, getReviewers, setReviewReviewer, deleteReview } from "../services/api";
 import { AuthContext } from "../context/AuthContext";
+
+const mockNavigate = jest.fn();
+jest.mock("react-router-dom", () => ({
+  ...jest.requireActual("react-router-dom"),
+  useNavigate: () => mockNavigate,
+}));
 
 jest.mock("../services/api", () => ({
   ...jest.requireActual("../services/api"),
@@ -11,10 +17,12 @@ jest.mock("../services/api", () => ({
   updateReview: jest.fn(),
   getReviewers: jest.fn(),
   setReviewReviewer: jest.fn(),
+  deleteReview: jest.fn(),
 }));
 
 beforeEach(() => {
   getReviewers.mockResolvedValue([]);
+  mockNavigate.mockClear();
 });
 
 function renderReport(reviewId = "r1") {
@@ -38,6 +46,8 @@ const review = {
   total_score_pct: 82.5,
   llm_provider: "azure",
   llm_model: null,
+  compile_check_mode: "compiler",
+  source: "upload",
   has_workbook: true,
   category_scores: [
     { id: "1", name: "Structure", percent_points: 100, sub_criteria: [{ id: "1.1", description: "Naming", score: 1, remark: "Good" }] },
@@ -265,4 +275,53 @@ test("shows an error message when assigning a reviewer fails", async () => {
   await user.selectOptions(select, "u1");
 
   expect(await screen.findByText(/failed to update reviewer/i)).toBeInTheDocument();
+});
+
+test("shows the review metadata bar with the LLM provider and compile-check mode", async () => {
+  getReview.mockResolvedValue(review);
+  renderReport();
+
+  await screen.findByText("Moove");
+  expect(screen.getByText("Azure OpenAI")).toBeInTheDocument();
+  expect(screen.getByText("Compile-check: Docker")).toBeInTheDocument();
+});
+
+test("shows a Delete review button for the admin role, and deleting navigates to the dashboard", async () => {
+  const user = userEvent.setup();
+  getReview.mockResolvedValue(review);
+  deleteReview.mockResolvedValue();
+  renderReport();
+
+  await screen.findByText("Moove");
+  await user.click(screen.getByRole("button", { name: /delete review/i }));
+
+  await waitFor(() => expect(deleteReview).toHaveBeenCalledWith("r1"));
+  await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith("/"));
+});
+
+test("hides the Delete review button for the reviewer role", async () => {
+  getReview.mockResolvedValue(review);
+  render(
+    <AuthContext.Provider value={{ user: { id: "u1", email: "reviewer@example.com", role: "reviewer" }, loading: false, login: jest.fn(), logout: jest.fn() }}>
+      <MemoryRouter initialEntries={["/reports/r1"]}>
+        <Routes><Route path="/reports/:reviewId" element={<ReviewReportPage />} /></Routes>
+      </MemoryRouter>
+    </AuthContext.Provider>
+  );
+
+  await screen.findByText("Moove");
+  expect(screen.queryByRole("button", { name: /delete review/i })).not.toBeInTheDocument();
+});
+
+test("shows an error message when deleting the review fails", async () => {
+  const user = userEvent.setup();
+  getReview.mockResolvedValue(review);
+  deleteReview.mockRejectedValue(new Error("network error"));
+  renderReport();
+
+  await screen.findByText("Moove");
+  await user.click(screen.getByRole("button", { name: /delete review/i }));
+
+  expect(await screen.findByText(/failed to delete review/i)).toBeInTheDocument();
+  expect(mockNavigate).not.toHaveBeenCalled();
 });

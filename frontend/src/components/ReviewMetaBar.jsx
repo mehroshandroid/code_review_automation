@@ -4,8 +4,13 @@ const COMPILE_CHECK_LABELS = {
   static: "Static",
 };
 
+const LLM_LABELS = {
+  ollama: (llmModel) => `Ollama (${llmModel})`,
+  claude: () => "Claude CLI (local)",
+};
+
 export default function ReviewMetaBar({ llmProvider, llmModel, source, compileCheckMode }) {
-  const llmLabel = llmProvider === "ollama" ? `Ollama (${llmModel})` : "Azure OpenAI";
+  const llmLabel = (LLM_LABELS[llmProvider] || (() => "Azure OpenAI"))(llmModel);
   const sourceLabel = source === "devops" ? "Azure DevOps" : "Uploaded ZIP";
   const compileCheckLabel = COMPILE_CHECK_LABELS[compileCheckMode] || "Static";
 
