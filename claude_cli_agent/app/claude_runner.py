@@ -60,7 +60,7 @@ def _parse_claude_output(run_result: dict) -> dict:
         logger.warning("claude_runner: claude CLI reported is_error (subtype=%s): %s", parsed.get("subtype"), message)
         return {"status": "error", "message": message}
 
-    return {"status": "ok", "result": parsed.get("result", "")}
+    return {"status": "ok", "result": parsed.get("result", ""), "usage": parsed.get("usage", {})}
 
 
 async def run_claude(prompt: str) -> dict:
@@ -77,8 +77,10 @@ async def run_claude(prompt: str) -> dict:
     for permission, so this never hangs waiting for a human who isn't
     there.
 
-    Returns {"status": "ok", "result": str} or
-    {"status": "error", "message": str}.
+    Returns {"status": "ok", "result": str, "usage": dict} or
+    {"status": "error", "message": str}. `usage` is Claude's own token
+    accounting, passed through verbatim (input_tokens,
+    cache_creation_input_tokens, cache_read_input_tokens, output_tokens).
     """
     work_dir = Path(tempfile.mkdtemp(prefix="claude_cli_"))
     command = [

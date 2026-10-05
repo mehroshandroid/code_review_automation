@@ -27,6 +27,32 @@ def _empty_tokens() -> dict:
     return {"prompt_tokens": None, "completion_tokens": None, "total_tokens": None, "cached_tokens": None}
 
 
+def _extract_usage(response: dict) -> dict:
+    """claude_cli_agent passes Claude's own usage object through verbatim
+    (input_tokens, cache_creation_input_tokens, cache_read_input_tokens,
+    output_tokens) -- there is no single "prompt_tokens" field the way
+    Azure/Ollama's chat-completions-shaped responses have one, since
+    Claude separates cached vs. freshly-processed context. prompt_tokens
+    here is the sum of all three input-side counts (cache state doesn't
+    change that they were all part of the prompt); cached_tokens is
+    specifically cache_read_input_tokens, mirroring Azure's
+    prompt_tokens_details.cached_tokens (tokens served from cache rather
+    than freshly processed)."""
+    usage = response.get("usage")
+    if not usage:
+        return _empty_tokens()
+    prompt_tokens = (
+        usage.get("input_tokens", 0) + usage.get("cache_creation_input_tokens", 0) + usage.get("cache_read_input_tokens", 0)
+    )
+    completion_tokens = usage.get("output_tokens", 0)
+    return {
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "total_tokens": prompt_tokens + completion_tokens,
+        "cached_tokens": usage.get("cache_read_input_tokens", 0),
+    }
+
+
 async def _ask(prompt: str) -> dict:
     url = f"{_base_url()}/ask"
     try:
@@ -45,9 +71,10 @@ async def score_category(
 ) -> tuple:
     instructions = category_instructions(category_name, sub_criteria, descriptions, platform, checklists=checklists)
     prompt = f"{code_context_message(code_snippets, platform)}\n\n{instructions}"
-    prompt_info = {"label": category_name, "prompt_text": instructions, "tokens": _empty_tokens()}
 
     response = await _ask(prompt)
+    prompt_info = {"label": category_name, "prompt_text": instructions, "tokens": _extract_usage(response)}
+
     if response.get("status") != "ok":
         message = response.get("message", "claude_cli_agent error")
         logger.warning("claude_cli_client: score_category(%s) got a non-ok response: %s", category_name, message)
@@ -69,9 +96,10 @@ async def score_category(
 async def generate_general_remarks(category_results: dict, platform: str = "Android") -> tuple:
     system_prompt = general_remarks_prompt(platform)
     prompt = f"{system_prompt}\n\n{build_findings_summary(category_results)}"
-    prompt_info = {"label": "General remarks", "prompt_text": system_prompt, "tokens": _empty_tokens()}
 
     response = await _ask(prompt)
+    prompt_info = {"label": "General remarks", "prompt_text": system_prompt, "tokens": _extract_usage(response)}
+
     if response.get("status") != "ok":
         message = response.get("message", "claude_cli_agent error")
         logger.warning("claude_cli_client: generate_general_remarks got a non-ok response: %s", message)

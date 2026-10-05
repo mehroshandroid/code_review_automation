@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pytest
@@ -40,7 +41,21 @@ async def test_run_subprocess_returns_an_error_result_when_the_executable_does_n
 def test_parse_claude_output_extracts_the_result_text_on_success():
     run_result = {"returncode": 0, "stdout": '{"is_error": false, "result": "the answer"}', "stderr": ""}
 
-    assert _parse_claude_output(run_result) == {"status": "ok", "result": "the answer"}
+    assert _parse_claude_output(run_result) == {"status": "ok", "result": "the answer", "usage": {}}
+
+
+def test_parse_claude_output_passes_through_the_usage_object():
+    stdout = json.dumps({
+        "is_error": False, "result": "the answer",
+        "usage": {"input_tokens": 2, "cache_creation_input_tokens": 25213, "cache_read_input_tokens": 0, "output_tokens": 12},
+    })
+    run_result = {"returncode": 0, "stdout": stdout, "stderr": ""}
+
+    result = _parse_claude_output(run_result)
+
+    assert result["usage"] == {
+        "input_tokens": 2, "cache_creation_input_tokens": 25213, "cache_read_input_tokens": 0, "output_tokens": 12,
+    }
 
 
 def test_parse_claude_output_reports_error_on_nonzero_exit():
@@ -82,7 +97,7 @@ async def test_run_claude_builds_the_expected_command_and_uses_an_empty_cwd(monk
 
     result = await run_claude("score this code")
 
-    assert result == {"status": "ok", "result": "ok"}
+    assert result == {"status": "ok", "result": "ok", "usage": {}}
     assert captured["command"] == [
         "claude", "--print", "--output-format", "json",
         "--max-turns", "10", "--max-budget-usd", "1.0", "--restricted", "--permission-prompts", "none",
