@@ -38,7 +38,7 @@ export default function DashboardOverview({ reviews }) {
             Based on {scored.length} review{scored.length === 1 ? "" : "s"}
           </p>
         </div>
-        <div style={{ display: "flex", gap: "var(--space-4)", alignItems: "flex-start", overflowX: "auto", minWidth: 0, paddingBottom: 8 }}>
+        <div style={{ display: "flex", gap: "var(--space-4)", flexWrap: "wrap", alignItems: "flex-start", flex: 1, minWidth: 0 }}>
           {categoryAverages.map(({ name, average: categoryAverage }) => (
             <div key={name} style={{ flexShrink: 0 }}>
               <ProgressRing value={categoryAverage} label={name} size={150} strokeWidth={10} />
