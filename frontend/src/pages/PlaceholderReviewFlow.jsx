@@ -9,7 +9,7 @@ export default function PlaceholderReviewFlow({ platform }) {
       <main style={{ maxWidth: 920, margin: "0 auto", padding: "64px 24px 96px" }}>
         <header style={{ marginBottom: "var(--space-6)" }}>
           <h1 style={{ fontFamily: "var(--font-heading)", fontWeight: "var(--font-heading-weight)", fontSize: 40, lineHeight: 1.1, letterSpacing: "-0.02em", margin: "0 0 12px" }}>
-            {platform.label} Code Review Automation
+            CodeAssure for {platform.label}
           </h1>
         </header>
 

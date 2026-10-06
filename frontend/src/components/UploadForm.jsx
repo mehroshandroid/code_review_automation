@@ -86,7 +86,7 @@ export default function UploadForm({ onSubmit, disabled, disabledLabel = "Starti
     (usingDefaultTemplate || !!excelTemplate) && (sourceMode === "upload" ? !!androidZip : !!devopsRepoUrl && !!devopsPat);
 
   return (
-    <form onSubmit={handleSubmit} className="card elev-md" style={{ padding: 32 }}>
+    <form onSubmit={handleSubmit} className="card elev-md" style={{ padding: 32 }} autoComplete="off">
       <div className="card-kicker">Step 1 of 2</div>
       <div className="card-title" style={{ fontSize: 20 }}>Upload project files</div>
       <p className="card-body">Both a project source and a template are required to start a review.</p>
@@ -133,8 +133,12 @@ export default function UploadForm({ onSubmit, disabled, disabledLabel = "Starti
               <label htmlFor="devopsRepoUrl">Repo URL</label>
               <input
                 id="devopsRepoUrl"
+                name="devopsRepoUrl"
                 type="text"
                 className="input"
+                autoComplete="off"
+                data-1p-ignore
+                data-lpignore="true"
                 placeholder="https://dev.azure.com/org/project/_git/repo"
                 disabled={disabled}
                 value={devopsRepoUrl}
@@ -145,8 +149,13 @@ export default function UploadForm({ onSubmit, disabled, disabledLabel = "Starti
               <label htmlFor="devopsPat">Personal Access Token</label>
               <input
                 id="devopsPat"
+                name="devopsPat"
                 type="password"
                 className="input"
+                // "new-password" stops browsers autofilling the saved app login into the PAT/URL pair
+                autoComplete="new-password"
+                data-1p-ignore
+                data-lpignore="true"
                 disabled={disabled}
                 value={devopsPat}
                 onChange={(event) => setDevopsPat(event.target.value)}
@@ -156,8 +165,10 @@ export default function UploadForm({ onSubmit, disabled, disabledLabel = "Starti
               <label htmlFor="devopsBranch">Branch (optional)</label>
               <input
                 id="devopsBranch"
+                name="devopsBranch"
                 type="text"
                 className="input"
+                autoComplete="off"
                 placeholder="default branch"
                 disabled={disabled}
                 value={devopsBranch}

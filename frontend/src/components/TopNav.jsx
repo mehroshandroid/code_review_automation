@@ -10,7 +10,7 @@ export default function TopNav() {
             <path d="M20 6 9 17l-5-5" />
           </svg>
         </span>
-        <span className="nav-brand">Code Review Automation</span>
+        <span className="nav-brand">CodeAssure</span>
       </Link>
       <div style={{ marginLeft: "auto", display: "flex", gap: "var(--space-2)", alignItems: "center" }}>
         <NavActions />

@@ -25,7 +25,7 @@ function renderPlaceholder() {
 
 test("renders the platform's label in the header and banner", () => {
   renderPlaceholder();
-  expect(screen.getByRole("heading", { name: "iOS Code Review Automation" })).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "CodeAssure for iOS" })).toBeInTheDocument();
   expect(screen.getByText("iOS support is on the way")).toBeInTheDocument();
 });
 

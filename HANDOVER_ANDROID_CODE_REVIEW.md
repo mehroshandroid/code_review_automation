@@ -1,4 +1,4 @@
-# Android Code Review Automation System - Handover Document
+# CodeAssure (Android) - Handover Document
 
 **Project Owner:** Mehrosh  
 **Status:** POC (Production-ready)  

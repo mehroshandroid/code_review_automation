@@ -120,7 +120,7 @@ test("shows the project name in the header once progress data has it, falling ba
   });
 
   renderFlow();
-  expect(screen.getByRole("heading", { name: "Android Code Review Automation" })).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "CodeAssure for Android" })).toBeInTheDocument();
 
   await act(async () => {
     await uploadValidFiles(user);
@@ -129,7 +129,7 @@ test("shows the project name in the header once progress data has it, falling ba
   });
 
   expect(screen.getByRole("heading", { name: "MyAndroidApp" })).toBeInTheDocument();
-  expect(screen.queryByRole("heading", { name: "Android Code Review Automation" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "CodeAssure for Android" })).not.toBeInTheDocument();
 });
 
 test("shows an error message when review creation fails", async () => {
@@ -269,7 +269,7 @@ test("shows the given platform's label in the header and zip picker before any p
       <AndroidReviewFlow platform={{ id: "ios", label: "iOS" }} />
     </MemoryRouter>
   );
-  expect(screen.getByRole("heading", { name: "iOS Code Review Automation" })).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "CodeAssure for iOS" })).toBeInTheDocument();
   expect(screen.getByText(/upload your iOS project/i)).toBeInTheDocument();
   expect(screen.getByLabelText(/ios project/i)).toBeInTheDocument();
 });

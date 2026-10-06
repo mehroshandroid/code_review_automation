@@ -85,7 +85,7 @@ export default function AndroidReviewFlow({ platform = { id: "android", label: "
         <header style={{ marginBottom: "var(--space-6)" }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 14, flexWrap: "wrap", marginBottom: 10 }}>
             <h1 style={{ fontFamily: "var(--font-heading)", fontWeight: "var(--font-heading-weight)", fontSize: 40, lineHeight: 1.1, letterSpacing: "-0.02em", margin: 0 }}>
-              {progressData?.project_name || `${platform.label} Code Review Automation`}
+              {progressData?.project_name || `CodeAssure for ${platform.label}`}
             </h1>
             {reviewMeta && (
               <ReviewMetaBar

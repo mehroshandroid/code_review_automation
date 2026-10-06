@@ -8,7 +8,7 @@ test("renders the brand and Home link, both pointing at /", () => {
       <TopNav />
     </MemoryRouter>
   );
-  expect(screen.getByText("Code Review Automation").closest("a")).toHaveAttribute("href", "/");
+  expect(screen.getByText("CodeAssure").closest("a")).toHaveAttribute("href", "/");
   expect(screen.getByText("← Home")).toHaveAttribute("href", "/");
 });
 

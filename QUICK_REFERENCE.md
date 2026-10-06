@@ -1,4 +1,4 @@
-# Android Code Review Automation - Quick Reference
+# CodeAssure (Android) - Quick Reference
 
 ## 📊 Review Scoring Structure
 
