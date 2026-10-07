@@ -18,7 +18,7 @@ export default function DashboardFilters({
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showRenameDialog, setShowRenameDialog] = useState(false);
   const { user } = useAuth();
-  const canRename = hasPermission(user, "projects.rename");
+  const canRename = hasPermission(user, "projects.edit");
   const canCreate = hasPermission(user, "projects.create");
 
   const yearOptions = years.map((y) => ({ value: y, label: String(y) }));

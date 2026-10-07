@@ -7,13 +7,15 @@ import LoginPage from "./pages/LoginPage";
 import UsersPage from "./pages/UsersPage";
 import MyReviewsPage from "./pages/MyReviewsPage";
 import ProjectsPage from "./pages/ProjectsPage";
+import QuarterlyDashboardPage from "./pages/QuarterlyDashboardPage";
 import { DashboardOrHome, RequireAuth, RequirePermission } from "./components/RouteGuards";
 
 export default function AppRoutes() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
-      <Route path="/" element={<RequireAuth><DashboardOrHome><ProjectDashboardPage /></DashboardOrHome></RequireAuth>} />
+      <Route path="/" element={<RequireAuth><DashboardOrHome quarterly={<QuarterlyDashboardPage />}><ProjectDashboardPage /></DashboardOrHome></RequireAuth>} />
+      <Route path="/quarterly" element={<RequirePermission anyOf={["cycles.view"]}><QuarterlyDashboardPage /></RequirePermission>} />
       <Route path="/review/:platform" element={<RequirePermission anyOf={["reviews.create"]}><ReviewPage /></RequirePermission>} />
       <Route path="/reports/:reviewId" element={<RequireAuth><ReviewReportPage /></RequireAuth>} />
       <Route path="/my-reviews" element={<RequirePermission anyOf={["my_reviews.view"]}><MyReviewsPage /></RequirePermission>} />

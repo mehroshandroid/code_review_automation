@@ -13,7 +13,7 @@ function renderAt(path, user, element) {
           <Route path="/my-reviews" element={<div>my reviews page</div>} />
           <Route path="/projects" element={<div>projects page</div>} />
           <Route path="/guarded" element={element} />
-          <Route path="/" element={<RequireAuth><DashboardOrHome><div>dashboard</div></DashboardOrHome></RequireAuth>} />
+          <Route path="/" element={<RequireAuth><DashboardOrHome quarterly={<div>quarterly dashboard</div>}><div>dashboard</div></DashboardOrHome></RequireAuth>} />
         </Routes>
       </MemoryRouter>
     </AuthContext.Provider>
@@ -40,7 +40,7 @@ test.each([
   ["management", "dashboard"],
   ["project_manager", "dashboard"],
   ["reviewer", "my reviews page"],
-  ["coordinator", "projects page"],
+  ["coordinator", "quarterly dashboard"],
 ])("%s lands on %s from /", (role, expected) => {
   renderAt("/", userWithRole(role));
   expect(screen.getByText(expected)).toBeInTheDocument();

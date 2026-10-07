@@ -247,3 +247,18 @@ export async function setProjectManagers(projectId, userIds) {
 export async function deleteProject(projectId) {
   await axios.delete(`${API_BASE_URL}/projects/${projectId}`);
 }
+
+export async function getQuarterly(year) {
+  const response = await axios.get(`${API_BASE_URL}/quarterly`, { params: { year } });
+  return response.data;
+}
+
+export async function initiateCycle(projectId, { year, quarter, assignments }) {
+  const response = await axios.post(`${API_BASE_URL}/projects/${projectId}/cycles`, { year, quarter, assignments });
+  return response.data;
+}
+
+export async function setProjectPlatforms(projectId, platforms) {
+  const response = await axios.put(`${API_BASE_URL}/projects/${projectId}/platforms`, { platforms });
+  return response.data;
+}

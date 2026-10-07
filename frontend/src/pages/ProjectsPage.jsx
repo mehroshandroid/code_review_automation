@@ -93,7 +93,7 @@ export default function ProjectsPage() {
                     <td>{project.review_count}</td>
                     <td>{new Date(project.created_at).toLocaleDateString()}</td>
                     <td style={{ whiteSpace: "nowrap", textAlign: "right" }}>
-                      {can("projects.rename") && (
+                      {can("projects.edit") && (
                         <button type="button" className="btn btn-ghost" aria-label={`Rename ${project.name}`} onClick={() => setRenaming(project)}>Rename</button>
                       )}
                       {can("projects.assign_pm") && (
