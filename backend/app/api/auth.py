@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from app.auth import microsoft as microsoft_auth
 from app.auth.dependencies import COOKIE_NAME, get_current_user
 from app.auth.hashing import verify_password
+from app.auth.permissions import HOME_PATHS, PROJECT_MANAGER, permissions_for
 from app.auth.token import create_access_token
 from app.db import crud
 from app.db.session import new_session
@@ -32,7 +33,11 @@ def _cookie_secure() -> bool:
 
 
 def _user_to_dict(user) -> dict:
-    return {"id": user.id, "email": user.email, "role": user.role}
+    return {
+        "id": user.id, "email": user.email, "role": user.role, "name": user.name,
+        "home_path": HOME_PATHS.get(user.role, "/"),
+        "permissions": permissions_for(user),
+    }
 
 
 @router.post("/api/auth/login")
@@ -90,12 +95,16 @@ async def microsoft_callback(
         logger.warning("Microsoft SSO callback: no email or preferred_username claim in %s", sorted(claims.keys()))
         return failure
 
+    display_name = claims.get("name")
     async with new_session() as session:
         user = await crud.get_user_by_email(session, email)
         if user is None:
             user = await crud.create_user(
-                session, user_id=str(uuid.uuid4()), email=email, password_hash="", role="user",
+                session, user_id=str(uuid.uuid4()), email=email, password_hash="",
+                role=PROJECT_MANAGER, name=display_name,
             )
+        elif not user.name and display_name:
+            user = await crud.update_user(session, user.id, name=display_name)
 
     if not user.is_active:
         logger.warning("Microsoft SSO callback: account for %s is deactivated", email)

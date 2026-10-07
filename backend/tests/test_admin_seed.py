@@ -43,7 +43,7 @@ async def test_skips_seeding_when_a_user_already_exists(test_sessionmaker, monke
     monkeypatch.setenv("ADMIN_EMAIL", "admin@example.com")
     monkeypatch.setenv("ADMIN_PASSWORD", "correct horse battery staple")
     async with test_sessionmaker() as session:
-        await crud.create_user(session, user_id="existing", email="already@example.com", password_hash="h", role="user")
+        await crud.create_user(session, user_id="existing", email="already@example.com", password_hash="h", role="reviewer")
 
     await main._seed_admin_if_needed()
 
