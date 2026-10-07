@@ -6,6 +6,7 @@ import ReviewMetaBar from "../components/ReviewMetaBar";
 import { DownloadIcon } from "../icons";
 import { getReview, getDownloadUrl, updateReview, getReviewers, setReviewReviewer, deleteReview } from "../services/api";
 import { useAuth } from "../context/AuthContext";
+import { hasPermission } from "../permissions";
 
 const STATUS_LABELS = {
   pending_approval: "Pending approval",
@@ -39,6 +40,8 @@ export default function ReviewReportPage() {
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const canAssignReviewer = hasPermission(user, "reviews.assign_reviewer");
 
   useEffect(() => {
     let cancelled = false;
@@ -52,12 +55,13 @@ export default function ReviewReportPage() {
   }, [reviewId]);
 
   useEffect(() => {
+    if (!canAssignReviewer) return undefined;
     let cancelled = false;
     getReviewers()
       .then((result) => { if (!cancelled) setReviewers(result); })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, []);
+  }, [canAssignReviewer]);
 
   async function handleChangeReviewer(event) {
     const reviewerId = event.target.value || null;
@@ -145,9 +149,9 @@ export default function ReviewReportPage() {
     }
   }
 
-  const { user } = useAuth();
-  const canApprove = review && review.status !== "error" && review.category_scores.length > 0
-    && user && (user.role === "admin" || user.role === "reviewer");
+  const isAssignedReviewer = !!review && !!user && review.reviewer_id === user.id;
+  const canEditReview = hasPermission(user, "reviews.edit") || (hasPermission(user, "reviews.finalize_own") && isAssignedReviewer);
+  const canApprove = review && review.status !== "error" && review.category_scores.length > 0 && canEditReview;
 
   return (
     <div style={{ minHeight: "100vh", background: "var(--color-bg)", fontFamily: "var(--font-body)", color: "var(--color-text)" }}>
@@ -197,7 +201,7 @@ export default function ReviewReportPage() {
                     <DownloadIcon />
                   </a>
                 )}
-                {user && user.role === "admin" && (
+                {hasPermission(user, "reviews.delete") && (
                   <button
                     type="button"
                     className="btn btn-ghost"
@@ -217,6 +221,7 @@ export default function ReviewReportPage() {
               )}
             </header>
 
+            {canAssignReviewer && (
             <div className="card card-subtle" style={{ padding: 20, marginBottom: "var(--space-4)" }}>
               <div className="card-kicker">Reviewer</div>
               <div style={{ display: "flex", gap: "var(--space-2)", marginTop: "var(--space-3)", alignItems: "center", flexWrap: "wrap" }}>
@@ -235,6 +240,7 @@ export default function ReviewReportPage() {
               </div>
               {reviewerError && <p className="card-body" style={{ color: "var(--color-brand-coral)", marginTop: "var(--space-2)" }}>{reviewerError}</p>}
             </div>
+            )}
 
             {canApprove && (
               <div className="card card-subtle" style={{ padding: 20, marginBottom: "var(--space-4)" }}>

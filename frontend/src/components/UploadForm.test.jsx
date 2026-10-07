@@ -2,6 +2,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import UploadForm from "./UploadForm";
 import { AuthContext } from "../context/AuthContext";
+import { userWithRole } from "../testUtils/authUsers";
 import { getCompileCheckMode } from "../services/compileCheckModeStorage";
 import { getSampleTemplates, getClausePreview } from "../services/api";
 
@@ -297,7 +298,7 @@ test("'Use default instead' reverts back to the default after choosing a differe
 });
 
 function renderAsRole(role, props = {}) {
-  const value = { user: { id: "u1", email: "a@example.com", role }, loading: false, login: jest.fn(), logout: jest.fn() };
+  const value = { user: userWithRole(role), loading: false, login: jest.fn(), logout: jest.fn() };
   return render(
     <AuthContext.Provider value={value}>
       <UploadForm onSubmit={jest.fn()} platformLabel="Android" {...props} />
@@ -305,17 +306,17 @@ function renderAsRole(role, props = {}) {
   );
 }
 
-test("hides the clause guidance section for the user role", () => {
-  renderAsRole("user");
+test("hides the clause guidance section for a role that cannot create reviews", () => {
+  renderAsRole("reviewer");
   expect(screen.queryByRole("button", { name: /adjust clause guidance/i })).not.toBeInTheDocument();
 });
 
-test("reviewer can expand the clause guidance section, pre-filled from the preview endpoint", async () => {
+test("management can expand the clause guidance section, pre-filled from the preview endpoint", async () => {
   const user = userEvent.setup();
   getClausePreview.mockResolvedValue([
     { id: "1", name: "Code Structure", sub_criteria: [{ id: "1.1", description: "Clear naming", checklist_text: "Org default text" }] },
   ]);
-  renderAsRole("reviewer");
+  renderAsRole("management");
 
   const zip = buildFile("project.zip", "application/zip");
   const xlsx = buildFile("template.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");

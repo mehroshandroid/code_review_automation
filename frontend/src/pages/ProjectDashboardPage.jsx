@@ -8,13 +8,16 @@ import UploadReviewDialog from "../components/UploadReviewDialog";
 import ChatWidget from "../components/ChatWidget";
 import AppNav from "../components/AppNav";
 import { getProjects, getReviews, getReviewYears } from "../services/api";
+import { useCan } from "../context/AuthContext";
 
 function currentYear() {
   return new Date().getFullYear();
 }
 
 export default function ProjectDashboardPage() {
+  const can = useCan();
   const [projects, setProjects] = useState([]);
+  const [projectsLoaded, setProjectsLoaded] = useState(false);
   const [years, setYears] = useState([]);
   const [year, setYear] = useState(currentYear());
   const [platform, setPlatform] = useState(null);
@@ -26,7 +29,9 @@ export default function ProjectDashboardPage() {
 
   useEffect(() => {
     let cancelled = false;
-    getProjects().then((result) => { if (!cancelled) setProjects(result); }).catch(() => {});
+    getProjects()
+      .then((result) => { if (!cancelled) { setProjects(result); setProjectsLoaded(true); } })
+      .catch(() => {});
     return () => { cancelled = true; };
   }, []);
 
@@ -75,36 +80,46 @@ export default function ProjectDashboardPage() {
           <p style={{ margin: 0, color: "var(--color-text-muted)", maxWidth: "60ch", fontSize: 16, lineHeight: 1.6 }}>
             Filter review history by year, platform, and project.
           </p>
-          <div style={{ display: "flex", gap: "var(--space-2)" }}>
-            <button type="button" className="btn" onClick={() => setUploadReviewOpen(true)}>Upload review</button>
-            <button type="button" className="btn btn-primary" onClick={() => setStartReviewOpen(true)}>Start review</button>
-          </div>
+          {can("reviews.create") && (
+            <div style={{ display: "flex", gap: "var(--space-2)" }}>
+              <button type="button" className="btn" onClick={() => setUploadReviewOpen(true)}>Upload review</button>
+              <button type="button" className="btn btn-primary" onClick={() => setStartReviewOpen(true)}>Start review</button>
+            </div>
+          )}
         </header>
 
-        <DashboardFilters
-          year={year} years={years} onYearChange={setYear}
-          platform={platform} onPlatformChange={setPlatform}
-          projectId={projectId} projects={projects} onProjectChange={setProjectId}
-          onProjectCreated={handleProjectCreated} onProjectRenamed={handleProjectRenamed}
-          onReset={handleReset}
-        />
+        {can("dashboard.view_assigned") && projectsLoaded && projects.length === 0 ? (
+          <div className="card" style={{ padding: 20 }}>
+            <p className="card-body">No projects assigned yet — contact your admin.</p>
+          </div>
+        ) : (
+          <>
+            <DashboardFilters
+              year={year} years={years} onYearChange={setYear}
+              platform={platform} onPlatformChange={setPlatform}
+              projectId={projectId} projects={projects} onProjectChange={setProjectId}
+              onProjectCreated={handleProjectCreated} onProjectRenamed={handleProjectRenamed}
+              onReset={handleReset}
+            />
 
-        {reviews !== null && (
-          reviews.length === 0 ? (
-            <div className="card" style={{ padding: 20 }}>
-              <p className="card-body">No reviews match these filters.</p>
-            </div>
-          ) : (
-            <>
-              <DashboardOverview reviews={reviews} />
-              <DashboardCategoryTrends reviews={reviews} />
-              <DashboardResultsTable reviews={reviews} />
-            </>
-          )
+            {reviews !== null && (
+              reviews.length === 0 ? (
+                <div className="card" style={{ padding: 20 }}>
+                  <p className="card-body">No reviews match these filters.</p>
+                </div>
+              ) : (
+                <>
+                  <DashboardOverview reviews={reviews} />
+                  <DashboardCategoryTrends reviews={reviews} />
+                  <DashboardResultsTable reviews={reviews} />
+                </>
+              )
+            )}
+          </>
         )}
       </main>
 
-      {startReviewOpen && (
+      {can("reviews.create") && startReviewOpen && (
         <StartReviewDialog
           projects={projects}
           onProjectCreated={handleProjectCreated}
@@ -112,7 +127,7 @@ export default function ProjectDashboardPage() {
         />
       )}
 
-      {uploadReviewOpen && (
+      {can("reviews.create") && uploadReviewOpen && (
         <UploadReviewDialog
           projects={projects}
           onProjectCreated={handleProjectCreated}
@@ -121,7 +136,7 @@ export default function ProjectDashboardPage() {
         />
       )}
 
-      <ChatWidget />
+      {can("chat.use") && <ChatWidget />}
     </div>
   );
 }

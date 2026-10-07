@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import ReviewReportPage from "./ReviewReportPage";
 import { getReview, updateReview, getReviewers, setReviewReviewer, deleteReview } from "../services/api";
 import { AuthContext } from "../context/AuthContext";
+import { userWithRole } from "../testUtils/authUsers";
 
 const mockNavigate = jest.fn();
 jest.mock("react-router-dom", () => ({
@@ -203,10 +204,10 @@ test("shows an error message when saving edits fails", async () => {
   expect(await screen.findByText(/failed to save changes/i)).toBeInTheDocument();
 });
 
-test("hides the Approval card entirely for the user role", async () => {
+test("hides the Approval card entirely for a project manager", async () => {
   getReview.mockResolvedValue(review);
   render(
-    <AuthContext.Provider value={{ user: { id: "u1", email: "user@example.com", role: "user" }, loading: false, login: jest.fn(), logout: jest.fn() }}>
+    <AuthContext.Provider value={{ user: userWithRole("project_manager"), loading: false, login: jest.fn(), logout: jest.fn() }}>
       <MemoryRouter initialEntries={["/reports/r1"]}>
         <Routes><Route path="/reports/:reviewId" element={<ReviewReportPage />} /></Routes>
       </MemoryRouter>
@@ -249,11 +250,11 @@ test("picking a reviewer calls setReviewReviewer and reflects the update", async
   await waitFor(() => expect(select).toHaveValue("u1"));
 });
 
-test("shows the reviewer dropdown even for the user role, alongside the hidden Approval card", async () => {
+test("shows the reviewer dropdown for a coordinator, alongside the hidden Approval card", async () => {
   getReview.mockResolvedValue(review);
   getReviewers.mockResolvedValue([{ id: "u1", email: "alice@example.com" }]);
   render(
-    <AuthContext.Provider value={{ user: { id: "u1", email: "user@example.com", role: "user" }, loading: false, login: jest.fn(), logout: jest.fn() }}>
+    <AuthContext.Provider value={{ user: userWithRole("coordinator"), loading: false, login: jest.fn(), logout: jest.fn() }}>
       <MemoryRouter initialEntries={["/reports/r1"]}>
         <Routes><Route path="/reports/:reviewId" element={<ReviewReportPage />} /></Routes>
       </MemoryRouter>
@@ -302,7 +303,7 @@ test("shows a Delete review button for the admin role, and deleting navigates to
 test("hides the Delete review button for the reviewer role", async () => {
   getReview.mockResolvedValue(review);
   render(
-    <AuthContext.Provider value={{ user: { id: "u1", email: "reviewer@example.com", role: "reviewer" }, loading: false, login: jest.fn(), logout: jest.fn() }}>
+    <AuthContext.Provider value={{ user: userWithRole("reviewer", { id: "u1" }), loading: false, login: jest.fn(), logout: jest.fn() }}>
       <MemoryRouter initialEntries={["/reports/r1"]}>
         <Routes><Route path="/reports/:reviewId" element={<ReviewReportPage />} /></Routes>
       </MemoryRouter>
@@ -324,4 +325,46 @@ test("shows an error message when deleting the review fails", async () => {
 
   expect(await screen.findByText(/failed to delete review/i)).toBeInTheDocument();
   expect(mockNavigate).not.toHaveBeenCalled();
+});
+
+
+function renderReportAs(user, reviewData) {
+  getReview.mockResolvedValue(reviewData);
+  return render(
+    <AuthContext.Provider value={{ user, loading: false, login: jest.fn(), logout: jest.fn() }}>
+      <MemoryRouter initialEntries={[`/reports/${reviewData.id}`]}>
+        <Routes><Route path="/reports/:reviewId" element={<ReviewReportPage />} /></Routes>
+      </MemoryRouter>
+    </AuthContext.Provider>
+  );
+}
+
+test("assigned reviewer can edit but cannot reassign or delete", async () => {
+  getReviewers.mockClear();
+  renderReportAs(userWithRole("reviewer", { id: "rev" }), { ...review, reviewer_id: "rev" });
+  await screen.findByText("Moove");
+  expect(screen.getByRole("button", { name: "Edit scores" })).toBeInTheDocument();
+  expect(screen.queryByLabelText("Reviewer")).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /delete review/i })).not.toBeInTheDocument();
+  expect(getReviewers).not.toHaveBeenCalled();
+});
+
+test("reviewer who is not assigned sees the report read-only", async () => {
+  renderReportAs(userWithRole("reviewer", { id: "rev" }), { ...review, reviewer_id: "someone-else" });
+  await screen.findByText("Moove");
+  expect(screen.queryByRole("button", { name: "Edit scores" })).not.toBeInTheDocument();
+});
+
+test("PM sees the report read-only", async () => {
+  renderReportAs(userWithRole("project_manager"), { ...review, reviewer_id: "someone" });
+  await screen.findByText("Moove");
+  expect(screen.queryByRole("button", { name: "Edit scores" })).not.toBeInTheDocument();
+  expect(screen.queryByLabelText("Reviewer")).not.toBeInTheDocument();
+});
+
+test("coordinator can assign a reviewer but not edit scores", async () => {
+  renderReportAs(userWithRole("coordinator"), { ...review });
+  await screen.findByText("Moove");
+  expect(screen.getByLabelText("Reviewer")).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Edit scores" })).not.toBeInTheDocument();
 });
