@@ -1,52 +1,47 @@
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import { RequireAuth, RequireRole } from "./RouteGuards";
 import { AuthContext } from "../context/AuthContext";
+import { RequireAuth, RequirePermission, DashboardOrHome } from "./RouteGuards";
+import { userWithRole } from "../testUtils/authUsers";
 
-function renderWithAuth(value, path = "/protected") {
+function renderAt(path, user, element) {
   return render(
-    <AuthContext.Provider value={value}>
+    <AuthContext.Provider value={{ user, loading: false, login: jest.fn(), logout: jest.fn() }}>
       <MemoryRouter initialEntries={[path]}>
         <Routes>
-          <Route path="/login" element={<div>Login page</div>} />
-          <Route path="/" element={<div>Home page</div>} />
-          <Route path="/protected" element={<RequireAuth><div>Secret content</div></RequireAuth>} />
-          <Route
-            path="/admin-only"
-            element={<RequireRole roles={["admin"]}><div>Admin content</div></RequireRole>}
-          />
+          <Route path="/login" element={<div>login page</div>} />
+          <Route path="/my-reviews" element={<div>my reviews page</div>} />
+          <Route path="/projects" element={<div>projects page</div>} />
+          <Route path="/guarded" element={element} />
+          <Route path="/" element={<RequireAuth><DashboardOrHome><div>dashboard</div></DashboardOrHome></RequireAuth>} />
         </Routes>
       </MemoryRouter>
     </AuthContext.Provider>
   );
 }
 
-test("RequireAuth renders children when logged in", () => {
-  renderWithAuth({ user: { id: "u1", role: "admin" }, loading: false });
-  expect(screen.getByText("Secret content")).toBeInTheDocument();
+test("RequireAuth sends anonymous users to login", () => {
+  renderAt("/", null);
+  expect(screen.getByText("login page")).toBeInTheDocument();
 });
 
-test("RequireAuth redirects to /login when not logged in", () => {
-  renderWithAuth({ user: null, loading: false });
-  expect(screen.getByText("Login page")).toBeInTheDocument();
+test("RequirePermission renders children when allowed", () => {
+  renderAt("/guarded", userWithRole("admin"), <RequirePermission anyOf={["users.manage"]}><div>secret</div></RequirePermission>);
+  expect(screen.getByText("secret")).toBeInTheDocument();
 });
 
-test("RequireAuth renders nothing while loading", () => {
-  const { container } = renderWithAuth({ user: null, loading: true });
-  expect(container).toBeEmptyDOMElement();
+test("RequirePermission redirects to the user's home when not allowed", () => {
+  renderAt("/guarded", userWithRole("reviewer"), <RequirePermission anyOf={["users.manage"]}><div>secret</div></RequirePermission>);
+  expect(screen.getByText("my reviews page")).toBeInTheDocument();
 });
 
-test("RequireRole renders children when the role matches", () => {
-  renderWithAuth({ user: { id: "u1", role: "admin" }, loading: false }, "/admin-only");
-  expect(screen.getByText("Admin content")).toBeInTheDocument();
-});
-
-test("RequireRole redirects to / when the role doesn't match", () => {
-  renderWithAuth({ user: { id: "u1", role: "user" }, loading: false }, "/admin-only");
-  expect(screen.getByText("Home page")).toBeInTheDocument();
-});
-
-test("RequireRole redirects to /login when not logged in", () => {
-  renderWithAuth({ user: null, loading: false }, "/admin-only");
-  expect(screen.getByText("Login page")).toBeInTheDocument();
+test.each([
+  ["admin", "dashboard"],
+  ["management", "dashboard"],
+  ["project_manager", "dashboard"],
+  ["reviewer", "my reviews page"],
+  ["coordinator", "projects page"],
+])("%s lands on %s from /", (role, expected) => {
+  renderAt("/", userWithRole(role));
+  expect(screen.getByText(expected)).toBeInTheDocument();
 });

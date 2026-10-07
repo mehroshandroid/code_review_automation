@@ -210,20 +210,40 @@ export async function listUsers() {
   return response.data.users;
 }
 
-export async function createUser(email, password, role) {
-  const response = await axios.post(`${API_BASE_URL}/users`, { email, password, role });
+export async function createUser(email, password, role, name) {
+  const response = await axios.post(`${API_BASE_URL}/users`, { email, password, role, name: name || null });
   return response.data;
 }
 
-export async function updateUser(userId, { role, isActive, password } = {}) {
+export async function updateUser(userId, { role, isActive, password, name } = {}) {
   const body = {};
   if (role !== undefined) body.role = role;
   if (isActive !== undefined) body.is_active = isActive;
   if (password !== undefined) body.password = password;
+  if (name !== undefined) body.name = name;
   const response = await axios.patch(`${API_BASE_URL}/users/${userId}`, body);
   return response.data;
 }
 
 export async function deleteUser(userId) {
   await axios.delete(`${API_BASE_URL}/users/${userId}`);
+}
+
+export async function getMyReviews() {
+  const response = await axios.get(`${API_BASE_URL}/my/reviews`);
+  return response.data.reviews;
+}
+
+export async function getProjectManagers() {
+  const response = await axios.get(`${API_BASE_URL}/project-managers`);
+  return response.data.managers;
+}
+
+export async function setProjectManagers(projectId, userIds) {
+  const response = await axios.put(`${API_BASE_URL}/projects/${projectId}/managers`, { user_ids: userIds });
+  return response.data;
+}
+
+export async function deleteProject(projectId) {
+  await axios.delete(`${API_BASE_URL}/projects/${projectId}`);
 }

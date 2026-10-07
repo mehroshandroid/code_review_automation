@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { getCurrentUser, login as apiLogin, logout as apiLogout } from "../services/api";
+import { hasPermission } from "../permissions";
 
 // Default value used by any component that calls useAuth() outside a real
 // <AuthProvider> -- this is what every existing page test (written before
@@ -8,7 +9,14 @@ import { getCurrentUser, login as apiLogin, logout as apiLogout } from "../servi
 // app always wraps in <AuthProvider>, which starts as user: null until
 // GET /api/auth/me resolves.
 const DEFAULT_CONTEXT = {
-  user: { id: "test-admin", email: "test-admin@example.com", role: "admin" },
+  user: {
+    id: "test-admin", email: "test-admin@example.com", name: null, role: "admin", home_path: "/",
+    permissions: [
+      "chat.use", "dashboard.view_all", "my_reviews.view", "projects.assign_pm", "projects.create",
+      "projects.delete", "projects.rename", "projects.view", "reviews.assign_reviewer", "reviews.create",
+      "reviews.delete", "reviews.edit", "reviews.finalize_own", "settings.manage", "users.manage",
+    ],
+  },
   loading: false,
   login: async () => {},
   logout: async () => {},
@@ -45,4 +53,9 @@ export function AuthProvider({ children }) {
 
 export function useAuth() {
   return useContext(AuthContext);
+}
+
+export function useCan() {
+  const { user } = useAuth();
+  return (permission) => hasPermission(user, permission);
 }

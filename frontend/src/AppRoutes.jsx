@@ -5,7 +5,7 @@ import ReviewReportPage from "./pages/ReviewReportPage";
 import SettingsPage from "./pages/SettingsPage";
 import LoginPage from "./pages/LoginPage";
 import UsersPage from "./pages/UsersPage";
-import { RequireAuth, RequireRole } from "./components/RouteGuards";
+import { RequireAuth, RequirePermission } from "./components/RouteGuards";
 
 export default function AppRoutes() {
   return (
@@ -14,8 +14,8 @@ export default function AppRoutes() {
       <Route path="/" element={<RequireAuth><ProjectDashboardPage /></RequireAuth>} />
       <Route path="/review/:platform" element={<RequireAuth><ReviewPage /></RequireAuth>} />
       <Route path="/reports/:reviewId" element={<RequireAuth><ReviewReportPage /></RequireAuth>} />
-      <Route path="/settings" element={<RequireRole roles={["admin", "reviewer"]}><SettingsPage /></RequireRole>} />
-      <Route path="/users" element={<RequireRole roles={["admin"]}><UsersPage /></RequireRole>} />
+      <Route path="/settings" element={<RequirePermission anyOf={["settings.manage"]}><SettingsPage /></RequirePermission>} />
+      <Route path="/users" element={<RequirePermission anyOf={["users.manage"]}><UsersPage /></RequirePermission>} />
     </Routes>
   );
 }
