@@ -246,3 +246,33 @@ a:hover { color: var(--color-brand-coral); }
 .page-subtitle { margin: 4px 0 0; color: var(--color-text-muted); font-size: 14px; }
 .segmented { display: inline-flex; gap: var(--space-2); }
 @media (max-width: 640px) { .page-main { padding: 24px 16px 64px; } }
+
+/* — quarterly dashboard — */
+.quarterly-row { padding: 20px; display: grid; gap: var(--space-3); }
+.quarterly-row-head { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
+.quarterly-row-name { font-family: var(--font-heading); font-weight: var(--font-heading-weight); font-size: 18px; }
+.quarter-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-3); }
+@media (max-width: 900px) { .quarter-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 520px) { .quarter-grid { grid-template-columns: 1fr; } }
+.quarter-card {
+  display: flex; flex-direction: column; gap: var(--space-2);
+  padding: 14px; border-radius: 10px; border: 1px solid var(--color-divider); min-height: 140px;
+}
+.quarter-card--done { background: color-mix(in srgb, #2e9e5b 12%, var(--color-bg)); border-color: color-mix(in srgb, #2e9e5b 35%, var(--color-divider)); }
+.quarter-card--in-progress { background: color-mix(in srgb, #e0b400 16%, var(--color-bg)); border-color: color-mix(in srgb, #e0b400 40%, var(--color-divider)); }
+.quarter-card--overdue { background: color-mix(in srgb, var(--color-brand-coral) 12%, var(--color-bg)); border-color: color-mix(in srgb, var(--color-brand-coral) 40%, var(--color-divider)); }
+.quarter-card--not-started { background: var(--color-bg); }
+.quarter-card--not-applicable { background: var(--color-surface); color: var(--color-text-muted); }
+.quarter-card-head { display: flex; justify-content: space-between; align-items: center; gap: var(--space-2); }
+.quarter-card-title { font-weight: 600; font-size: 14px; }
+.quarter-badge { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+.quarter-badge--done { background: #2e9e5b; color: #fff; }
+.quarter-badge--in-progress { background: #e0b400; color: #3a2f00; }
+.quarter-badge--overdue { background: var(--color-brand-coral); color: #fff; }
+.quarter-badge--not-started { background: var(--color-surface); color: var(--color-text-muted); border: 1px solid var(--color-divider); }
+.quarter-badge--not-applicable { background: transparent; color: var(--color-text-muted); border: 1px solid var(--color-divider); }
+.quarter-card-platforms { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 13px; }
+.quarter-tick { color: #2e9e5b; font-weight: 700; }
+.quarter-dot { color: var(--color-text-muted); }
+.quarter-card-meta { font-size: 12px; color: var(--color-text-muted); }
+.quarter-card-action { margin-top: auto; align-self: flex-start; }
