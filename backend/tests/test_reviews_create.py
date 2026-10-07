@@ -1123,9 +1123,9 @@ def test_create_review_rejects_malformed_clause_overrides_json(monkeypatch):
         assert "clauseChecklistOverrides must be valid JSON" in state["error"]
 
 
-def test_create_review_rejects_clause_overrides_from_a_non_privileged_role(monkeypatch):
+def test_create_review_forbidden_for_a_role_without_reviews_create(monkeypatch):
     monkeypatch.delenv("AZURE_OPENAI_KEY", raising=False)
-    non_privileged = User(id="u1", email="u@example.com", role="user", is_active=True, password_hash="", created_at=None)
+    non_privileged = User(id="u1", email="u@example.com", role="project_manager", is_active=True, password_hash="", created_at=None)
     app.dependency_overrides[get_current_user] = lambda: non_privileged
     try:
         with TestClient(app) as test_client:
@@ -1137,10 +1137,6 @@ def test_create_review_rejects_clause_overrides_from_a_non_privileged_role(monke
                 },
                 data={"clauseChecklistOverrides": '{"1.1": "text"}'},
             )
-            assert response.status_code == 200
-            body = response.json()
-            assert body["status"] == "error"
-            state = reviews_module._reviews[body["review_id"]]
-            assert "Only admin/reviewer accounts" in state["error"]
+            assert response.status_code == 403
     finally:
         app.dependency_overrides.pop(get_current_user, None)

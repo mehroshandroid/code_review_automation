@@ -50,19 +50,22 @@ async def _seed_review(sessionmaker, review_id="r1"):
         )
 
 
-async def test_list_reviewers_returns_only_active_admins_and_reviewers(test_sessionmaker):
+async def test_list_reviewers_returns_only_active_admins_management_and_reviewers(test_sessionmaker):
     async with test_sessionmaker() as session:
         await crud.create_user(session, user_id="a1", email="alice@example.com", password_hash="h", role="admin")
         await crud.create_user(session, user_id="r1", email="rob@example.com", password_hash="h", role="reviewer")
-        await crud.create_user(session, user_id="u1", email="uma@example.com", password_hash="h", role="user")
+        await crud.create_user(session, user_id="m1", email="mia@example.com", password_hash="h", role="management")
+        await crud.create_user(session, user_id="u1", email="uma@example.com", password_hash="h", role="project_manager")
+        await crud.create_user(session, user_id="c1", email="cal@example.com", password_hash="h", role="coordinator")
 
     response = client.get("/api/reviewers")
 
     assert response.status_code == 200
     assert response.json() == {
         "reviewers": [
-            {"id": "a1", "email": "alice@example.com"},
-            {"id": "r1", "email": "rob@example.com"},
+            {"id": "a1", "email": "alice@example.com", "name": None},
+            {"id": "m1", "email": "mia@example.com", "name": None},
+            {"id": "r1", "email": "rob@example.com", "name": None},
         ]
     }
 
@@ -75,12 +78,20 @@ def test_list_reviewers_requires_login():
     assert response.status_code == 401
 
 
-def test_list_reviewers_allows_the_user_role(test_sessionmaker):
-    _as("user")
+def test_list_reviewers_allowed_for_coordinator(test_sessionmaker):
+    _as("coordinator")
 
     response = client.get("/api/reviewers")
 
     assert response.status_code == 200
+
+
+def test_list_reviewers_forbidden_for_reviewer(test_sessionmaker):
+    _as("reviewer")
+
+    response = client.get("/api/reviewers")
+
+    assert response.status_code == 403
 
 
 async def test_assign_reviewer_sets_the_reviewer_id(test_sessionmaker):
@@ -94,16 +105,15 @@ async def test_assign_reviewer_sets_the_reviewer_id(test_sessionmaker):
     assert response.json()["reviewer_id"] == "rev1"
 
 
-async def test_assign_reviewer_allows_the_user_role(test_sessionmaker):
+async def test_assign_reviewer_forbidden_for_project_manager(test_sessionmaker):
     await _seed_review(test_sessionmaker)
     async with test_sessionmaker() as session:
         await crud.create_user(session, user_id="rev1", email="rob@example.com", password_hash="h", role="reviewer")
-    _as("user")
+    _as("project_manager")
 
     response = client.patch("/api/reviews/r1/reviewer", json={"reviewer_id": "rev1"})
 
-    assert response.status_code == 200
-    assert response.json()["reviewer_id"] == "rev1"
+    assert response.status_code == 403
 
 
 async def test_assign_reviewer_can_unassign_with_null(test_sessionmaker):
@@ -121,7 +131,7 @@ async def test_assign_reviewer_can_unassign_with_null(test_sessionmaker):
 async def test_assign_reviewer_rejects_a_non_candidate_user(test_sessionmaker):
     await _seed_review(test_sessionmaker)
     async with test_sessionmaker() as session:
-        await crud.create_user(session, user_id="plain1", email="plain@example.com", password_hash="h", role="user")
+        await crud.create_user(session, user_id="plain1", email="plain@example.com", password_hash="h", role="project_manager")
 
     response = client.patch("/api/reviews/r1/reviewer", json={"reviewer_id": "plain1"})
 
