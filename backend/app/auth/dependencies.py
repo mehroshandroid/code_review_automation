@@ -1,5 +1,5 @@
 import jwt as pyjwt
-from fastapi import Depends, HTTPException, Request
+from fastapi import HTTPException, Request
 
 from app.auth.token import decode_access_token
 from app.db import crud
@@ -23,10 +23,3 @@ async def get_current_user(request: Request) -> User:
         raise HTTPException(status_code=401, detail="Invalid or expired session")
     return user
 
-
-def require_roles(*roles: str):
-    async def _check(current_user: User = Depends(get_current_user)) -> User:
-        if current_user.role not in roles:
-            raise HTTPException(status_code=403, detail="You don't have permission to do this")
-        return current_user
-    return _check

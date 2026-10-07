@@ -7,11 +7,11 @@ from openpyxl import load_workbook
 from pydantic import BaseModel
 
 from app.analyzer.excel_handler import discover_structure
-from app.auth.dependencies import require_roles
+from app.auth.permissions import require_permission
 from app.db import crud
 from app.db.session import new_session
 
-router = APIRouter(dependencies=[Depends(require_roles("admin", "reviewer"))])
+router = APIRouter(dependencies=[Depends(require_permission("settings.manage"))])
 
 DEFAULT_LLM_PROVIDER = "ollama"
 

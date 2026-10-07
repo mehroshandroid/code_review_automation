@@ -6,7 +6,8 @@ from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 import app.auth.dependencies as deps_module
-from app.auth.dependencies import COOKIE_NAME, get_current_user, require_roles
+from app.auth.dependencies import COOKIE_NAME, get_current_user
+from app.auth.permissions import require_permission
 from app.auth.token import create_access_token
 from app.db import crud
 from app.db.models import Base
@@ -20,7 +21,7 @@ async def whoami(user=Depends(get_current_user)):
 
 
 @_auth_test_app.get("/admin-only")
-async def admin_only(user=Depends(require_roles("admin"))):
+async def admin_only(user=Depends(require_permission("users.manage"))):
     return {"ok": True}
 
 
@@ -91,7 +92,7 @@ async def test_get_current_user_rejects_a_token_for_a_since_deleted_user(test_se
     assert response.status_code == 401
 
 
-async def test_require_roles_allows_the_matching_role(test_sessionmaker):
+async def test_require_permission_allows_a_role_holding_the_capability(test_sessionmaker):
     await _create_user(test_sessionmaker, user_id="u1", role="admin")
     token = create_access_token("u1")
     client.cookies.set(COOKIE_NAME, token)
@@ -102,8 +103,8 @@ async def test_require_roles_allows_the_matching_role(test_sessionmaker):
     assert response.status_code == 200
 
 
-async def test_require_roles_rejects_a_non_matching_role(test_sessionmaker):
-    await _create_user(test_sessionmaker, user_id="u1", role="user")
+async def test_require_permission_rejects_a_role_without_the_capability(test_sessionmaker):
+    await _create_user(test_sessionmaker, user_id="u1", role="management")
     token = create_access_token("u1")
     client.cookies.set(COOKIE_NAME, token)
 

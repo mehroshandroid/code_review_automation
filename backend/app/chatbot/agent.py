@@ -5,7 +5,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_openai import AzureChatOpenAI
 
-from app.chatbot.tools import query_reviews
+from app.chatbot.tools import make_query_reviews_tool
 
 OUT_OF_DOMAIN_REPLY = (
     "I can only help with questions about this dashboard's code review "
@@ -45,7 +45,7 @@ SYSTEM_PROMPT = (
 )
 
 
-def _build_agent_executor() -> AgentExecutor:
+def _build_agent_executor(project_ids=None) -> AgentExecutor:
     llm = AzureChatOpenAI(
         azure_endpoint=os.environ["OPENAI_API_BASE"],
         azure_deployment=os.environ["OPENAI_DEPLOYMENT_NAME"],
@@ -59,8 +59,9 @@ def _build_agent_executor() -> AgentExecutor:
         ("human", "{input}"),
         MessagesPlaceholder("agent_scratchpad"),
     ])
-    agent = create_tool_calling_agent(llm, [query_reviews], prompt)
-    return AgentExecutor(agent=agent, tools=[query_reviews], return_intermediate_steps=True, max_iterations=5)
+    tool = make_query_reviews_tool(project_ids)
+    agent = create_tool_calling_agent(llm, [tool], prompt)
+    return AgentExecutor(agent=agent, tools=[tool], return_intermediate_steps=True, max_iterations=5)
 
 
 def _to_lc_history(history: list[dict]) -> list:
@@ -84,8 +85,8 @@ def _extract_sources(intermediate_steps: list) -> list[dict]:
     return list(sources_by_id.values())
 
 
-async def answer_question(message: str, history: list[dict]) -> dict:
-    executor = _build_agent_executor()
+async def answer_question(message: str, history: list[dict], project_ids=None) -> dict:
+    executor = _build_agent_executor(project_ids)
     result = await executor.ainvoke({"input": message, "chat_history": _to_lc_history(history)})
     return {
         "answer": result["output"],

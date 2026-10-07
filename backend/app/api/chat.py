@@ -2,8 +2,9 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from app.analyzer.openai_client import is_stub_mode
-from app.auth.dependencies import get_current_user
+from app.auth.permissions import require_permission, visible_project_ids
 from app.chatbot.agent import answer_question
+from app.db.session import new_session
 
 router = APIRouter()
 
@@ -19,7 +20,7 @@ class ChatRequest(BaseModel):
 
 
 @router.post("/api/chat")
-async def chat(body: ChatRequest, user=Depends(get_current_user)):
+async def chat(body: ChatRequest, user=Depends(require_permission("chat.use"))):
     if is_stub_mode():
         return {
             "answer": (
@@ -29,5 +30,7 @@ async def chat(body: ChatRequest, user=Depends(get_current_user)):
             ),
             "sources": [],
         }
+    async with new_session() as session:
+        project_ids = await visible_project_ids(session, user)
     history = [{"role": message.role, "content": message.content} for message in body.history]
-    return await answer_question(body.message, history)
+    return await answer_question(body.message, history, project_ids=project_ids)
