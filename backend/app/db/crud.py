@@ -166,6 +166,12 @@ async def set_review_reviewer(session: AsyncSession, review_id: str, reviewer_id
     return review
 
 
+async def delete_review(session: AsyncSession, review_id: str) -> bool:
+    result = await session.execute(delete(PlatformReview).where(PlatformReview.id == review_id))
+    await session.commit()
+    return result.rowcount > 0
+
+
 # --- org_settings (singleton, id=1) ---
 
 _ORG_SETTINGS_ID = 1

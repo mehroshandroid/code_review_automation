@@ -106,6 +106,10 @@ export async function setReviewReviewer(reviewId, reviewerId) {
   return response.data;
 }
 
+export async function deleteReview(reviewId) {
+  await axios.delete(`${API_BASE_URL}/reviews/${reviewId}`);
+}
+
 export async function getLlmProviderSettings() {
   const response = await axios.get(`${API_BASE_URL}/settings/llm-provider`);
   return response.data;

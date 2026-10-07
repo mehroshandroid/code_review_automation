@@ -85,6 +85,20 @@ describe("LLM provider section", () => {
     expect(await screen.findByText("Saved.")).toBeInTheDocument();
   });
 
+  test("can save Claude CLI as the org-wide default", async () => {
+    const user = userEvent.setup();
+    getLlmProviderSettings.mockResolvedValue({ default_llm_provider: "azure", default_ollama_model: null });
+    updateLlmProviderSettings.mockResolvedValue({ default_llm_provider: "claude", default_ollama_model: null });
+    renderSettings();
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "Azure OpenAI" })).toHaveClass("btn-primary"));
+    await user.click(screen.getByRole("button", { name: "Claude CLI (local)" }));
+    expect(screen.queryByLabelText(/default ollama model/i)).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(updateLlmProviderSettings).toHaveBeenCalledWith("claude", null));
+  });
+
   test("shows a dropdown of installed Ollama models to choose from", async () => {
     getLlmProviderSettings.mockResolvedValue({ default_llm_provider: "ollama", default_ollama_model: "mistral:latest" });
     renderSettings();

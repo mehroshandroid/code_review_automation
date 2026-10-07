@@ -20,7 +20,23 @@ async def test_score_category_routes_to_ollama_when_provider_is_ollama(monkeypat
 
 
 @pytest.mark.asyncio
-async def test_score_category_routes_to_openai_for_any_non_ollama_provider(monkeypatch):
+async def test_score_category_routes_to_claude_cli_client_when_provider_is_claude(monkeypatch):
+    captured = {}
+
+    async def fake_claude_score_category(category_name, sub_criteria, descriptions, code_snippets, platform="Android", checklists=None):
+        captured["args"] = (category_name, sub_criteria, descriptions, code_snippets)
+        return {"1.1": {"score": 1, "remark": "ok"}}, {"label": category_name, "prompt_text": "x", "tokens": {}}
+
+    monkeypatch.setattr(llm_client.claude_cli_client, "score_category", fake_claude_score_category)
+
+    result, _ = await llm_client.score_category("claude", "Code Structure", ["1.1"], {}, "code")
+
+    assert result == {"1.1": {"score": 1, "remark": "ok"}}
+    assert captured["args"] == ("Code Structure", ["1.1"], {}, "code")
+
+
+@pytest.mark.asyncio
+async def test_score_category_routes_to_openai_for_any_non_ollama_non_claude_provider(monkeypatch):
     calls = []
 
     async def fake_openai_score_category(category_name, sub_criteria, descriptions, code_snippets, platform="Android", checklists=None):
@@ -50,6 +66,18 @@ async def test_generate_general_remarks_routes_to_ollama_when_provider_is_ollama
 
     assert result == "ollama summary"
     assert captured["args"] == ({"1": {}}, "mistral:latest")
+
+
+@pytest.mark.asyncio
+async def test_generate_general_remarks_routes_to_claude_cli_client_when_provider_is_claude(monkeypatch):
+    async def fake_claude_general_remarks(category_results, platform="Android"):
+        return "claude summary", {"label": "General remarks", "prompt_text": "x", "tokens": {}}
+
+    monkeypatch.setattr(llm_client.claude_cli_client, "generate_general_remarks", fake_claude_general_remarks)
+
+    result, _ = await llm_client.generate_general_remarks("claude", {"1": {}})
+
+    assert result == "claude summary"
 
 
 @pytest.mark.asyncio

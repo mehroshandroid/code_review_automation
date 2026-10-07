@@ -69,6 +69,8 @@ async def test_get_review_returns_the_full_persisted_review(test_sessionmaker):
     assert body["warnings"] == ["Outdated SDK"]
     assert body["compile_status"] == "ok"
     assert body["stats"] == {"total_time_ms": 1000}
+    assert body["compile_check_mode"] == "compiler"
+    assert body["source"] == "upload"
 
 
 async def test_get_review_returns_404_when_not_found(test_sessionmaker):

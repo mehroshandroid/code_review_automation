@@ -9,6 +9,7 @@ import { getLlmProvider, setLlmProvider, getOllamaModel, setOllamaModel } from "
 const LLM_PROVIDERS = [
   { id: "azure", label: "Azure OpenAI" },
   { id: "ollama", label: "Ollama (local)" },
+  { id: "claude", label: "Claude CLI (local)" },
 ];
 
 export default function StartReviewDialog({ projects, onProjectCreated, onClose }) {

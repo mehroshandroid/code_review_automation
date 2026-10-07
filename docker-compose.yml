@@ -21,6 +21,11 @@ services:
       # `uvicorn main:app --port 8100` from mac_build_agent/. Serves both
       # iOS (/lint) and Android local mode (/android-lint).
       - MAC_BUILD_AGENT_URL=http://host.docker.internal:8100
+      # claude_cli_agent runs natively on the host too (never containerized
+      # -- it needs your already-authenticated `claude` CLI session, which
+      # a container can't see), started manually the same way: `uvicorn
+      # main:app --port 8200` from claude_cli_agent/.
+      - CLAUDE_CLI_AGENT_URL=http://host.docker.internal:8200
       - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/codereviews
       - ADMIN_EMAIL=admin@example.com
       - ADMIN_PASSWORD=change-me-please

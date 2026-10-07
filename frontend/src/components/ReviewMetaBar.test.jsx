@@ -8,6 +8,12 @@ test("shows Azure OpenAI, Uploaded ZIP, and Docker compile-check mode as separat
   expect(screen.getByText("Compile-check: Docker")).toHaveClass("tag");
 });
 
+test("shows Claude CLI (local) instead of mislabeling it as Azure OpenAI", () => {
+  render(<ReviewMetaBar llmProvider="claude" llmModel={null} source="upload" compileCheckMode="static" />);
+  expect(screen.getByText("Claude CLI (local)")).toBeInTheDocument();
+  expect(screen.queryByText("Azure OpenAI")).not.toBeInTheDocument();
+});
+
 test("shows Ollama with its model name", () => {
   render(<ReviewMetaBar llmProvider="ollama" llmModel="qwen2.5-coder:7b" source="upload" compileCheckMode="static" />);
   expect(screen.getByText("Ollama (qwen2.5-coder:7b)")).toBeInTheDocument();

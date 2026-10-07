@@ -1,4 +1,4 @@
-# Android Code Review Automation — Technical README
+# CodeAssure (Android) — Technical README
 
 This document explains **how the system actually works today**: the exact path a request takes from file upload to a scored Excel workbook, how the backend/frontend modules talk to each other, and how the LLM prompts are built. It reflects the current code (`backend/app/**`, `frontend/src/**`), not the original planning docs (`HANDOVER_ANDROID_CODE_REVIEW.md`, `QUICK_REFERENCE.md`), which describe the pre-implementation design and have since drifted from reality in places (e.g. no WebSocket endpoint exists; polling is HTTP only).
 
@@ -252,3 +252,83 @@ cd frontend && npm start
 ```
 
 Without `AZURE_OPENAI_KEY` set, the backend runs in stub mode end-to-end — useful for exercising the full pipeline (extraction, analysis, Excel writing, frontend states) without hitting Azure OpenAI at all.
+
+### Optional: `mac_build_agent` for real iOS/Android compile-time checks
+
+A small FastAPI service that runs natively on your Mac (never in
+Docker), so the review pipeline can do real compile-time checks that
+need tooling only a real macOS machine has:
+
+- **iOS** — builds with `xcodebuild` (no Xcode CLI tools exist in a
+  Linux container).
+- **Android (local mode)** — builds with Gradle/Lint using your own
+  Android SDK, as a faster, non-emulated alternative to the Dockerized
+  `compiler` service (which is forced to `linux/amd64` and runs under
+  emulation on Apple Silicon).
+
+**Prerequisites:**
+- **iOS builds:** Xcode installed, with the command line tools set up
+  (`xcode-select -p` should print a path under `/Applications/Xcode.app`).
+- **Android local builds:** an Android SDK installed. The agent looks for
+  it via `$ANDROID_HOME`, then `$ANDROID_SDK_ROOT`, then
+  `~/Library/Android/sdk` (Android Studio's default install location) —
+  if you already have Android Studio set up, this just works.
+- Python 3.
+
+**Run it:**
+```bash
+cd mac_build_agent
+python3 -m venv venv               # one-time setup
+venv/bin/pip install -r requirements.txt
+
+venv/bin/uvicorn main:app --host 0.0.0.0 --port 8100
+```
+Leave this running in its own terminal tab while you use the app — the
+backend container is already configured (`MAC_BUILD_AGENT_URL` in
+`docker-compose.yml`) to reach it at `http://host.docker.internal:8100`.
+
+To confirm it's up: `curl http://localhost:8100/health` → `{"status":"ok"}`.
+
+If it's not running, nothing breaks: both checkers gracefully report
+`"status": "unavailable"` and the review still completes — clause 1.4
+just won't get a real compile-time score for that run. Selecting "Static
+file analysis" or the Docker-based "Compile-time lint" for Android never
+needs this agent at all. See `mac_build_agent/README.md` for the full
+endpoint contract, live build-log streaming, and disk/cache notes.
+
+### Optional: "Claude CLI (local)" as an LLM provider
+
+Selecting **Claude CLI (local)** when starting a review routes scoring
+through your own machine's already-authenticated `claude` CLI session
+(the same one you use interactively, e.g. in VS Code) instead of Azure
+OpenAI or Ollama. Nothing beyond your normal Claude usage gets billed —
+no API key, no separate account.
+
+**Prerequisite:** the `claude` CLI installed and logged in (`claude
+login`). If you can already run `claude` interactively, you're set — no
+extra account or key needed.
+
+**Run it** (native on your machine, never in Docker — it needs your
+locally authenticated session, which a container can't see):
+```bash
+cd claude_cli_agent
+python3 -m venv venv               # one-time setup
+venv/bin/pip install -r requirements.txt
+
+venv/bin/uvicorn main:app --host 0.0.0.0 --port 8200
+```
+Leave this running in its own terminal tab while you use the app — the
+backend container is already configured (`CLAUDE_CLI_AGENT_URL` in
+`docker-compose.yml`) to reach it at `http://host.docker.internal:8200`.
+
+If it's not running, nothing breaks: selecting that provider just
+produces a placeholder `[STUB]`-prefixed score/remark for each category,
+the same way Azure OpenAI degrades to stub mode with no key configured.
+
+See `claude_cli_agent/README.md` for exactly what each call can and can't
+do (tool access is disabled and confined to a throwaway temp directory),
+and for real cost/latency expectations — a plain CLI invocation loads
+Claude Code's default context before answering at all, so this provider
+is noticeably slower and pricier per review than Azure/Ollama. Pick it
+when you specifically want Claude's judgment on a review, not as a
+default.

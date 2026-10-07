@@ -10,7 +10,7 @@ from datetime import date, datetime, timezone
 from io import BytesIO
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
 from fastapi.responses import FileResponse
 from openpyxl import load_workbook
 from pydantic import BaseModel
@@ -737,6 +737,8 @@ def _review_to_dict(review) -> dict:
         "total_score_pct": float(review.total_score_pct) if review.total_score_pct is not None else None,
         "llm_provider": review.llm_provider,
         "llm_model": review.llm_model,
+        "compile_check_mode": review.compile_check_mode,
+        "source": review.source,
         "has_workbook": review.workbook_path is not None,
         "category_scores": result_data.get("category_scores", []),
         "warnings": result_data.get("warnings", []),
@@ -776,6 +778,19 @@ async def update_review(review_id: str, body: UpdateReviewRequest, user=Depends(
     if review is None:
         raise HTTPException(status_code=404, detail="Review not found")
     return _review_to_dict(review)
+
+
+@router.delete("/api/reviews/{review_id}", status_code=204)
+async def delete_review(review_id: str, user=Depends(require_roles("admin"))):
+    async with new_session() as session:
+        review = await crud.get_review_by_id(session, review_id)
+        if review is None:
+            raise HTTPException(status_code=404, detail="Review not found")
+        workbook_path = review.workbook_path
+        await crud.delete_review(session, review_id)
+    if workbook_path:
+        Path(workbook_path).unlink(missing_ok=True)
+    return Response(status_code=204)
 
 
 @router.get("/api/reviewers")

@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import TopNav from "../components/TopNav";
 import ReportTable from "../components/ReportTable";
+import ReviewMetaBar from "../components/ReviewMetaBar";
 import { DownloadIcon } from "../icons";
-import { getReview, getDownloadUrl, updateReview, getReviewers, setReviewReviewer } from "../services/api";
+import { getReview, getDownloadUrl, updateReview, getReviewers, setReviewReviewer, deleteReview } from "../services/api";
 import { useAuth } from "../context/AuthContext";
 
 const STATUS_LABELS = {
@@ -35,6 +36,9 @@ export default function ReviewReportPage() {
   const [reviewers, setReviewers] = useState([]);
   const [reviewerSaving, setReviewerSaving] = useState(false);
   const [reviewerError, setReviewerError] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
+  const navigate = useNavigate();
 
   useEffect(() => {
     let cancelled = false;
@@ -116,6 +120,18 @@ export default function ReviewReportPage() {
     }
   }
 
+  async function handleDelete() {
+    setDeleting(true);
+    setDeleteError("");
+    try {
+      await deleteReview(reviewId);
+      navigate("/");
+    } catch (err) {
+      setDeleteError("Failed to delete review");
+      setDeleting(false);
+    }
+  }
+
   async function handleChangeStatus(status) {
     setStatusSaving(true);
     setStatusError("");
@@ -162,16 +178,39 @@ export default function ReviewReportPage() {
                 <span className="tag tag-outline">{review.warnings.length + review.lint_issues.length} warnings</span>
                 <span className="tag tag-outline">{review.secrets_found.length} secrets</span>
               </div>
-              {review.has_workbook && (
-                <a
-                  href={getDownloadUrl(`/api/reviews/${review.id}/download`)}
-                  download
-                  className="btn btn-primary"
-                  style={{ marginTop: "var(--space-4)" }}
-                >
-                  Download workbook
-                  <DownloadIcon />
-                </a>
+              <div style={{ marginTop: "var(--space-3)" }}>
+                <ReviewMetaBar
+                  llmProvider={review.llm_provider}
+                  llmModel={review.llm_model}
+                  source={review.source}
+                  compileCheckMode={review.compile_check_mode}
+                />
+              </div>
+              <div style={{ display: "flex", gap: "var(--space-3)", flexWrap: "wrap", alignItems: "center", marginTop: "var(--space-4)" }}>
+                {review.has_workbook && (
+                  <a
+                    href={getDownloadUrl(`/api/reviews/${review.id}/download`)}
+                    download
+                    className="btn btn-primary"
+                  >
+                    Download workbook
+                    <DownloadIcon />
+                  </a>
+                )}
+                {user && user.role === "admin" && (
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    style={{ color: "var(--color-brand-coral)" }}
+                    disabled={deleting}
+                    onClick={handleDelete}
+                  >
+                    {deleting ? "Deleting…" : "Delete review"}
+                  </button>
+                )}
+              </div>
+              {deleteError && (
+                <p className="card-body" style={{ color: "var(--color-brand-coral)", marginTop: "var(--space-2)" }}>{deleteError}</p>
               )}
               {review.error && (
                 <p className="card-body" style={{ color: "var(--color-brand-coral)", marginTop: "var(--space-3)" }}>{review.error}</p>
