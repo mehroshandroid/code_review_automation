@@ -21,6 +21,7 @@ This spec covers **Part 1 only**. Part 1 must be useful on its own: it ships the
 - Five roles with clearly defined capabilities, enforced in one place on the backend.
 - Project Managers see the existing dashboard, limited to the projects an admin assigned them.
 - Reviewers get a "My reviews" page and can finalize only the reviews assigned to them. They lose the org-wide dashboard.
+- A Projects page where coordinators, Management and admins create and rename projects and assign Project Managers. Only admins and Management can delete a project, and only when it has no reviews.
 - One shared navbar that shows links for the user's role and looks professional.
 
 ## Non-goals (Part 1)
@@ -35,7 +36,7 @@ This spec covers **Part 1 only**. Part 1 must be useful on its own: it ships the
 |---|---|
 | `admin` | Everything, including user management and deleting reviews |
 | `management` | The old `reviewer` privileges: full dashboard, run reviews, edit scores, Settings |
-| `coordinator` | Will run quarterly cycles in Part 2. In Part 1, a placeholder home page only |
+| `coordinator` | Manages projects (create, rename, assign PMs; no delete) and assigns reviewers. Runs quarterly cycles in Part 2 |
 | `reviewer` | Finalizes reviews assigned to them. No dashboard and no Settings |
 | `project_manager` | Read-only dashboard limited to assigned projects, plus a chatbot limited the same way |
 
@@ -51,18 +52,24 @@ The old `user` role is **retired**. Existing `user` accounts are migrated to `pr
 | `dashboard.view_assigned` | | | | | ✓ |
 | `reviews.create` (run and upload ad-hoc reviews, clause overrides and preview) | ✓ | ✓ | | | |
 | `reviews.edit` (scores, status, any review) | ✓ | ✓ | | | |
-| `reviews.assign_reviewer` | ✓ | ✓ | | | |
+| `reviews.assign_reviewer` | ✓ | ✓ | ✓ | | |
 | `reviews.finalize_own` (edit scores and status of reviews where `reviewer_id` is you) | ✓ | ✓ | | ✓ | |
 | `reviews.delete` | ✓ | | | | |
 | `my_reviews.view` | ✓ | ✓ | | ✓ | |
 | `settings.manage` | ✓ | ✓ | | | |
-| `users.manage` (including PM project assignment) | ✓ | | | | |
-| `projects.rename` | ✓ | | | | |
+| `users.manage` (accounts, roles, names, passwords) | ✓ | | | | |
+| `projects.view` (Projects page, list of all projects) | ✓ | ✓ | ✓ | | |
+| `projects.create` | ✓ | ✓ | ✓ | | |
+| `projects.rename` | ✓ | ✓ | ✓ | | |
+| `projects.assign_pm` | ✓ | ✓ | ✓ | | |
+| `projects.delete` (only projects with no reviews) | ✓ | ✓ | | | |
 | `chat.use` (limited to the user's visible projects) | ✓ | ✓ | | | ✓ |
 
-**Home page by role:** admin and management go to `/` (Dashboard), project_manager to `/` (scoped Dashboard), reviewer to `/my-reviews`, and coordinator to `/cycles`.
+**Home page by role:** admin and management go to `/` (Dashboard), project_manager to `/` (scoped Dashboard), reviewer to `/my-reviews`, and coordinator to `/projects` (Part 2 changes the coordinator's home to `/cycles`).
 
-Creating projects (`POST /api/projects`) keeps its current behaviour under `reviews.create`, because projects are created from the Start Review and Upload dialogs.
+Creating projects (`POST /api/projects`) requires `projects.create`. The "+ Add new project" option in the Start Review and Upload dialogs keeps working, because every role that can start or upload a review also holds `projects.create`.
+
+**About `reviews.assign_reviewer` for coordinators:** coordinators get this capability now, but they can't see review reports in Part 1, so there is no screen where they can use it yet. It is used in Part 2, where they pick a reviewer for each platform when starting a cycle.
 
 ## Data model changes (one Alembic migration)
 
@@ -90,29 +97,36 @@ Creating projects (`POST /api/projects`) keeps its current behaviour under `revi
 
 ### Data layer (`app/db/crud.py`)
 
-- `list_projects`, `list_reviews`, `list_review_years` and `list_reviews_for_project` accept `project_ids: set[str] | None = None`.
+- `list_projects` (and `GET /api/projects`) uses `visible_project_ids`, with one exception: `projects.view` sees all projects. So a coordinator sees every project on the Projects page, but has no dashboard data.
+- `list_reviews`, `list_review_years` and `list_reviews_for_project` accept `project_ids: set[str] | None = None`.
   - `None` means no filter.
   - An empty set returns an empty result immediately, without running a query.
-- New functions: `list_reviews_for_reviewer(session, user_id)`, `get_project_ids_for_manager(session, user_id)`, `set_projects_for_manager(session, user_id, project_ids)` (which replaces the whole set), and `get_project_ids_for_managers(session, user_ids)` (a bulk lookup for the Users list).
+- New functions: `list_reviews_for_reviewer(session, user_id)`, `get_project_ids_for_manager(session, user_id)` (used by `visible_project_ids`), `get_project_ids_for_managers(session, user_ids)` (bulk lookup for the Users list), `get_manager_ids_for_projects(session, project_ids)` (bulk lookup for the Projects list), `set_managers_for_project(session, project_id, user_ids)` (which replaces the whole set), `count_reviews_for_project(session, project_id)`, and `delete_project(session, project_id)`.
 
 ### Endpoint rules
 
-- **Lists:** `GET /api/projects`, `GET /api/reviews`, `GET /api/reviews/years` and `GET /api/projects/{id}/reviews` are filtered by `visible_project_ids`.
+- **Projects API:**
+  - `GET /api/projects` returns all projects for `projects.view`, and otherwise only visible projects. Each row adds `manager_ids` (for `projects.view`) and `review_count`.
+  - `POST /api/projects` requires `projects.create`.
+  - `PATCH /api/projects/{id}` (rename) requires `projects.rename`.
+  - New `PUT /api/projects/{id}/managers` with body `{user_ids: [...]}` requires `projects.assign_pm` and replaces the assigned set. It returns 404 for an unknown project or user, and 400 if any user isn't an active `project_manager`.
+  - New `DELETE /api/projects/{id}` requires `projects.delete`. It returns 404 for an unknown project, and **409** with "This project has N reviews and can't be deleted." when `review_count > 0`. Otherwise it deletes the project, and its `project_managers` rows cascade.
+  - New `GET /api/project-managers` requires `projects.assign_pm` and returns active `project_manager` users (`id`, `email`, `name`) for the assignment picker.
+- **Lists:** `GET /api/projects` (as above), `GET /api/reviews`, `GET /api/reviews/years` and `GET /api/projects/{id}/reviews` are filtered by `visible_project_ids`.
 - **Single-review access** (`GET /api/reviews/{id}`, `/download`, `/progress`):
   - Allowed when the review's project is visible to the user, or when `review.reviewer_id == user.id`.
   - Otherwise the response is **404**, not 403, so review IDs can't be probed.
   - A review with no project (`project_id IS NULL`) counts as visible only to `dashboard.view_all` and to its assigned reviewer.
   - Progress for an in-memory review that hasn't been saved yet stays limited to `reviews.create`.
 - **`PATCH /api/reviews/{id}`:** allowed with `reviews.edit`, or with `reviews.finalize_own` when the user is the assigned reviewer. Otherwise it returns 404 if the user can't see the review, and 403 if they can see it but can't edit it.
-- **`PATCH /api/reviews/{id}/reviewer`:** requires `reviews.assign_reviewer`. Today any signed-in user can do this; that is now restricted.
+- **`PATCH /api/reviews/{id}/reviewer`:** requires `reviews.assign_reviewer`. Today any signed-in user can do this; it is now limited to admin, management and coordinator.
 - **`GET /api/reviewers`:** returns active users whose role has `reviews.finalize_own` (reviewer, management and admin), with `id`, `email` and `name`.
 - **New `GET /api/my/reviews`** (requires `my_reviews.view`): reviews where `reviewer_id` is the current user, newest first, in the same row shape as `GET /api/reviews`.
 - **Users API** (`users.manage`):
-  - `GET /api/users` includes `name` and, for PMs, `project_ids`.
+  - `GET /api/users` includes `name` and, for PMs, `project_ids` (read-only; assignment is done from the Projects page).
   - `POST` and `PATCH` accept `name`.
   - Unknown roles get **400**, as today.
-  - New `PUT /api/users/{id}/projects` with body `{project_ids: [...]}` replaces the assignment set. It returns 404 for an unknown user or project, and 400 if the user isn't a `project_manager`.
-  - Changing a PM's role to anything else deletes their assignments.
+  - Changing a PM's role to anything else, or deactivating them, deletes their project assignments.
 - **Chatbot (`POST /api/chat`):** requires `chat.use`. `build_agent` receives `visible_project_ids`, and the `query_reviews` tool adds the filter to every query in code, so the restriction doesn't depend on the prompt. If a PM has no projects, the tool returns no rows.
 - **`GET /api/auth/me`:** adds `name`, `home_path` and `permissions` (the list of capability keys the user holds), so the frontend mirrors the backend without hard-coding role names.
 - **Settings router:** `settings.manage`. **Ollama models:** `reviews.create` or `settings.manage`.
@@ -124,7 +138,7 @@ Creating projects (`POST /api/projects`) keeps its current behaviour under `revi
 - **Left side:** the logo mark and "CodeAssure" (linking to the role's home page), then `NavLink`s filtered by permission. The active link is underlined in brand coral.
   - **Dashboard:** shown for `dashboard.view_all` or `dashboard.view_assigned`.
   - **My reviews:** `my_reviews.view`.
-  - **Cycles:** coordinators only (placeholder in Part 1).
+  - **Projects:** `projects.view`.
   - **Users:** `users.manage`.
 - **Right side:**
   - **Avatar:** a circular button showing initials, taken from `name` or from the part of the email before the @. The name appears next to it, with the role underneath in smaller muted text. The text collapses to the avatar alone below 640px.
@@ -141,7 +155,7 @@ Creating projects (`POST /api/projects`) keeps its current behaviour under `revi
   - `/settings`: `settings.manage`
   - `/users`: `users.manage`
   - `/my-reviews`: `my_reviews.view`
-  - `/cycles`: coordinator
+  - `/projects`: `projects.view`
   - `/reviews/:id` (report page): any signed-in user. The backend decides whether to return 404.
 - `AuthContext` exposes `permissions`, `homePath`, and a `can(permission)` helper.
 
@@ -161,21 +175,29 @@ Creating projects (`POST /api/projects`) keeps its current behaviour under `revi
   - Edit controls show when the user has `reviews.edit`, or has `reviews.finalize_own` and is the assigned reviewer.
   - The reviewer picker shows only with `reviews.assign_reviewer`.
   - Delete shows only with `reviews.delete`.
+- **Projects page (`pages/ProjectsPage.jsx`, new):**
+  - A table with project name, assigned PMs (as chips), review count and created date. It has a search box at the top.
+  - A **New project** button opens the existing `ProjectDialog`.
+  - Actions for each row:
+    - **Rename** (`ProjectDialog` in edit mode).
+    - **Assign PMs:** a dialog with a **searchable multi-select of `project_manager` users** (checkbox list with chips for selected users, built on `SearchableSelect`) that saves through `PUT /api/projects/{id}/managers`.
+    - **Delete:** shown only with `projects.delete`, behind a confirmation dialog. It is disabled with a tooltip ("Has N reviews — can't be deleted") when `review_count > 0`, and the backend's 409 is shown if it races.
+  - Dashboard rename stays where it is today, but is now gated by `projects.rename`.
 - **Users page:**
   - The role dropdown offers all five roles with readable labels, plus an editable Name column.
-  - When the role is `project_manager`, a **searchable multi-select of projects** appears (checkbox list with chips for selected items, built on `SearchableSelect`) and saves through `PUT /api/users/{id}/projects`.
-- **Cycles (`pages/CyclesPlaceholderPage.jsx`, new):** a card reading "Quarterly review cycles are coming soon."
+  - For PMs, assigned projects show as read-only chips linking to `/projects`.
 
 ### Visual polish limits
 
 - The navbar is fully restyled.
-- Alignment and spacing are fixed on the dashboard header row and the Users table.
+- Alignment and spacing are fixed on the dashboard header row and the Users table. The new Projects page follows the same table style.
 - A whole-app UI review is planned after Part 2.
 
 ## Error handling
 
 - **403:** the user lacks a capability for something they can see. **404:** the user can't see the resource.
-- **400:** unknown role, or assigning projects to a non-PM.
+- **400:** unknown role, or assigning a non-PM (or inactive user) as a project's PM.
+- **409:** deleting a project that has reviews.
 - The frontend's existing 401 handling redirects to login. A 403 from a guarded action shows "You don't have permission to do this." A 404 on the report page shows "Review not found."
 
 ## Testing
@@ -193,9 +215,14 @@ Creating projects (`POST /api/projects`) keeps its current behaviour under `revi
   - A reviewer can't reassign.
 - Coordinators get empty or 403 responses from dashboard endpoints and 403 from chat.
 - The chatbot `query_reviews` tool never returns rows outside the scope.
+- **Projects API:**
+  - Coordinators can create, rename and assign PMs, and get 403 on delete.
+  - Management and admins can delete an empty project, and get 409 when it has reviews.
+  - Assigning PMs replaces the set, returns 404 for an unknown user, and 400 for a non-PM.
+  - Coordinators see all projects on `GET /api/projects` but get empty review data.
+- `PATCH /api/reviews/{id}/reviewer`: coordinators, Management and admins are allowed, and reviewers and PMs get 403.
 - **Users API:**
-  - Project assignment replaces the set, and unknown projects return 404.
-  - Changing a PM's role clears their assignments.
+  - Changing a PM's role or deactivating them clears their assignments.
   - Unknown roles return 400, and `name` round-trips.
 - **Migration:** `user` becomes `project_manager`, and the downgrade path works.
 
@@ -204,7 +231,11 @@ Creating projects (`POST /api/projects`) keeps its current behaviour under `revi
 - `RequirePermission`: redirects to `home_path`, and `/` sends each role to its home page.
 - `MyReviewsPage`: rows, the Pending/All filter, and the empty state.
 - Dashboard: PMs don't see actions they lack, and the "no projects" message shows.
-- Users page: the project multi-select appears only for PMs, and saving sends the right IDs.
+- Projects page:
+  - The table renders, and New project and Rename work.
+  - Assign PMs saves the right IDs.
+  - Delete is hidden for coordinators, and disabled with the tooltip when the project has reviews.
+- Users page: PM project chips are read-only.
 - Existing tests that used `user` or the old reviewer behaviour are updated.
 
 **Manual Docker smoke test:**
@@ -214,6 +245,6 @@ Creating projects (`POST /api/projects`) keeps its current behaviour under `revi
 ## Out of scope / deferred to Part 2–3
 
 - Per-project platform lists and the "one review per platform per quarter" completion rule.
-- The Coordinator's cycles UI, PM DevOps URL entry, the org-wide PAT in Settings, and autonomous execution.
+- The Coordinator's cycles UI (the coordinator's home moves from `/projects` to `/cycles` then), PM DevOps URL entry, the org-wide PAT in Settings, and autonomous execution.
 - Saving review progress in the database.
 - Emails and reminders.
