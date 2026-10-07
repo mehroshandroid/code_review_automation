@@ -834,8 +834,13 @@ async def update_review_reviewer(
 
     async with new_session() as session:
         review = await crud.set_review_reviewer(session, review_id, body.reviewer_id)
-    if review is None:
-        raise HTTPException(status_code=404, detail="Review not found")
+        if review is None:
+            raise HTTPException(status_code=404, detail="Review not found")
+        visible = await can_view_review(session, user, review)
+    # Assigning needs only the capability, but the report itself stays behind
+    # the same visibility rule as GET /api/reviews/{id}.
+    if not visible:
+        return {"id": review.id, "reviewer_id": review.reviewer_id}
     return _review_to_dict(review)
 
 

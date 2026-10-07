@@ -42,7 +42,7 @@ This spec covers **Part 1 only**. Part 1 must be useful on its own: it ships the
 
 The old `user` role is **retired**. Existing `user` accounts are migrated to `project_manager` with no projects assigned, so they see nothing until an admin assigns projects.
 
-**Rollout note:** existing `reviewer` accounts keep the `reviewer` role but **lose the org-wide dashboard and Settings**. Before deploying, an admin should move anyone who still needs the full dashboard to `management`.
+**Rollout note:** existing `reviewer` accounts keep the `reviewer` role but **lose the org-wide dashboard and Settings**. The pre-release API can't assign `management`, so right after the migration runs (and before announcing the release), an admin moves anyone who still needs the full dashboard to `management`, either on the Users page or with `UPDATE users SET role = 'management' WHERE email IN (...)`.
 
 ## Capability matrix
 

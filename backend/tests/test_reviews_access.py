@@ -147,3 +147,16 @@ def test_only_creators_can_start_or_upload(db, role):
 def test_delete_review_admin_only(db):
     _as("management", "mgmt")
     assert client.delete("/api/reviews/in-scope").status_code == 403
+
+
+def test_assigning_reviewer_does_not_leak_report_to_a_caller_who_cannot_see_it(db):
+    _as("coordinator", "coord")
+    body = client.patch("/api/reviews/in-scope/reviewer", json={"reviewer_id": "mgmt"}).json()
+    assert body == {"id": "in-scope", "reviewer_id": "mgmt"}
+
+
+def test_assigning_reviewer_returns_full_report_to_a_caller_who_can_see_it(db):
+    _as("management", "mgmt")
+    body = client.patch("/api/reviews/in-scope/reviewer", json={"reviewer_id": "rev"}).json()
+    assert body["reviewer_id"] == "rev"
+    assert "category_scores" in body

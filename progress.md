@@ -92,7 +92,10 @@ Spec: `docs/superpowers/specs/2026-10-07-roles-and-access-design.md`. Plan: `doc
 - **Reviewers:** have a "My reviews" page (`/my-reviews`) and can finalize only the reviews assigned to them. They no longer see the dashboard or Settings.
 - **Coordinators:** their home page is Projects. They can assign reviewers, and in Part 2 they will run quarterly cycles.
 - **Navbar:** a new shared navbar (`AppNav`) shows links for the user's role and an avatar menu with initials, name and role. It replaces `TopNav` and `NavActions`.
-- **Rollout note:** existing reviewer accounts lose access to the dashboard and Settings. Before deploying, an admin should move anyone who still needs them to **Management**.
+- **Rollout note:** existing reviewer accounts lose access to the dashboard and Settings. The old code can't set the `management` role, so re-role people **right after the migration runs, before announcing the release**. Either use the Users page as an admin, or run the following against the database, listing the emails of reviewers who still need the dashboard:
+  ```sql
+  UPDATE users SET role = 'management' WHERE email IN ('person1@teo-intl.com', 'person2@teo-intl.com');
+  ```
 - **Next:** Part 2 is quarterly cycles (Coordinator starts a cycle, PM enters a DevOps URL for each platform, the review runs automatically). Part 3 is email notifications.
 
 ---
