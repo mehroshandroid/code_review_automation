@@ -7,6 +7,7 @@ adding a role or widening one only ever means editing PERMISSIONS here.
 from fastapi import Depends, HTTPException
 
 from app.auth.dependencies import get_current_user
+from app.db import crud
 from app.db.models import User
 
 ADMIN, MANAGEMENT, COORDINATOR, REVIEWER, PROJECT_MANAGER = (
@@ -59,3 +60,24 @@ def require_permission(*capabilities: str):
             raise HTTPException(status_code=403, detail="You don't have permission to do this")
         return current_user
     return _check
+
+
+async def visible_project_ids(session, user: User) -> set[str] | None:
+    """None = every project; otherwise the exact set this user may see (possibly empty).
+
+    Takes the caller's session so endpoint tests' in-memory DB is used.
+    """
+    if can(user, "dashboard.view_all"):
+        return None
+    if can(user, "dashboard.view_assigned"):
+        return await crud.get_project_ids_for_manager(session, user.id)
+    return set()
+
+
+async def can_view_review(session, user: User, review) -> bool:
+    if review.reviewer_id is not None and review.reviewer_id == user.id:
+        return True
+    visible = await visible_project_ids(session, user)
+    if visible is None:
+        return True
+    return review.project_id is not None and review.project_id in visible

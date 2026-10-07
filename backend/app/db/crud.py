@@ -5,7 +5,7 @@ from typing import Optional
 from sqlalchemy import delete, extract, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import ClauseChecklist, OrgSettings, PlatformReview, Project, SampleTemplate, User
+from app.db.models import ClauseChecklist, OrgSettings, PlatformReview, Project, ProjectManager, SampleTemplate, User
 
 
 async def create_project(session: AsyncSession, project_id: str, name: str) -> Project:
@@ -16,9 +16,6 @@ async def create_project(session: AsyncSession, project_id: str, name: str) -> P
     return project
 
 
-async def list_projects(session: AsyncSession) -> list[Project]:
-    result = await session.execute(select(Project).order_by(Project.created_at.desc()))
-    return list(result.scalars().all())
 
 
 async def update_project_name(session: AsyncSession, project_id: str, name: str) -> Optional[Project]:
@@ -93,20 +90,6 @@ async def list_reviews_for_project(session: AsyncSession, project_id: str) -> li
     return list(result.scalars().all())
 
 
-async def list_reviews(
-    session: AsyncSession,
-    year: int,
-    platform: Optional[str] = None,
-    project_id: Optional[str] = None,
-) -> list[PlatformReview]:
-    query = select(PlatformReview).where(extract("year", PlatformReview.created_at) == year)
-    if platform:
-        query = query.where(PlatformReview.platform.ilike(platform))
-    if project_id:
-        query = query.where(PlatformReview.project_id == project_id)
-    query = query.order_by(PlatformReview.created_at.desc())
-    result = await session.execute(query)
-    return list(result.scalars().all())
 
 
 async def get_latest_review_for_platform(session: AsyncSession, platform: str) -> Optional[PlatformReview]:
@@ -120,9 +103,6 @@ async def get_latest_review_for_platform(session: AsyncSession, platform: str) -
     return result.scalars().first()
 
 
-async def list_review_years(session: AsyncSession) -> list[int]:
-    result = await session.execute(select(extract("year", PlatformReview.created_at)).distinct())
-    return sorted({int(year) for (year,) in result.all()})
 
 
 async def update_review(
@@ -147,13 +127,6 @@ async def update_review(
     return review
 
 
-async def list_reviewer_candidates(session: AsyncSession) -> list[User]:
-    result = await session.execute(
-        select(User)
-        .where(User.role.in_(["admin", "reviewer"]), User.is_active.is_(True))
-        .order_by(User.email)
-    )
-    return list(result.scalars().all())
 
 
 async def set_review_reviewer(session: AsyncSession, review_id: str, reviewer_id: Optional[str]) -> Optional[PlatformReview]:
@@ -258,15 +231,6 @@ async def delete_sample_template(session: AsyncSession, platform: str) -> bool:
     return result.rowcount > 0
 
 
-async def create_user(session: AsyncSession, user_id: str, email: str, password_hash: str, role: str) -> User:
-    user = User(
-        id=user_id, email=email, password_hash=password_hash, role=role,
-        is_active=True, created_at=datetime.now(timezone.utc),
-    )
-    session.add(user)
-    await session.commit()
-    await session.refresh(user)
-    return user
 
 
 async def get_user_by_email(session: AsyncSession, email: str) -> Optional[User]:
@@ -283,9 +247,160 @@ async def list_users(session: AsyncSession) -> list[User]:
     return list(result.scalars().all())
 
 
+
+
+async def count_users(session: AsyncSession) -> int:
+    result = await session.execute(select(func.count()).select_from(User))
+    return result.scalar_one()
+
+
+async def list_projects(session: AsyncSession, project_ids: Optional[set[str]] = None) -> list[Project]:
+    if project_ids is not None and not project_ids:
+        return []
+    query = select(Project).order_by(Project.created_at.desc())
+    if project_ids is not None:
+        query = query.where(Project.id.in_(project_ids))
+    result = await session.execute(query)
+    return list(result.scalars().all())
+
+
+async def list_reviews(
+    session: AsyncSession,
+    year: int,
+    platform: Optional[str] = None,
+    project_id: Optional[str] = None,
+    project_ids: Optional[set[str]] = None,
+) -> list[PlatformReview]:
+    if project_ids is not None and not project_ids:
+        return []
+    query = select(PlatformReview).where(extract("year", PlatformReview.created_at) == year)
+    if platform:
+        query = query.where(PlatformReview.platform.ilike(platform))
+    if project_id:
+        query = query.where(PlatformReview.project_id == project_id)
+    if project_ids is not None:
+        query = query.where(PlatformReview.project_id.in_(project_ids))
+    query = query.order_by(PlatformReview.created_at.desc())
+    result = await session.execute(query)
+    return list(result.scalars().all())
+
+
+async def list_review_years(session: AsyncSession, project_ids: Optional[set[str]] = None) -> list[int]:
+    if project_ids is not None and not project_ids:
+        return []
+    query = select(extract("year", PlatformReview.created_at)).distinct()
+    if project_ids is not None:
+        query = query.where(PlatformReview.project_id.in_(project_ids))
+    result = await session.execute(query)
+    return sorted({int(year) for (year,) in result.all()})
+
+
+async def list_reviews_for_reviewer(session: AsyncSession, user_id: str) -> list[PlatformReview]:
+    result = await session.execute(
+        select(PlatformReview)
+        .where(PlatformReview.reviewer_id == user_id)
+        .order_by(PlatformReview.created_at.desc())
+    )
+    return list(result.scalars().all())
+
+
+async def list_reviewer_candidates(session: AsyncSession, roles: frozenset[str]) -> list[User]:
+    result = await session.execute(
+        select(User)
+        .where(User.role.in_(roles), User.is_active.is_(True))
+        .order_by(User.email)
+    )
+    return list(result.scalars().all())
+
+
+# --- project managers ---
+
+async def get_project_ids_for_manager(session: AsyncSession, user_id: str) -> set[str]:
+    result = await session.execute(select(ProjectManager.project_id).where(ProjectManager.user_id == user_id))
+    return {project_id for (project_id,) in result.all()}
+
+
+async def get_project_ids_for_managers(session: AsyncSession, user_ids: list[str]) -> dict[str, list[str]]:
+    mapping: dict[str, list[str]] = {user_id: [] for user_id in user_ids}
+    if not user_ids:
+        return mapping
+    result = await session.execute(
+        select(ProjectManager.user_id, ProjectManager.project_id)
+        .where(ProjectManager.user_id.in_(user_ids))
+        .order_by(ProjectManager.project_id)
+    )
+    for user_id, project_id in result.all():
+        mapping[user_id].append(project_id)
+    return mapping
+
+
+async def get_manager_ids_for_projects(session: AsyncSession, project_ids: list[str]) -> dict[str, list[str]]:
+    mapping: dict[str, list[str]] = {project_id: [] for project_id in project_ids}
+    if not project_ids:
+        return mapping
+    result = await session.execute(
+        select(ProjectManager.project_id, ProjectManager.user_id)
+        .where(ProjectManager.project_id.in_(project_ids))
+        .order_by(ProjectManager.user_id)
+    )
+    for project_id, user_id in result.all():
+        mapping[project_id].append(user_id)
+    return mapping
+
+
+async def set_managers_for_project(session: AsyncSession, project_id: str, user_ids: list[str]) -> None:
+    await session.execute(delete(ProjectManager).where(ProjectManager.project_id == project_id))
+    for user_id in dict.fromkeys(user_ids):
+        session.add(ProjectManager(user_id=user_id, project_id=project_id))
+    await session.commit()
+
+
+async def clear_projects_for_manager(session: AsyncSession, user_id: str) -> None:
+    await session.execute(delete(ProjectManager).where(ProjectManager.user_id == user_id))
+    await session.commit()
+
+
+async def count_reviews_by_project(session: AsyncSession) -> dict[str, int]:
+    result = await session.execute(
+        select(PlatformReview.project_id, func.count())
+        .where(PlatformReview.project_id.is_not(None))
+        .group_by(PlatformReview.project_id)
+    )
+    return {project_id: count for project_id, count in result.all()}
+
+
+async def count_reviews_for_project(session: AsyncSession, project_id: str) -> int:
+    result = await session.execute(
+        select(func.count()).select_from(PlatformReview).where(PlatformReview.project_id == project_id)
+    )
+    return result.scalar_one()
+
+
+async def delete_project(session: AsyncSession, project_id: str) -> bool:
+    # Explicit, not just ON DELETE CASCADE: SQLite (tests) doesn't enforce FKs by default.
+    await session.execute(delete(ProjectManager).where(ProjectManager.project_id == project_id))
+    result = await session.execute(delete(Project).where(Project.id == project_id))
+    await session.commit()
+    return result.rowcount > 0
+
+
+async def create_user(
+    session: AsyncSession, user_id: str, email: str, password_hash: str, role: str, name: Optional[str] = None,
+) -> User:
+    user = User(
+        id=user_id, email=email, password_hash=password_hash, role=role, name=(name or "").strip() or None,
+        is_active=True, created_at=datetime.now(timezone.utc),
+    )
+    session.add(user)
+    await session.commit()
+    await session.refresh(user)
+    return user
+
+
 async def update_user(
     session: AsyncSession, user_id: str,
     role: Optional[str] = None, is_active: Optional[bool] = None, password_hash: Optional[str] = None,
+    name: Optional[str] = None,
 ) -> Optional[User]:
     user = await session.get(User, user_id)
     if user is None:
@@ -296,17 +411,15 @@ async def update_user(
         user.is_active = is_active
     if password_hash is not None:
         user.password_hash = password_hash
+    if name is not None:
+        user.name = name.strip() or None
     await session.commit()
     await session.refresh(user)
     return user
 
 
-async def count_users(session: AsyncSession) -> int:
-    result = await session.execute(select(func.count()).select_from(User))
-    return result.scalar_one()
-
-
 async def delete_user(session: AsyncSession, user_id: str) -> bool:
+    await session.execute(delete(ProjectManager).where(ProjectManager.user_id == user_id))
     result = await session.execute(delete(User).where(User.id == user_id))
     await session.commit()
     return result.rowcount > 0
