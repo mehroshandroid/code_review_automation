@@ -27,3 +27,13 @@ test("filters and toggles options with checkboxes", async () => {
   await user.click(screen.getByRole("checkbox", { name: "Bob" }));
   expect(screen.getByRole("button", { name: "Remove Bob" })).toBeInTheDocument();
 });
+
+test("the options panel is laid out in normal flow so a dialog grows to fit it", async () => {
+  // An absolutely-positioned panel takes no space, so inside a dialog body
+  // with overflow-y: auto it was clipped instead of expanding the dialog.
+  const user = userEvent.setup();
+  render(<Harness />);
+  await user.click(screen.getByRole("button", { name: "Managers" }));
+  const panel = screen.getByRole("group", { name: "Managers options" });
+  expect(panel).not.toHaveStyle({ position: "absolute" });
+});

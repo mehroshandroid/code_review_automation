@@ -21,7 +21,7 @@ export default function MultiSelect({ ariaLabel, options, values, onChange, plac
   }
 
   return (
-    <div ref={containerRef} style={{ position: "relative", display: "grid", gap: 8 }}>
+    <div ref={containerRef} style={{ display: "grid", gap: 8 }}>
       {selected.length > 0 && (
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
           {selected.map((option) => (
@@ -46,7 +46,9 @@ export default function MultiSelect({ ariaLabel, options, values, onChange, plac
         <span aria-hidden="true">▾</span>
       </button>
       {open && (
-        <div className="card elev-md" style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 60, padding: 8, marginTop: 4, maxHeight: 280, display: "flex", flexDirection: "column" }}>
+        // In normal flow (not absolute) so a containing dialog grows to fit it
+        // instead of clipping it inside its scrollable body.
+        <div role="group" aria-label={`${ariaLabel} options`} className="card" style={{ padding: 8, maxHeight: 280, display: "flex", flexDirection: "column" }}>
           <input
             type="text" className="input" aria-label={`Search ${ariaLabel}`} placeholder="Search…"
             value={query} autoFocus onChange={(event) => setQuery(event.target.value)}
