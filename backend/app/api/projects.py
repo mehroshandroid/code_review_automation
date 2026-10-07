@@ -55,7 +55,7 @@ async def list_projects(user=Depends(get_current_user)):
 
 
 @router.patch("/api/projects/{project_id}")
-async def update_project(project_id: str, body: CreateProjectRequest, user=Depends(require_permission("projects.rename"))):
+async def update_project(project_id: str, body: CreateProjectRequest, user=Depends(require_permission("projects.edit"))):
     async with new_session() as session:
         try:
             project = await crud.update_project_name(session, project_id=project_id, name=body.name)

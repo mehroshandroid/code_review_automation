@@ -30,10 +30,12 @@ PERMISSIONS: dict[str, frozenset[str]] = {
     "users.manage": frozenset({ADMIN}),
     "projects.view": _PROJECT_STAFF,
     "projects.create": _PROJECT_STAFF,
-    "projects.rename": _PROJECT_STAFF,
+    "projects.edit": _PROJECT_STAFF,
     "projects.assign_pm": _PROJECT_STAFF,
     "projects.delete": frozenset({ADMIN, MANAGEMENT}),
     "chat.use": frozenset({ADMIN, MANAGEMENT, PROJECT_MANAGER}),
+    "cycles.view": _PROJECT_STAFF,
+    "cycles.initiate": _PROJECT_STAFF,
 }
 
 HOME_PATHS: dict[str, str] = {
@@ -41,7 +43,7 @@ HOME_PATHS: dict[str, str] = {
     MANAGEMENT: "/",
     PROJECT_MANAGER: "/",
     REVIEWER: "/my-reviews",
-    COORDINATOR: "/projects",
+    COORDINATOR: "/",
 }
 
 
