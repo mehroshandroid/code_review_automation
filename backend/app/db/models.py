@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import Boolean, JSON, DateTime, ForeignKey, Numeric, String, UniqueConstraint
+from sqlalchemy import Boolean, JSON, DateTime, ForeignKey, Integer, Numeric, String, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -105,3 +105,34 @@ class ProjectManager(Base):
 
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
     project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), primary_key=True)
+
+
+class ProjectPlatform(Base):
+    """Which tracked platforms (app.quarterly.TRACKED_PLATFORMS) a project has."""
+
+    __tablename__ = "project_platforms"
+
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), primary_key=True)
+    platform: Mapped[str] = mapped_column(String, primary_key=True)
+
+
+class ReviewCycle(Base):
+    """A project's review for one calendar quarter, started by a coordinator."""
+
+    __tablename__ = "review_cycles"
+    __table_args__ = (UniqueConstraint("project_id", "year", "quarter"),)
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    year: Mapped[int] = mapped_column(Integer, nullable=False)
+    quarter: Mapped[int] = mapped_column(Integer, nullable=False)
+    initiated_by: Mapped[Optional[str]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    initiated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class ReviewCycleAssignment(Base):
+    __tablename__ = "review_cycle_assignments"
+
+    cycle_id: Mapped[str] = mapped_column(ForeignKey("review_cycles.id", ondelete="CASCADE"), primary_key=True)
+    platform: Mapped[str] = mapped_column(String, primary_key=True)
+    reviewer_id: Mapped[Optional[str]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)

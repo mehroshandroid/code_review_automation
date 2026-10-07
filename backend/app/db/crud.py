@@ -5,7 +5,11 @@ from typing import Optional
 from sqlalchemy import delete, extract, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import ClauseChecklist, OrgSettings, PlatformReview, Project, ProjectManager, SampleTemplate, User
+from app.db.models import (
+    ClauseChecklist, OrgSettings, PlatformReview, Project, ProjectManager, ProjectPlatform, ReviewCycle,
+    ReviewCycleAssignment, SampleTemplate, User,
+)
+from app.quarterly import sort_platforms
 
 
 async def create_project(session: AsyncSession, project_id: str, name: str) -> Project:
@@ -378,6 +382,10 @@ async def count_reviews_for_project(session: AsyncSession, project_id: str) -> i
 
 async def delete_project(session: AsyncSession, project_id: str) -> bool:
     # Explicit, not just ON DELETE CASCADE: SQLite (tests) doesn't enforce FKs by default.
+    cycle_ids = select(ReviewCycle.id).where(ReviewCycle.project_id == project_id)
+    await session.execute(delete(ReviewCycleAssignment).where(ReviewCycleAssignment.cycle_id.in_(cycle_ids)))
+    await session.execute(delete(ReviewCycle).where(ReviewCycle.project_id == project_id))
+    await session.execute(delete(ProjectPlatform).where(ProjectPlatform.project_id == project_id))
     await session.execute(delete(ProjectManager).where(ProjectManager.project_id == project_id))
     result = await session.execute(delete(Project).where(Project.id == project_id))
     await session.commit()
@@ -423,3 +431,92 @@ async def delete_user(session: AsyncSession, user_id: str) -> bool:
     result = await session.execute(delete(User).where(User.id == user_id))
     await session.commit()
     return result.rowcount > 0
+
+
+# --- quarterly ---
+
+async def get_platforms_for_projects(session: AsyncSession, project_ids: list[str]) -> dict[str, list[str]]:
+    mapping: dict[str, list[str]] = {project_id: [] for project_id in project_ids}
+    if not project_ids:
+        return mapping
+    result = await session.execute(
+        select(ProjectPlatform.project_id, ProjectPlatform.platform).where(ProjectPlatform.project_id.in_(project_ids))
+    )
+    for project_id, platform in result.all():
+        mapping[project_id].append(platform)
+    return {project_id: sort_platforms(platforms) for project_id, platforms in mapping.items()}
+
+
+async def set_platforms_for_project(session: AsyncSession, project_id: str, platforms: list[str]) -> None:
+    await session.execute(delete(ProjectPlatform).where(ProjectPlatform.project_id == project_id))
+    for platform in sort_platforms(platforms):
+        session.add(ProjectPlatform(project_id=project_id, platform=platform))
+    await session.commit()
+
+
+async def list_live_reviews_for_projects_in_year(session: AsyncSession, project_ids: list[str], year: int) -> list[PlatformReview]:
+    if not project_ids:
+        return []
+    result = await session.execute(
+        select(PlatformReview)
+        .where(
+            PlatformReview.project_id.in_(project_ids),
+            PlatformReview.status != "error",
+            extract("year", PlatformReview.created_at) == year,
+        )
+        .order_by(PlatformReview.created_at.desc())
+    )
+    return list(result.scalars().all())
+
+
+async def list_cycles_for_projects_in_year(session: AsyncSession, project_ids: list[str], year: int) -> list[ReviewCycle]:
+    if not project_ids:
+        return []
+    result = await session.execute(
+        select(ReviewCycle).where(ReviewCycle.project_id.in_(project_ids), ReviewCycle.year == year)
+    )
+    return list(result.scalars().all())
+
+
+async def get_cycle_assignments(session: AsyncSession, cycle_ids: list[str]) -> dict[str, list[ReviewCycleAssignment]]:
+    mapping: dict[str, list[ReviewCycleAssignment]] = {cycle_id: [] for cycle_id in cycle_ids}
+    if not cycle_ids:
+        return mapping
+    result = await session.execute(select(ReviewCycleAssignment).where(ReviewCycleAssignment.cycle_id.in_(cycle_ids)))
+    for assignment in result.scalars().all():
+        mapping[assignment.cycle_id].append(assignment)
+    return mapping
+
+
+async def get_cycle(session: AsyncSession, project_id: str, year: int, quarter: int) -> Optional[ReviewCycle]:
+    result = await session.execute(
+        select(ReviewCycle).where(
+            ReviewCycle.project_id == project_id, ReviewCycle.year == year, ReviewCycle.quarter == quarter,
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+async def create_cycle(
+    session: AsyncSession, cycle_id: str, project_id: str, year: int, quarter: int,
+    initiated_by: Optional[str], assignments: list[tuple[str, Optional[str]]],
+) -> ReviewCycle:
+    cycle = ReviewCycle(
+        id=cycle_id, project_id=project_id, year=year, quarter=quarter,
+        initiated_by=initiated_by, initiated_at=datetime.now(timezone.utc),
+    )
+    session.add(cycle)
+    await session.flush()
+    for platform, reviewer_id in assignments:
+        session.add(ReviewCycleAssignment(cycle_id=cycle_id, platform=platform, reviewer_id=reviewer_id))
+    await session.commit()
+    await session.refresh(cycle)
+    return cycle
+
+
+async def get_users_by_ids(session: AsyncSession, user_ids: list[str]) -> dict[str, User]:
+    ids = [user_id for user_id in set(user_ids) if user_id]
+    if not ids:
+        return {}
+    result = await session.execute(select(User).where(User.id.in_(ids)))
+    return {user.id: user for user in result.scalars().all()}
