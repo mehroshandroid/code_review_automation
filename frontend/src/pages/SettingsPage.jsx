@@ -12,6 +12,7 @@ const PLATFORM_LABELS = PLATFORMS.map((platform) => platform.label);
 const LLM_PROVIDERS = [
   { id: "azure", label: "Azure OpenAI" },
   { id: "ollama", label: "Ollama (local)" },
+  { id: "claude", label: "Claude CLI (local)" },
 ];
 
 function ClausePreviewDialog({ platform, onSelect, onClose }) {

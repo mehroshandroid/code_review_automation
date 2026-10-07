@@ -4,7 +4,7 @@ CodeAssure (formerly "Code Review Automation") is an AI-assisted tool for review
 
 This file records what has been built and in what order, so a future developer can see what exists and why. For the design behind each feature, read the specs in `docs/superpowers/specs/`. Each spec has a matching step-by-step plan in `docs/superpowers/plans/`.
 
-_Last updated: 2026-10-06_
+_Last updated: 2026-10-07_
 
 ---
 
@@ -79,6 +79,7 @@ LLM providers: Azure OpenAI, Ollama (local) and Claude CLI (local). Admins set t
   - Renamed the project to **CodeAssure**: nav brand, page headings ("CodeAssure for Android" and so on), page title, manifest, API title and README headings.
   - The favicon and app icons now use the nav logo mark (coral and navy split with a white check). This added `favicon.svg`.
   - Stopped browsers from autofilling the saved login (`admin@example.com` and its password) into the Azure DevOps URL and PAT fields on the review form.
+  - **2026-10-07:** Added "Claude CLI (local)" to the Settings page's organization-wide default LLM provider options, which had only listed Azure and Ollama.
 
 ---
 
