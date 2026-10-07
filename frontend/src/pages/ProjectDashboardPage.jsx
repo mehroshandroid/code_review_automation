@@ -6,7 +6,7 @@ import DashboardResultsTable from "../components/DashboardResultsTable";
 import StartReviewDialog from "../components/StartReviewDialog";
 import UploadReviewDialog from "../components/UploadReviewDialog";
 import ChatWidget from "../components/ChatWidget";
-import NavActions from "../components/NavActions";
+import AppNav from "../components/AppNav";
 import { getProjects, getReviews, getReviewYears } from "../services/api";
 
 function currentYear() {
@@ -68,17 +68,7 @@ export default function ProjectDashboardPage() {
 
   return (
     <div style={{ minHeight: "100vh", background: "var(--color-bg)", fontFamily: "var(--font-body)", color: "var(--color-text)" }}>
-      <nav className="nav">
-        <span className="logo-mark">
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M20 6 9 17l-5-5" />
-          </svg>
-        </span>
-        <span className="nav-brand">CodeAssure</span>
-        <div style={{ marginLeft: "auto", display: "flex", gap: "var(--space-2)", alignItems: "center" }}>
-          <NavActions />
-        </div>
-      </nav>
+      <AppNav />
 
       <main style={{ maxWidth: 1600, margin: "0 auto", padding: "40px 16px 96px", display: "grid", gap: "var(--space-4)" }}>
         <header style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "var(--space-3)", flexWrap: "wrap" }}>

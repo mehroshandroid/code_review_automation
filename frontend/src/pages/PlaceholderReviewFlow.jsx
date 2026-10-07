@@ -1,10 +1,10 @@
-import TopNav from "../components/TopNav";
+import AppNav from "../components/AppNav";
 import UploadForm from "../components/UploadForm";
 
 export default function PlaceholderReviewFlow({ platform }) {
   return (
     <div style={{ minHeight: "100vh", background: "var(--color-bg)", fontFamily: "var(--font-body)", color: "var(--color-text)" }}>
-      <TopNav />
+      <AppNav />
 
       <main style={{ maxWidth: 920, margin: "0 auto", padding: "64px 24px 96px" }}>
         <header style={{ marginBottom: "var(--space-6)" }}>

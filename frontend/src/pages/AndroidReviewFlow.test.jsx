@@ -101,7 +101,7 @@ test("full happy path: upload, poll, complete, download link, LLM stats, reset",
     "href",
     "http://localhost:8000/api/reviews/abc-123/download"
   );
-  expect(screen.getByText("← Home")).toHaveAttribute("href", "/");
+  expect(screen.getByRole("link", { name: /codeassure/i })).toHaveAttribute("href", "/");
 
   await user.click(screen.getByRole("button", { name: /start new review/i }));
   expect(screen.getByLabelText(/android project/i)).toBeInTheDocument();

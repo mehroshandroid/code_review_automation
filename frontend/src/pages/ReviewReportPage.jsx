@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import TopNav from "../components/TopNav";
+import AppNav from "../components/AppNav";
 import ReportTable from "../components/ReportTable";
 import ReviewMetaBar from "../components/ReviewMetaBar";
 import { DownloadIcon } from "../icons";
@@ -151,7 +151,7 @@ export default function ReviewReportPage() {
 
   return (
     <div style={{ minHeight: "100vh", background: "var(--color-bg)", fontFamily: "var(--font-body)", color: "var(--color-text)" }}>
-      <TopNav />
+      <AppNav />
 
       <main style={{ maxWidth: 920, margin: "0 auto", padding: "64px 24px 96px" }}>
         {notFound && (

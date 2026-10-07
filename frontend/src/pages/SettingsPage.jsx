@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import TopNav from "../components/TopNav";
+import AppNav from "../components/AppNav";
 import { PLATFORMS } from "../platforms";
 import {
   getLlmProviderSettings, updateLlmProviderSettings, getOllamaModels,
@@ -450,7 +450,7 @@ function SampleTemplateSection() {
 export default function SettingsPage() {
   return (
     <div style={{ minHeight: "100vh", background: "var(--color-bg)", fontFamily: "var(--font-body)", color: "var(--color-text)" }}>
-      <TopNav />
+      <AppNav />
       <main style={{ maxWidth: 960, margin: "0 auto", padding: "64px 24px 96px", display: "grid", gap: "var(--space-6)" }}>
         <header>
           <h1 style={{ fontFamily: "var(--font-heading)", fontWeight: "var(--font-heading-weight)", fontSize: 32, lineHeight: 1.1, letterSpacing: "-0.02em", margin: "0 0 12px" }}>

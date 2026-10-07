@@ -129,10 +129,12 @@ test("a successful upload jumps the dashboard filters to the uploaded review and
   expect(screen.getByRole("button", { name: "Year" })).toHaveTextContent(String(uploadedYear));
 });
 
-test("renders a Settings link pointing at /settings", async () => {
+test("offers Settings from the account menu", async () => {
+  const user = userEvent.setup();
   renderDashboard();
 
-  expect(await screen.findByRole("link", { name: /settings/i })).toHaveAttribute("href", "/settings");
+  await user.click(await screen.findByRole("button", { name: /account menu/i }));
+  expect(screen.getByRole("menuitem", { name: "Settings" })).toBeInTheDocument();
 });
 
 test("renders the review-insights chat widget", async () => {

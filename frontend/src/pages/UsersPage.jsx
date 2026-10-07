@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import TopNav from "../components/TopNav";
+import AppNav from "../components/AppNav";
 import { useAuth } from "../context/AuthContext";
 import { listUsers, createUser, updateUser, deleteUser } from "../services/api";
 
@@ -153,7 +153,7 @@ export default function UsersPage() {
 
   return (
     <div style={{ minHeight: "100vh", background: "var(--color-bg)" }}>
-      <TopNav />
+      <AppNav />
       <main style={{ maxWidth: 900, margin: "0 auto", padding: "40px 16px", display: "grid", gap: "var(--space-4)" }}>
         <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div className="card-title" style={{ fontSize: 20 }}>Users</div>
