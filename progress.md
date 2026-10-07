@@ -98,6 +98,26 @@ Spec: `docs/superpowers/specs/2026-10-07-roles-and-access-design.md`. Plan: `doc
   ```
 - **Next:** Part 2 is quarterly cycles (Coordinator starts a cycle, PM enters a DevOps URL for each platform, the review runs automatically). Part 3 is email notifications.
 
+### Phase 9: Quarterly dashboard and starting a review cycle, Part 2 slice 1 (2026-10-07). Branch: `quarterly-cycles`, stacked on `roles-and-access`
+
+Spec: `docs/superpowers/specs/2026-10-07-quarterly-dashboard-design.md`. Plan: `docs/superpowers/plans/2026-10-07-quarterly-dashboard.md`.
+
+- **Project platforms:** each project now has a list of its platforms (Android, iOS, .NET), set with checkboxes on the Projects page. "Rename" became "Edit". The migration `c3d4e5f6a7b8` fills in existing projects from the platforms they have non-errored reviews for.
+- **Quarterly dashboard (`/` for coordinators, `/quarterly` for admins and Management):** one row per project with four cards for Q1–Q4. The status rules live in `backend/app/quarterly.py`, and quarters run on UTC calendar dates.
+
+  | Status | Colour | Meaning |
+  |---|---|---|
+  | Done | green | Every platform has at least one non-errored review that quarter |
+  | In progress | yellow | A cycle was started or some platforms are covered, and the quarter isn't over |
+  | Overdue | coral | The quarter has ended without being done |
+  | Not started | white | A future quarter, or the current one with nothing yet |
+  | N/A | grey | The quarter ended before the project was being tracked |
+
+  A project counts as tracked from its creation date or its first review, whichever is earlier. Historical sheets were uploaded after the project records existed.
+- **Starting a review:** a coordinator, Management or admin can start the current quarter or an overdue one by assigning a reviewer to each platform. This creates `review_cycles` and `review_cycle_assignments` records.
+- **Navigation:** the coordinator's home and "Dashboard" link point to the quarterly dashboard, with "Projects" as a separate link. Admins and Management get a "Quarterly" link.
+- **Next slices of Part 2:** the PM enters a DevOps URL for each platform, an org-wide PAT is stored in Settings, the review runs automatically, review progress is saved in the database, and the coordinator gets a stage tracker with reminders. Part 3 is emails.
+
 ---
 
 ## Running locally
