@@ -17,7 +17,10 @@ export default function QuarterCard({ entry, platforms, canInitiate, onInitiate 
     <div className={`quarter-card quarter-card--${statusClass}`}>
       <div className="quarter-card-head">
         <span className="quarter-card-title">Q{entry.quarter} · {QUARTER_MONTHS[entry.quarter]}</span>
-        <span className={`quarter-badge quarter-badge--${statusClass}`}>{STATUS_LABELS[entry.status]}</span>
+        <span style={{ display: "flex", gap: 4 }}>
+          {entry.late && <span className="quarter-badge quarter-badge--late" title="Started after the quarter ended">Late</span>}
+          <span className={`quarter-badge quarter-badge--${statusClass}`}>{STATUS_LABELS[entry.status]}</span>
+        </span>
       </div>
       {entry.status !== "not_applicable" && (
         <ul className="quarter-card-platforms">

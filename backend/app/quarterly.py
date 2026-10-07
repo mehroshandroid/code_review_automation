@@ -39,11 +39,20 @@ def quarter_status(
         return "not_applicable"
     if platforms and set(platforms) <= covered:
         return "done"
+    if cycle_exists and today >= start:
+        # Initiated (possibly after the quarter ended, to catch up): it's being worked on.
+        return "in_progress"
     if today > end:
         return "overdue"
-    if today >= start and (cycle_exists or covered):
+    if today >= start and covered:
         return "in_progress"
     return "not_started"
+
+
+def is_late(status: str, year: int, quarter: int, today: date) -> bool:
+    """An in-progress quarter whose calendar quarter has already ended."""
+    _, end = quarter_bounds(year, quarter)
+    return status == "in_progress" and today > end
 
 
 def can_initiate(status: str, cycle_exists: bool, year: int, quarter: int, today: date) -> bool:

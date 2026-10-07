@@ -9,7 +9,7 @@ from app.auth.permissions import PERMISSIONS, require_permission
 from app.db import crud
 from app.db.session import new_session
 from app.quarterly import (
-    TRACKED_PLATFORMS, can_initiate, canonical_platform, quarter_bounds, quarter_status, sort_platforms,
+    TRACKED_PLATFORMS, can_initiate, canonical_platform, is_late, quarter_bounds, quarter_status, sort_platforms,
 )
 
 router = APIRouter()
@@ -85,6 +85,7 @@ async def _quarter_entries(session, projects, year: int, today: date) -> dict[st
                 "start": start.isoformat(),
                 "end": end.isoformat(),
                 "status": status,
+                "late": is_late(status, year, quarter, today),
                 "covered": [
                     {"platform": p, "review_id": latest_by_platform[p].id, "reviewed_at": latest_by_platform[p].created_at.isoformat()}
                     for p in sort_platforms(covered)

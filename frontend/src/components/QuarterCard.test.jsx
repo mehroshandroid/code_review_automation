@@ -44,3 +44,14 @@ test("Initiate button only when allowed by entry and permission", async () => {
   rerender(<QuarterCard entry={base} platforms={["Android", "iOS"]} canInitiate={false} onInitiate={onInitiate} />);
   expect(screen.queryByRole("button", { name: /initiate review/i })).not.toBeInTheDocument();
 });
+
+test("a late in-progress quarter shows a Late marker", () => {
+  render(<QuarterCard entry={{ ...base, status: "in_progress", late: true }} platforms={["Android", "iOS"]} canInitiate={false} onInitiate={jest.fn()} />);
+  expect(screen.getByText("In progress")).toBeInTheDocument();
+  expect(screen.getByText("Late")).toBeInTheDocument();
+});
+
+test("an on-time in-progress quarter has no Late marker", () => {
+  render(<QuarterCard entry={{ ...base, status: "in_progress", late: false }} platforms={["Android", "iOS"]} canInitiate={false} onInitiate={jest.fn()} />);
+  expect(screen.queryByText("Late")).not.toBeInTheDocument();
+});

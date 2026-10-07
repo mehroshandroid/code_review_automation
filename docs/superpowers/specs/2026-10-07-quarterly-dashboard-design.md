@@ -61,8 +61,9 @@ The rules are checked in this order:
 |---|---|
 | `not_applicable` | The quarter ended before the project's **tracked-since** date: the earlier of `projects.created_at` and its first non-errored review. Historical sheets are often uploaded after the project record exists |
 | `done` | The project has at least one platform, and every one is covered |
-| `overdue` | The quarter has ended and it isn't done |
-| `in_progress` | The quarter has started (today is on or after its first day), and either a cycle exists or at least one platform is covered |
+| `in_progress` (cycle) | A cycle exists and the quarter has started, even if it has ended (catching up). The entry carries `late: true` when the quarter has ended, and the card shows a "Late" marker |
+| `overdue` | The quarter has ended, it isn't done, and no cycle exists |
+| `in_progress` | The quarter has started (today is on or after its first day) and at least one platform is covered |
 | `not_started` | Anything else: a future quarter, or the current quarter with no cycle and no coverage |
 
 A project with **no platforms** is returned with `platforms: []` and no quarter statuses. The UI shows a prompt instead of cards.

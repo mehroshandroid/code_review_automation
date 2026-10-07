@@ -42,9 +42,18 @@ def test_done_even_for_current_quarter():
     assert quarter_status(CREATED, BOTH, {"Android", "iOS"}, False, 2026, 4, TODAY) == "done"
 
 
-def test_overdue_when_past_and_incomplete():
-    assert quarter_status(CREATED, BOTH, {"Android"}, True, 2026, 3, TODAY) == "overdue"
+def test_overdue_when_past_incomplete_and_not_initiated():
+    assert quarter_status(CREATED, BOTH, {"Android"}, False, 2026, 3, TODAY) == "overdue"
     assert quarter_status(CREATED, BOTH, set(), False, 2026, 1, TODAY) == "overdue"
+
+
+def test_initiating_a_past_incomplete_quarter_makes_it_in_progress():
+    assert quarter_status(CREATED, BOTH, {"Android"}, True, 2026, 3, TODAY) == "in_progress"
+    assert quarter_status(CREATED, BOTH, set(), True, 2026, 1, TODAY) == "in_progress"
+
+
+def test_initiated_quarter_still_becomes_done_when_covered():
+    assert quarter_status(CREATED, BOTH, {"Android", "iOS"}, True, 2026, 3, TODAY) == "done"
 
 
 def test_in_progress_with_cycle_or_partial_coverage():
@@ -61,8 +70,8 @@ def test_future_quarter_is_not_started():
 
 
 def test_last_day_of_quarter_is_not_overdue():
-    assert quarter_status(CREATED, BOTH, set(), True, 2026, 3, date(2026, 9, 30)) == "in_progress"
-    assert quarter_status(CREATED, BOTH, set(), True, 2026, 3, date(2026, 10, 1)) == "overdue"
+    assert quarter_status(CREATED, BOTH, {"Android"}, False, 2026, 3, date(2026, 9, 30)) == "in_progress"
+    assert quarter_status(CREATED, BOTH, {"Android"}, False, 2026, 3, date(2026, 10, 1)) == "overdue"
 
 
 def test_quarter_before_project_creation_is_not_applicable():

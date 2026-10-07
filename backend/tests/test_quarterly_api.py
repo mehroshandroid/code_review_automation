@@ -184,3 +184,15 @@ def test_concurrent_initiate_loser_gets_409_not_500(db, monkeypatch):
     })
     assert response.status_code == 409
     assert response.json()["detail"] == "This quarter's review has already been initiated."
+
+
+def test_initiating_an_overdue_quarter_turns_it_in_progress_and_late(db):
+    _as("coordinator", "coord")
+    entry = client.post("/api/projects/p1/cycles", json={
+        "year": 2026, "quarter": 3,
+        "assignments": [{"platform": "Android", "reviewer_id": "rev"}, {"platform": "iOS", "reviewer_id": "rev"}],
+    }).json()
+    assert entry["status"] == "in_progress" and entry["late"] is True
+    quarters = _quarters(client.get("/api/quarterly?year=2026").json())
+    assert quarters[3]["status"] == "in_progress" and quarters[3]["late"] is True
+    assert quarters[4]["late"] is False and quarters[1]["late"] is False
