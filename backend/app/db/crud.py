@@ -520,3 +520,15 @@ async def get_users_by_ids(session: AsyncSession, user_ids: list[str]) -> dict[s
         return {}
     result = await session.execute(select(User).where(User.id.in_(ids)))
     return {user.id: user for user in result.scalars().all()}
+
+
+async def get_first_review_dates(session: AsyncSession, project_ids: list[str]) -> dict[str, datetime]:
+    """Earliest non-errored review per project (reviews can predate the project record)."""
+    if not project_ids:
+        return {}
+    result = await session.execute(
+        select(PlatformReview.project_id, func.min(PlatformReview.created_at))
+        .where(PlatformReview.project_id.in_(project_ids), PlatformReview.status != "error")
+        .group_by(PlatformReview.project_id)
+    )
+    return {project_id: first for project_id, first in result.all()}

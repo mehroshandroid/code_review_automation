@@ -150,3 +150,17 @@ def test_set_platforms_validation_and_permissions(db):
     assert client.put("/api/projects/nope/platforms", json={"platforms": []}).status_code == 404
     _as("project_manager")
     assert client.put("/api/projects/p2/platforms", json={"platforms": ["iOS"]}).status_code == 403
+
+
+async def test_reviews_older_than_the_project_record_are_tracked(db):
+    # Projects created in the app after their history was uploaded: the first
+    # review, not the record's created_at, marks when tracking starts.
+    async with db() as s:
+        project = await crud.create_project(s, "p3", "Gamma")
+        project.created_at = datetime(2026, 8, 1, tzinfo=timezone.utc)
+        await s.commit()
+        await crud.set_platforms_for_project(s, "p3", ["Android"])
+        await _review(s, "g2", "p3", "Android", datetime(2025, 5, 2, tzinfo=timezone.utc))
+    _as("coordinator")
+    quarters = _quarters(client.get("/api/quarterly?year=2025").json(), "p3")
+    assert {q: e["status"] for q, e in quarters.items()} == {1: "not_applicable", 2: "done", 3: "overdue", 4: "overdue"}

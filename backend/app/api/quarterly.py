@@ -46,6 +46,7 @@ async def _quarter_entries(session, projects, year: int, today: date) -> dict[st
     user_ids = [c.initiated_by for c in cycles] + [a.reviewer_id for rows in assignments.values() for a in rows]
     users = await crud.get_users_by_ids(session, user_ids)
     cycle_by_key = {(c.project_id, c.quarter): c for c in cycles}
+    first_reviews = await crud.get_first_review_dates(session, project_ids)
 
     entries: dict[str, list[dict]] = {}
     for project in projects:
@@ -53,6 +54,11 @@ async def _quarter_entries(session, projects, year: int, today: date) -> dict[st
         if not platforms:
             entries[project.id] = []
             continue
+        # Tracked from whichever is earlier: the project record or its first
+        # review -- historical sheets are often uploaded after the record exists.
+        tracked_since = _as_date(project.created_at)
+        if project.id in first_reviews:
+            tracked_since = min(tracked_since, _as_date(first_reviews[project.id]))
         project_quarters = []
         for quarter in (1, 2, 3, 4):
             start, end = quarter_bounds(year, quarter)
@@ -66,7 +72,7 @@ async def _quarter_entries(session, projects, year: int, today: date) -> dict[st
                     latest_by_platform[platform] = review
             covered = set(latest_by_platform)
             cycle = cycle_by_key.get((project.id, quarter))
-            status = quarter_status(_as_date(project.created_at), platforms, covered, cycle is not None, year, quarter, today)
+            status = quarter_status(tracked_since, platforms, covered, cycle is not None, year, quarter, today)
             project_quarters.append({
                 "quarter": quarter,
                 "start": start.isoformat(),

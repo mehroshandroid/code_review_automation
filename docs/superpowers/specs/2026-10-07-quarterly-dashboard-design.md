@@ -59,7 +59,7 @@ The rules are checked in this order:
 
 | Status | Rule |
 |---|---|
-| `not_applicable` | The quarter ended before the project's `created_at` date |
+| `not_applicable` | The quarter ended before the project's **tracked-since** date: the earlier of `projects.created_at` and its first non-errored review. Historical sheets are often uploaded after the project record exists |
 | `done` | The project has at least one platform, and every one is covered |
 | `overdue` | The quarter has ended and it isn't done |
 | `in_progress` | The quarter has started (today is on or after its first day), and either a cycle exists or at least one platform is covered |
