@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import QuarterlyDashboardPage from "./QuarterlyDashboardPage";
@@ -84,4 +84,52 @@ test("load error", async () => {
   getQuarterly.mockRejectedValue(new Error("boom"));
   renderAs();
   expect(await screen.findByText("Couldn't load quarterly status.")).toBeInTheDocument();
+});
+
+test("switching year hides the previous year's cards until the new year loads", async () => {
+  // Otherwise a stale card's Initiate button would start a cycle for the newly selected year.
+  const user = userEvent.setup();
+  renderAs();
+  await screen.findByRole("region", { name: "Alpha" });
+  getQuarterly.mockReturnValue(new Promise(() => {}));
+  await user.selectOptions(screen.getByLabelText("Year"), "2025");
+  expect(screen.queryByRole("region", { name: "Alpha" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /initiate review/i })).not.toBeInTheDocument();
+});
+
+test("a failed year load does not leave the previous year's cards behind", async () => {
+  const user = userEvent.setup();
+  renderAs();
+  await screen.findByRole("region", { name: "Alpha" });
+  getQuarterly.mockRejectedValue(new Error("boom"));
+  await user.selectOptions(screen.getByLabelText("Year"), "2025");
+  expect(await screen.findByText("Couldn't load quarterly status.")).toBeInTheDocument();
+  expect(screen.queryByRole("region", { name: "Alpha" })).not.toBeInTheDocument();
+});
+
+test("the initiate dialog uses the year of the data the card came from", async () => {
+  const user = userEvent.setup();
+  initiateCycle.mockResolvedValue(q(4, "in_progress"));
+  renderAs();
+  const row = await screen.findByRole("region", { name: "Alpha" });
+  await user.click(within(row).getAllByRole("button", { name: /initiate review/i })[1]);
+  expect(screen.getByText("Initiate Q4 2026 review — Alpha")).toBeInTheDocument();
+});
+
+test("an initiate that finishes after switching year doesn't overwrite the other year's card", async () => {
+  const user = userEvent.setup();
+  let resolveInitiate;
+  initiateCycle.mockReturnValue(new Promise((resolve) => { resolveInitiate = resolve; }));
+  renderAs();
+  const row = await screen.findByRole("region", { name: "Alpha" });
+  await user.click(within(row).getAllByRole("button", { name: /initiate review/i })[1]);
+  await screen.findByRole("option", { name: "Rae" });
+  await user.selectOptions(screen.getByLabelText("Reviewer for Android"), "r1");
+  await user.click(screen.getByRole("button", { name: "Initiate" }));
+  getQuarterly.mockResolvedValue({ ...data, year: 2025 });
+  await user.selectOptions(screen.getByLabelText("Year"), "2025");
+  const row2025 = await screen.findByRole("region", { name: "Alpha" });
+  await act(async () => { resolveInitiate(q(4, "in_progress")); });
+  expect(within(row2025).queryByText("In progress")).not.toBeInTheDocument();
+  expect(within(row2025).getAllByText("Not started")).toHaveLength(1);
 });

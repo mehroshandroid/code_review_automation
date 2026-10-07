@@ -454,11 +454,12 @@ async def set_platforms_for_project(session: AsyncSession, project_id: str, plat
     await session.commit()
 
 
-async def list_live_reviews_for_projects_in_year(session: AsyncSession, project_ids: list[str], year: int) -> list[PlatformReview]:
+async def list_review_coverage_rows(session: AsyncSession, project_ids: list[str], year: int) -> list:
+    """Just the columns quarterly coverage needs (no result_data JSON), newest first, excluding errors."""
     if not project_ids:
         return []
     result = await session.execute(
-        select(PlatformReview)
+        select(PlatformReview.id, PlatformReview.project_id, PlatformReview.platform, PlatformReview.created_at)
         .where(
             PlatformReview.project_id.in_(project_ids),
             PlatformReview.status != "error",
@@ -466,7 +467,7 @@ async def list_live_reviews_for_projects_in_year(session: AsyncSession, project_
         )
         .order_by(PlatformReview.created_at.desc())
     )
-    return list(result.scalars().all())
+    return list(result.all())
 
 
 async def list_cycles_for_projects_in_year(session: AsyncSession, project_ids: list[str], year: int) -> list[ReviewCycle]:

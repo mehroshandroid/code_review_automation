@@ -14,7 +14,7 @@ export default function QuarterlyDashboardPage() {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
-  const [initiating, setInitiating] = useState(null); // { project, entry }
+  const [initiating, setInitiating] = useState(null); // { project, entry, year }
 
   useEffect(() => {
     let cancelled = false;
@@ -27,14 +27,17 @@ export default function QuarterlyDashboardPage() {
   useEffect(() => {
     let cancelled = false;
     setError("");
+    // Drop the previous year's cards so a stale card can't initiate the newly selected year.
+    setData(null);
     getQuarterly(year)
       .then((result) => { if (!cancelled) setData(result); })
       .catch(() => { if (!cancelled) setError("Couldn't load quarterly status."); });
     return () => { cancelled = true; };
   }, [year]);
 
-  function replaceEntry(projectId, updated) {
-    setData((current) => ({
+  function replaceEntry(projectId, entryYear, updated) {
+    // Only apply to the year the initiate was for; the user may have switched years meanwhile.
+    setData((current) => (!current || current.year !== entryYear ? current : {
       ...current,
       projects: current.projects.map((project) => (project.id !== projectId ? project : {
         ...project,
@@ -88,7 +91,7 @@ export default function QuarterlyDashboardPage() {
                   <QuarterCard
                     key={entry.quarter} entry={entry} platforms={project.platforms}
                     canInitiate={can("cycles.initiate")}
-                    onInitiate={() => setInitiating({ project, entry })}
+                    onInitiate={() => setInitiating({ project, entry, year: data.year })}
                   />
                 ))}
               </div>
@@ -99,8 +102,8 @@ export default function QuarterlyDashboardPage() {
 
       {initiating && (
         <InitiateCycleDialog
-          project={initiating.project} year={year} entry={initiating.entry}
-          onInitiated={(updated) => replaceEntry(initiating.project.id, updated)}
+          project={initiating.project} year={initiating.year} entry={initiating.entry}
+          onInitiated={(updated) => replaceEntry(initiating.project.id, initiating.year, updated)}
           onClose={() => setInitiating(null)}
         />
       )}

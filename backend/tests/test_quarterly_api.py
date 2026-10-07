@@ -164,3 +164,23 @@ async def test_reviews_older_than_the_project_record_are_tracked(db):
     _as("coordinator")
     quarters = _quarters(client.get("/api/quarterly?year=2025").json(), "p3")
     assert {q: e["status"] for q, e in quarters.items()} == {1: "not_applicable", 2: "done", 3: "overdue", 4: "overdue"}
+
+
+def test_concurrent_initiate_loser_gets_409_not_500(db, monkeypatch):
+    # Simulates a second coordinator creating the cycle after this request's
+    # existence check passed: the DB unique constraint must surface as 409.
+    real_create_cycle = crud.create_cycle
+
+    async def racing_create_cycle(session, cycle_id, project_id, year, quarter, initiated_by, assignments):
+        async with db() as other:
+            await real_create_cycle(other, "winner", project_id, year, quarter, None, assignments)
+        return await real_create_cycle(session, cycle_id, project_id, year, quarter, initiated_by, assignments)
+
+    monkeypatch.setattr(quarterly_module.crud, "create_cycle", racing_create_cycle)
+    _as("coordinator", "coord")
+    response = client.post("/api/projects/p1/cycles", json={
+        "year": 2026, "quarter": 4,
+        "assignments": [{"platform": "Android", "reviewer_id": "rev"}, {"platform": "iOS", "reviewer_id": "rev"}],
+    })
+    assert response.status_code == 409
+    assert response.json()["detail"] == "This quarter's review has already been initiated."

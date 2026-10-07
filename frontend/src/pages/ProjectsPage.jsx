@@ -130,8 +130,15 @@ export default function ProjectsPage() {
           title="New project" initialName="" submitLabel="Create" withPlatforms
           onSubmit={async (name, platforms) => {
             const project = await createProject(name);
-            const saved = platforms.length ? await setProjectPlatforms(project.id, platforms) : project;
-            setProjects((current) => [{ ...project, ...saved }, ...(current || [])]);
+            // Show the project as soon as it exists, so a failed platforms save
+            // can't strand it (a retry would hit "name already exists").
+            setProjects((current) => [project, ...(current || [])]);
+            if (!platforms.length) return;
+            try {
+              replaceProject(await setProjectPlatforms(project.id, platforms));
+            } catch {
+              setError(`${project.name} was created, but its platforms couldn't be saved. Use Edit to set them.`);
+            }
           }}
           onClose={() => setCreating(false)}
         />

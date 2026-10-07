@@ -147,3 +147,18 @@ test("editing a project pre-checks and saves platforms", async () => {
   await user.click(screen.getByRole("button", { name: "Save" }));
   await waitFor(() => expect(setProjectPlatforms).toHaveBeenCalledWith("p1", ["Android"]));
 });
+
+test("if saving platforms fails after creating, the project still appears and the user is told", async () => {
+  const user = userEvent.setup();
+  createProject.mockResolvedValue({ id: "p3", name: "Gamma", created_at: "2026-03-01T00:00:00Z", review_count: 0, manager_ids: [], platforms: [] });
+  setProjectPlatforms.mockRejectedValue(new Error("network"));
+  renderAs("coordinator");
+  await screen.findByText("Alpha");
+  await user.click(screen.getByRole("button", { name: "New project" }));
+  await user.type(screen.getByLabelText("Project name"), "Gamma");
+  await user.click(screen.getByRole("checkbox", { name: "Android" }));
+  await user.click(screen.getByRole("button", { name: "Create" }));
+  expect(await screen.findByText("Gamma")).toBeInTheDocument();
+  expect(screen.queryByLabelText("Project name")).not.toBeInTheDocument();
+  expect(screen.getByText("Gamma was created, but its platforms couldn't be saved. Use Edit to set them.")).toBeInTheDocument();
+});

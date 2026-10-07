@@ -3,6 +3,7 @@ from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy.exc import IntegrityError
 
 from app.auth.permissions import PERMISSIONS, require_permission
 from app.db import crud
@@ -12,6 +13,8 @@ from app.quarterly import (
 )
 
 router = APIRouter()
+
+ALREADY_INITIATED = "This quarter's review has already been initiated."
 
 
 class AssignmentIn(BaseModel):
@@ -40,13 +43,21 @@ def _display_name(user) -> str | None:
 async def _quarter_entries(session, projects, year: int, today: date) -> dict[str, list[dict]]:
     project_ids = [p.id for p in projects]
     platforms_by_project = await crud.get_platforms_for_projects(session, project_ids)
-    reviews = await crud.list_live_reviews_for_projects_in_year(session, project_ids, year)
+    reviews = await crud.list_review_coverage_rows(session, project_ids, year)
     cycles = await crud.list_cycles_for_projects_in_year(session, project_ids, year)
     assignments = await crud.get_cycle_assignments(session, [c.id for c in cycles])
     user_ids = [c.initiated_by for c in cycles] + [a.reviewer_id for rows in assignments.values() for a in rows]
     users = await crud.get_users_by_ids(session, user_ids)
     cycle_by_key = {(c.project_id, c.quarter): c for c in cycles}
     first_reviews = await crud.get_first_review_dates(session, project_ids)
+    # One pass over the year's reviews: the newest review per (project, quarter, platform).
+    latest_review = {}
+    for review in reviews:  # newest first
+        platform = canonical_platform(review.platform)
+        reviewed_on = _as_date(review.created_at)
+        key = (review.project_id, (reviewed_on.month - 1) // 3 + 1, platform)
+        if platform is not None and key not in latest_review:
+            latest_review[key] = review
 
     entries: dict[str, list[dict]] = {}
     for project in projects:
@@ -62,14 +73,10 @@ async def _quarter_entries(session, projects, year: int, today: date) -> dict[st
         project_quarters = []
         for quarter in (1, 2, 3, 4):
             start, end = quarter_bounds(year, quarter)
-            latest_by_platform = {}
-            for review in reviews:  # newest first
-                platform = canonical_platform(review.platform)
-                if (
-                    review.project_id == project.id and platform in platforms
-                    and platform not in latest_by_platform and start <= _as_date(review.created_at) <= end
-                ):
-                    latest_by_platform[platform] = review
+            latest_by_platform = {
+                platform: latest_review[(project.id, quarter, platform)]
+                for platform in platforms if (project.id, quarter, platform) in latest_review
+            }
             covered = set(latest_by_platform)
             cycle = cycle_by_key.get((project.id, quarter))
             status = quarter_status(tracked_since, platforms, covered, cycle is not None, year, quarter, today)
@@ -136,12 +143,17 @@ async def initiate_cycle(project_id: str, body: InitiateCycleRequest, user=Depen
             if reviewer is None or not reviewer.is_active or reviewer.role not in PERMISSIONS["reviews.finalize_own"]:
                 raise HTTPException(status_code=400, detail="Each reviewer must be an active reviewer, management or admin account.")
         if await crud.get_cycle(session, project_id, body.year, body.quarter) is not None:
-            raise HTTPException(status_code=409, detail="This quarter's review has already been initiated.")
+            raise HTTPException(status_code=409, detail=ALREADY_INITIATED)
         current = (await _quarter_entries(session, [project], body.year, today))[project_id][body.quarter - 1]
         if not current["can_initiate"]:
             raise HTTPException(status_code=400, detail="This quarter can't be initiated.")
-        await crud.create_cycle(
-            session, str(uuid.uuid4()), project_id, body.year, body.quarter, user.id,
-            [(canonical_platform(a.platform), a.reviewer_id) for a in body.assignments],
-        )
+        try:
+            await crud.create_cycle(
+                session, str(uuid.uuid4()), project_id, body.year, body.quarter, user.id,
+                [(canonical_platform(a.platform), a.reviewer_id) for a in body.assignments],
+            )
+        except IntegrityError:
+            # Lost a race with a concurrent initiate: the unique constraint held.
+            await session.rollback()
+            raise HTTPException(status_code=409, detail=ALREADY_INITIATED)
         return (await _quarter_entries(session, [project], body.year, today))[project_id][body.quarter - 1]

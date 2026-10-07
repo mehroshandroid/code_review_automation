@@ -51,15 +51,6 @@ async def test_backfill_from_non_errored_reviews(maker):
         assert await crud.get_platforms_for_projects(s, ["p1"]) == {"p1": ["Android"]}
 
 
-async def test_live_reviews_in_year_excludes_errors_and_other_years(maker):
-    async with maker() as s:
-        await crud.create_project(s, "p1", "One")
-        await _review(s, "r1", "p1", "Android")
-        await _review(s, "r2", "p1", "Android", status="error")
-        await _review(s, "r3", "p1", "Android", when=datetime(2025, 5, 1, tzinfo=timezone.utc))
-        assert [r.id for r in await crud.list_live_reviews_for_projects_in_year(s, ["p1"], 2026)] == ["r1"]
-
-
 async def test_create_and_read_cycle(maker):
     async with maker() as s:
         await crud.create_project(s, "p1", "One")
@@ -83,3 +74,14 @@ async def test_delete_project_removes_platforms_and_cycles(maker):
         assert await crud.get_cycle(s, "p1", 2026, 4) is None
         assert await crud.get_platforms_for_projects(s, ["p1"]) == {"p1": []}
         assert await crud.get_cycle_assignments(s, ["c1"]) == {"c1": []}
+
+
+async def test_coverage_rows_are_lightweight_and_exclude_errors(maker):
+    async with maker() as s:
+        await crud.create_project(s, "p1", "One")
+        await _review(s, "r1", "p1", "Android")
+        await _review(s, "r2", "p1", "iOS", status="error")
+        await _review(s, "r3", "p1", "Android", when=datetime(2025, 5, 1, tzinfo=timezone.utc))
+        rows = await crud.list_review_coverage_rows(s, ["p1"], 2026)
+    assert [(r.id, r.project_id, r.platform) for r in rows] == [("r1", "p1", "Android")]
+    assert set(rows[0]._fields) == {"id", "project_id", "platform", "created_at"}
