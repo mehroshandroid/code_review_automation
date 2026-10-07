@@ -4,17 +4,17 @@ import { MemoryRouter } from "react-router-dom";
 import ProjectsPage from "./ProjectsPage";
 import { AuthContext } from "../context/AuthContext";
 import { userWithRole } from "../testUtils/authUsers";
-import { getProjects, createProject, updateProject, getProjectManagers, setProjectManagers, deleteProject } from "../services/api";
+import { getProjects, createProject, updateProject, getProjectManagers, setProjectManagers, deleteProject, setProjectPlatforms } from "../services/api";
 
 jest.mock("../services/api", () => ({
   ...jest.requireActual("../services/api"),
   getProjects: jest.fn(), createProject: jest.fn(), updateProject: jest.fn(),
-  getProjectManagers: jest.fn(), setProjectManagers: jest.fn(), deleteProject: jest.fn(),
+  getProjectManagers: jest.fn(), setProjectManagers: jest.fn(), deleteProject: jest.fn(), setProjectPlatforms: jest.fn(),
 }));
 
 const projects = [
-  { id: "p1", name: "Alpha", created_at: "2026-01-01T00:00:00Z", review_count: 3, manager_ids: ["pm1"] },
-  { id: "p2", name: "Beta", created_at: "2026-02-01T00:00:00Z", review_count: 0, manager_ids: [] },
+  { id: "p1", name: "Alpha", created_at: "2026-01-01T00:00:00Z", review_count: 3, manager_ids: ["pm1"], platforms: ["Android", "iOS"] },
+  { id: "p2", name: "Beta", created_at: "2026-02-01T00:00:00Z", review_count: 0, manager_ids: [], platforms: [] },
 ];
 const managers = [{ id: "pm1", email: "pat@example.com", name: "Pat" }, { id: "pm2", email: "sam@example.com", name: null }];
 
@@ -83,7 +83,7 @@ test("renaming a project", async () => {
   updateProject.mockResolvedValue({ ...projects[1], name: "Beta 2" });
   renderAs("coordinator");
   await screen.findByText("Beta");
-  await user.click(within(row("Beta")).getByRole("button", { name: "Rename Beta" }));
+  await user.click(within(row("Beta")).getByRole("button", { name: "Edit Beta" }));
   const input = screen.getByLabelText("Project name");
   await user.clear(input);
   await user.type(input, "Beta 2");
@@ -111,4 +111,39 @@ test("search filters the table", async () => {
   await user.type(screen.getByRole("searchbox", { name: "Search projects" }), "bet");
   expect(screen.queryByText("Alpha")).not.toBeInTheDocument();
   expect(screen.getByText("Beta")).toBeInTheDocument();
+});
+
+test("shows each project's platforms", async () => {
+  renderAs("coordinator");
+  await screen.findByText("Alpha");
+  expect(within(row("Alpha")).getByText("Android")).toBeInTheDocument();
+  expect(within(row("Alpha")).getByText("iOS")).toBeInTheDocument();
+});
+
+test("creating a project saves its platforms", async () => {
+  const user = userEvent.setup();
+  createProject.mockResolvedValue({ id: "p3", name: "Gamma", created_at: "2026-03-01T00:00:00Z", review_count: 0, manager_ids: [], platforms: [] });
+  setProjectPlatforms.mockResolvedValue({ id: "p3", name: "Gamma", created_at: "2026-03-01T00:00:00Z", review_count: 0, platforms: ["Android", ".NET"] });
+  renderAs("coordinator");
+  await screen.findByText("Alpha");
+  await user.click(screen.getByRole("button", { name: "New project" }));
+  await user.type(screen.getByLabelText("Project name"), "Gamma");
+  await user.click(screen.getByRole("checkbox", { name: "Android" }));
+  await user.click(screen.getByRole("checkbox", { name: ".NET" }));
+  await user.click(screen.getByRole("button", { name: "Create" }));
+  await waitFor(() => expect(setProjectPlatforms).toHaveBeenCalledWith("p3", ["Android", ".NET"]));
+  expect(await within(row("Gamma")).findByText(".NET")).toBeInTheDocument();
+});
+
+test("editing a project pre-checks and saves platforms", async () => {
+  const user = userEvent.setup();
+  updateProject.mockResolvedValue({ ...projects[0] });
+  setProjectPlatforms.mockResolvedValue({ ...projects[0], platforms: ["Android"] });
+  renderAs("coordinator");
+  await screen.findByText("Alpha");
+  await user.click(within(row("Alpha")).getByRole("button", { name: "Edit Alpha" }));
+  expect(screen.getByRole("checkbox", { name: "iOS" })).toBeChecked();
+  await user.click(screen.getByRole("checkbox", { name: "iOS" }));
+  await user.click(screen.getByRole("button", { name: "Save" }));
+  await waitFor(() => expect(setProjectPlatforms).toHaveBeenCalledWith("p1", ["Android"]));
 });

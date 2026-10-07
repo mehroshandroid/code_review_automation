@@ -3,7 +3,7 @@ import AppNav from "../components/AppNav";
 import ProjectDialog from "../components/ProjectDialog";
 import AssignManagersDialog, { managerLabel } from "../components/AssignManagersDialog";
 import { useCan } from "../context/AuthContext";
-import { createProject, deleteProject, getProjectManagers, getProjects, updateProject } from "../services/api";
+import { createProject, deleteProject, getProjectManagers, getProjects, setProjectPlatforms, updateProject } from "../services/api";
 
 export default function ProjectsPage() {
   const can = useCan();
@@ -76,12 +76,18 @@ export default function ProjectsPage() {
           <div className="card" style={{ padding: 0, overflowX: "auto" }}>
             <table className="table">
               <thead>
-                <tr><th>Project</th><th>Project managers</th><th>Reviews</th><th>Created</th><th aria-label="Actions" /></tr>
+                <tr><th>Project</th><th>Platforms</th><th>Project managers</th><th>Reviews</th><th>Created</th><th aria-label="Actions" /></tr>
               </thead>
               <tbody>
                 {visible.map((project) => (
                   <tr key={project.id}>
                     <td style={{ fontWeight: 600 }}>{project.name}</td>
+                    <td>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                        {(project.platforms || []).length === 0 && <span style={{ color: "var(--color-text-muted)" }}>—</span>}
+                        {(project.platforms || []).map((platform) => <span key={platform} className="tag tag-outline">{platform}</span>)}
+                      </div>
+                    </td>
                     <td>
                       <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                         {(project.manager_ids || []).length === 0 && <span style={{ color: "var(--color-text-muted)" }}>—</span>}
@@ -94,7 +100,7 @@ export default function ProjectsPage() {
                     <td>{new Date(project.created_at).toLocaleDateString()}</td>
                     <td style={{ whiteSpace: "nowrap", textAlign: "right" }}>
                       {can("projects.edit") && (
-                        <button type="button" className="btn btn-ghost" aria-label={`Rename ${project.name}`} onClick={() => setRenaming(project)}>Rename</button>
+                        <button type="button" className="btn btn-ghost" aria-label={`Edit ${project.name}`} onClick={() => setRenaming(project)}>Edit</button>
                       )}
                       {can("projects.assign_pm") && (
                         <button type="button" className="btn btn-ghost" aria-label={`Assign PMs for ${project.name}`} onClick={() => setAssigning(project)}>Assign PMs</button>
@@ -121,15 +127,24 @@ export default function ProjectsPage() {
 
       {creating && (
         <ProjectDialog
-          title="New project" initialName="" submitLabel="Create"
-          onSubmit={async (name) => { const project = await createProject(name); setProjects((current) => [project, ...(current || [])]); }}
+          title="New project" initialName="" submitLabel="Create" withPlatforms
+          onSubmit={async (name, platforms) => {
+            const project = await createProject(name);
+            const saved = platforms.length ? await setProjectPlatforms(project.id, platforms) : project;
+            setProjects((current) => [{ ...project, ...saved }, ...(current || [])]);
+          }}
           onClose={() => setCreating(false)}
         />
       )}
       {renaming && (
         <ProjectDialog
-          title="Rename project" initialName={renaming.name} submitLabel="Save"
-          onSubmit={async (name) => replaceProject(await updateProject(renaming.id, name))}
+          title="Edit project" initialName={renaming.name} submitLabel="Save"
+          withPlatforms initialPlatforms={renaming.platforms || []}
+          onSubmit={async (name, platforms) => {
+            const renamed = name !== renaming.name ? await updateProject(renaming.id, name) : {};
+            const saved = await setProjectPlatforms(renaming.id, platforms);
+            replaceProject({ ...renamed, ...saved, id: renaming.id });
+          }}
           onClose={() => setRenaming(null)}
         />
       )}
