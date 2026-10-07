@@ -11,6 +11,7 @@ from app.api.auth import router as auth_router
 from app.api.chat import router as chat_router
 from app.api.ollama import router as ollama_router
 from app.api.projects import router as projects_router
+from app.api.quarterly import router as quarterly_router
 from app.api.reviews import router as reviews_router
 from app.api.settings import router as settings_router
 from app.api.users import router as users_router
@@ -59,6 +60,7 @@ app.include_router(auth_router)
 app.include_router(reviews_router)
 app.include_router(ollama_router)
 app.include_router(projects_router)
+app.include_router(quarterly_router)
 app.include_router(settings_router)
 app.include_router(users_router)
 app.include_router(chat_router)
