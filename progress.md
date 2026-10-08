@@ -4,7 +4,7 @@ CodeAssure (formerly "Code Review Automation") is an AI-assisted tool for review
 
 This file records what has been built and in what order, so a future developer can see what exists and why. For the design behind each feature, read the specs in `docs/superpowers/specs/`. Each spec has a matching step-by-step plan in `docs/superpowers/plans/`.
 
-_Last updated: 2026-10-07 (roles & access)_
+_Last updated: 2026-10-08_
 
 ---
 
@@ -117,6 +117,27 @@ Spec: `docs/superpowers/specs/2026-10-07-quarterly-dashboard-design.md`. Plan: `
 - **Starting a review:** a coordinator, Management or admin can start the current quarter or an overdue one by assigning a reviewer to each platform. This creates `review_cycles` and `review_cycle_assignments` records.
 - **Navigation:** the coordinator's home and "Dashboard" link point to the quarterly dashboard, with "Projects" as a separate link. Admins and Management get a "Quarterly" link.
 - **Next slices of Part 2:** the PM enters a DevOps URL for each platform, an org-wide PAT is stored in Settings, the review runs automatically, review progress is saved in the database, and the coordinator gets a stage tracker with reminders. Part 3 is emails.
+
+### Phase 10: Automated cycle reviews, Part 2 slice 2 (2026-10-08). Branch: `automated-reviews`, stacked on `quarterly-cycles`
+
+Spec: `docs/superpowers/specs/2026-10-07-automated-cycle-reviews-design.md`. Plan: `docs/superpowers/plans/2026-10-07-automated-cycle-reviews.md`.
+
+- **PM dashboard:** a "Pending quarterly reviews" panel lists each started cycle on the PM's projects. For each platform the PM enters the Azure DevOps URL (and an optional branch), which queues that review. The panel shows the status (Waiting for URL, Queued #n, Running with phase and %, Completed with a View link, Failed with the error) and refreshes every 10 seconds while anything is running.
+- **Worker (`backend/app/automation/worker.py`):** a single background worker, started when `REVIEW_WORKER_ENABLED=true`, runs queued reviews one at a time, oldest first. It uses the org PAT, the org LLM default, the sample template, and the compile check set for that platform. The finished review is assigned to the cycle's reviewer.
+- **Queue state:** the queue and progress are stored on `review_cycle_assignments`. On startup the worker re-queues runs that were interrupted and runs that failed for system reasons.
+- **Failure kinds:**
+  - **url:** the repo isn't found, or isn't a project for that platform. The PM fixes the URL and saves again.
+  - **system:** the PAT is missing or rejected, a service is unreachable, or something else went wrong. Admins are notified, and these runs are re-queued when an admin saves the PAT or the stack restarts.
+- **Coordinator "Manage" dialog** on a started quarter card: change the reviewer for each platform at any point until the review is approved (the finished review moves to the new reviewer), retry failed runs, and re-run a completed but not-yet-approved run with a new URL.
+- **Settings, "Automatic reviews":** the org DevOps PAT, which only admins can set. It's stored encrypted and only "••••last4" is ever shown. Also a compile check per platform; the defaults are Android and .NET using Docker, iOS using static analysis.
+- **`notification_outbox`:** every workflow email is recorded here for Part 3's mailer to send: `cycle_initiated`, `reviewer_assigned`, `reviewer_unassigned`, `review_ready`, `review_failed` and `review_finalized`.
+- **Deploy notes:**
+  1. Set `SETTINGS_ENCRYPTION_KEY` (a Fernet key) before saving the PAT. Changing it later means the PAT has to be entered again.
+  2. The PAT needs Code (Read) access on every project's repos.
+  3. Run the worker on exactly one backend instance.
+- **Next:**
+  - **Slice 3:** a coordinator stage tracker with green and orange dots, timestamps and reminder buttons.
+  - **Part 3:** a mailer that sends what's waiting in the outbox.
 
 ---
 
