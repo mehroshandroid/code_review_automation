@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, timezone
 
 import pytest
@@ -143,3 +144,76 @@ async def test_recover_requeues_running_and_system_failures_only(db):
     async with db() as s:
         assert (await crud.get_assignment(s, "c1", "Android")).run_status == "queued"
         assert (await crud.get_assignment(s, "c1", "iOS")).run_status == "failed"
+
+
+async def test_successful_rerun_unassigns_the_superseded_review(db, monkeypatch):
+    async with db() as s:
+        await crud.persist_review_result(
+            s, review_id="old", project_id="p1", platform="Android", status="pending_approval", project_name="Alpha",
+            created_at=datetime.now(timezone.utc), completed_at=None, total_score_pct=50, llm_provider="azure",
+            llm_model=None, compile_check_mode="compiler", source="devops", workbook_path=None, result_data={},
+        )
+        await crud.set_review_reviewer(s, "old", "rev")
+        a = await crud.get_assignment(s, "c1", "Android")
+        await crud.update_assignment(s, a, review_id="old")
+    monkeypatch.setattr(reviews_module, "_run_review", _fake_pipeline(db, "completed"))
+    await worker.run_one()
+    async with db() as s:
+        a = await crud.get_assignment(s, "c1", "Android")
+        old = await crud.get_review_by_id(s, "old")
+    assert a.review_id != "old" and old.reviewer_id is None
+
+
+async def test_run_cleans_up_memory_and_temp_dir(db, monkeypatch):
+    seen = {}
+    fake = _fake_pipeline(db, "completed", captured=seen)
+
+    async def pipeline_writing_output(review_id, work_dir, *args, **kwargs):
+        (work_dir / "output.xlsx").write_bytes(b"x")
+        await fake(review_id, work_dir, *args, **kwargs)
+
+    monkeypatch.setattr(reviews_module, "_run_review", pipeline_writing_output)
+    await worker.run_one()
+    assert seen["review_id"] not in reviews_module._reviews
+    assert not seen["work_dir"].exists()
+
+
+async def test_crash_with_failing_fallback_still_leaves_the_row_failed(db, monkeypatch):
+    async def boom_process(cycle_id, platform):
+        raise RuntimeError("pipeline exploded")
+
+    real_fail = worker._fail
+    calls = {"n": 0}
+
+    async def flaky_fail(*args, **kwargs):
+        calls["n"] += 1
+        raise RuntimeError("db blip")
+
+    monkeypatch.setattr(worker, "_process", boom_process)
+    monkeypatch.setattr(worker, "_fail", flaky_fail)
+    assert await worker.run_one() is True
+    async with db() as s:
+        a = await crud.get_assignment(s, "c1", "Android")
+    assert a.run_status == "failed" and a.failure_kind == "system" and "pipeline exploded" in a.run_error
+    assert calls["n"] == 1 and real_fail is not None
+
+
+async def test_recover_is_retried_until_the_database_answers(db, monkeypatch):
+    attempts = {"n": 0}
+    real_recover = worker.recover
+
+    async def flaky_recover():
+        attempts["n"] += 1
+        if attempts["n"] == 1:
+            raise ConnectionError("db not ready")
+        return await real_recover()
+
+    async def stop_after_recovery():
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(worker, "recover", flaky_recover)
+    monkeypatch.setattr(worker, "run_one", stop_after_recovery)
+    monkeypatch.setattr(worker, "POLL_SECONDS", 0)
+    with pytest.raises(asyncio.CancelledError):
+        await worker.worker_loop()
+    assert attempts["n"] == 2

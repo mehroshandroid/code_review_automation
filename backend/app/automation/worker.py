@@ -6,6 +6,7 @@ failed for system reasons (an admin fix + restart is the retry).
 """
 import asyncio
 import logging
+import shutil
 import tempfile
 import uuid
 from datetime import datetime, timezone
@@ -70,6 +71,11 @@ async def _succeed(cycle_id: str, platform: str, review_id: str) -> None:
         project = await crud.get_project(session, cycle.project_id)
         if await crud.set_review_reviewer(session, review_id, assignment.reviewer_id) is None:
             raise RuntimeError("The finished review wasn't saved to the database.")
+        superseded = assignment.review_id
+        if superseded and superseded != review_id:
+            # A re-run replaced an earlier, unapproved review: take it off the reviewer's list.
+            if (await crud.get_review_statuses(session, [superseded])).get(superseded) != "approved":
+                await crud.set_review_reviewer(session, superseded, None)
         await crud.update_assignment(
             session, assignment, run_status="completed", review_id=review_id, run_progress=100,
             run_phase="completed", finished_at=_now(),
@@ -95,15 +101,15 @@ async def _process(cycle_id: str, platform: str) -> None:
 
     review_id = str(uuid.uuid4())
     work_dir = Path(tempfile.mkdtemp(prefix=f"review_{review_id}_"))
-    template_path = work_dir / "template.xlsx"
-    template_path.write_bytes(template_bytes)
     state = reviews_module._new_review_state()
     state["project_name"] = project.name
     state["source"] = "devops"
     reviews_module._reviews[review_id] = state
-
-    sync = asyncio.create_task(_sync_progress(cycle_id, platform, state))
+    sync = None
     try:
+        template_path = work_dir / "template.xlsx"
+        template_path.write_bytes(template_bytes)
+        sync = asyncio.create_task(_sync_progress(cycle_id, platform, state))
         await reviews_module._run_review(
             review_id, work_dir, work_dir / "android.zip", template_path, True, True, project.name,
             org.default_llm_provider, org.default_ollama_model,
@@ -111,7 +117,12 @@ async def _process(cycle_id: str, platform: str) -> None:
             assignment.devops_url, pat, assignment.devops_branch, project_id=project.id,
         )
     finally:
-        sync.cancel()
+        if sync is not None:
+            sync.cancel()
+        # Nobody downloads automated runs from the live path (the workbook is
+        # already persisted), so drop the in-memory state and temp files now.
+        reviews_module._reviews.pop(review_id, None)
+        shutil.rmtree(work_dir, ignore_errors=True)
 
     if state["status"] == "completed":
         await _succeed(cycle_id, platform, review_id)
@@ -128,12 +139,39 @@ async def run_one() -> bool:
         await _process(assignment.cycle_id, assignment.platform)
     except Exception as exc:
         logger.exception("Review worker: unexpected error on %s/%s", assignment.cycle_id, assignment.platform)
-        await _fail(assignment.cycle_id, assignment.platform, f"Unexpected error: {exc}", "system", None)
+        error = f"Unexpected error: {exc}"
+        try:
+            await _fail(assignment.cycle_id, assignment.platform, error, "system", None)
+        except Exception:
+            logger.exception("Review worker: couldn't record the failure normally; marking the row failed directly")
+            await _mark_failed(assignment.cycle_id, assignment.platform, error)
     return True
 
 
+async def _mark_failed(cycle_id: str, platform: str, error: str) -> None:
+    """Last resort so a row is never left 'running' (no notification)."""
+    try:
+        async with new_session() as session:
+            assignment = await crud.get_assignment(session, cycle_id, platform)
+            if assignment is not None:
+                await crud.update_assignment(
+                    session, assignment, run_status="failed", failure_kind="system", run_error=error, finished_at=_now(),
+                )
+    except Exception:
+        logger.exception("Review worker: couldn't mark %s/%s failed; it will be re-queued on restart", cycle_id, platform)
+
+
 async def worker_loop() -> None:
-    await recover()
+    logger.info("Review worker started")
+    while True:
+        try:
+            await recover()
+            break
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Review worker: startup recovery failed; retrying")
+            await asyncio.sleep(POLL_SECONDS)
     while True:
         try:
             if not await run_one():

@@ -184,3 +184,49 @@ async def test_approving_a_cycle_review_notifies_pms(db):
         finalized = await crud.list_notifications(s, "review_finalized")
     assert [n.recipient_user_id for n in finalized] == ["pm"]
     assert finalized[0].payload["review_id"] == "r1" and finalized[0].payload["link"] == "/reports/r1"
+
+
+async def test_report_page_reviewer_change_on_a_cycle_review_follows_cycle_rules(db):
+    # The older PATCH /api/reviews/{id}/reviewer (report page) must keep the
+    # cycle assignment in sync and notify, exactly like the cycle endpoint.
+    await _complete(db)
+    _as("coordinator", "co")
+    response = client.patch("/api/reviews/r1/reviewer", json={"reviewer_id": "rev2"})
+    assert response.status_code == 200
+    async with db() as s:
+        a = await crud.get_assignment(s, "c1", "Android")
+        assigned = await crud.list_notifications(s, "reviewer_assigned")
+    assert a.reviewer_id == "rev2" and a.reviewer_assigned_by == "co"
+    assert [n.recipient_user_id for n in assigned] == ["rev2"]
+
+
+async def test_report_page_reviewer_change_blocked_after_cycle_review_approved(db):
+    await _complete(db, review_status="approved")
+    _as("coordinator", "co")
+    assert client.patch("/api/reviews/r1/reviewer", json={"reviewer_id": "rev2"}).status_code == 409
+
+
+async def test_rerun_keeps_the_branch_unless_a_new_one_is_given(db):
+    await _complete(db)
+    async with db() as s:
+        a = await crud.get_assignment(s, "c1", "Android")
+        await crud.update_assignment(s, a, devops_branch="release/2026Q4")
+    _as("coordinator", "co")
+    kept = client.post("/api/cycles/c1/assignments/Android/rerun", json={"devops_url": URL + "-fixed"}).json()
+    assert kept["devops_branch"] == "release/2026Q4"
+    async with db() as s:
+        a = await crud.get_assignment(s, "c1", "Android")
+        await crud.update_assignment(s, a, run_status="completed")
+    changed = client.post("/api/cycles/c1/assignments/Android/rerun", json={"devops_url": URL, "devops_branch": "main"}).json()
+    assert changed["devops_branch"] == "main"
+
+
+async def test_old_review_cannot_be_approved_while_its_rerun_is_pending(db):
+    await _complete(db)
+    _as("coordinator", "co")
+    client.post("/api/cycles/c1/assignments/Android/rerun", json={"devops_url": URL})
+    _as("reviewer", "rev")
+    response = client.patch("/api/reviews/r1", json={"status": "approved"})
+    assert response.status_code == 409
+    async with db() as s:
+        assert await crud.list_notifications(s, "review_finalized") == []

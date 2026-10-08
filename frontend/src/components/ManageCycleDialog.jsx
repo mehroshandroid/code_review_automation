@@ -9,6 +9,7 @@ export default function ManageCycleDialog({ project, year, entry, onChanged, onC
   const [error, setError] = useState("");
   const [rerunFor, setRerunFor] = useState(null);
   const [rerunUrl, setRerunUrl] = useState("");
+  const [rerunBranch, setRerunBranch] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -37,7 +38,9 @@ export default function ManageCycleDialog({ project, year, entry, onChanged, onC
 
   async function handleRerun(event) {
     event.preventDefault();
-    if (await act(() => rerunAssignment(cycleId, rerunFor, { devopsUrl: rerunUrl.trim() }))) setRerunFor(null);
+    if (await act(() => rerunAssignment(cycleId, rerunFor, { devopsUrl: rerunUrl.trim(), devopsBranch: rerunBranch.trim() }))) {
+      setRerunFor(null);
+    }
   }
 
   return (
@@ -78,7 +81,11 @@ export default function ManageCycleDialog({ project, year, entry, onChanged, onC
                           <button type="button" className="btn btn-ghost" onClick={() => act(() => retryAssignment(cycleId, assignment.platform))}>Retry</button>
                         )}
                         {assignment.run_status === "completed" && !approved && (
-                          <button type="button" className="btn btn-ghost" onClick={() => { setRerunFor(assignment.platform); setRerunUrl(assignment.devops_url || ""); }}>Re-run</button>
+                          <button type="button" className="btn btn-ghost" onClick={() => {
+                            setRerunFor(assignment.platform);
+                            setRerunUrl(assignment.devops_url || "");
+                            setRerunBranch(assignment.devops_branch || "");
+                          }}>Re-run</button>
                         )}
                       </td>
                     </tr>
@@ -91,6 +98,10 @@ export default function ManageCycleDialog({ project, year, entry, onChanged, onC
             <form onSubmit={handleRerun} className="field" style={{ display: "grid", gap: "var(--space-2)" }}>
               <label htmlFor="rerunUrl">New DevOps URL for {rerunFor}</label>
               <input id="rerunUrl" className="input" value={rerunUrl} onChange={(event) => setRerunUrl(event.target.value)} autoComplete="off" />
+              <input
+                className="input" aria-label={`Branch for the ${rerunFor} re-run`} placeholder="default branch"
+                value={rerunBranch} onChange={(event) => setRerunBranch(event.target.value)} autoComplete="off"
+              />
               <div style={{ display: "flex", gap: "var(--space-2)" }}>
                 <button type="submit" className="btn btn-primary" disabled={!rerunUrl.trim()}>Queue re-run</button>
                 <button type="button" className="btn" onClick={() => setRerunFor(null)}>Cancel</button>

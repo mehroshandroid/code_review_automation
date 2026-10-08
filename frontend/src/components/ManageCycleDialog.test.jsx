@@ -69,7 +69,7 @@ test("re-run a completed platform with a new URL", async () => {
   await user.clear(input);
   await user.type(input, "https://dev.azure.com/o/p/_git/fixed");
   await user.click(screen.getByRole("button", { name: "Queue re-run" }));
-  await waitFor(() => expect(rerunAssignment).toHaveBeenCalledWith("c1", "Android", { devopsUrl: "https://dev.azure.com/o/p/_git/fixed" }));
+  await waitFor(() => expect(rerunAssignment).toHaveBeenCalledWith("c1", "Android", { devopsUrl: "https://dev.azure.com/o/p/_git/fixed", devopsBranch: "" }));
   expect(screen.queryByLabelText("New DevOps URL for Android")).not.toBeInTheDocument();
 });
 
@@ -79,4 +79,19 @@ test("shows API errors", async () => {
   renderDialog();
   await user.click(within(row("iOS")).getByRole("button", { name: "Retry" }));
   expect(await screen.findByText("Only a failed review can be retried.")).toBeInTheDocument();
+});
+
+test("re-run keeps the current branch pre-filled and sends it", async () => {
+  const user = userEvent.setup();
+  const withBranch = { ...entry, cycle: { ...entry.cycle, assignments: [
+    a("Android", { run_status: "completed", review_id: "rv1", review_status: "pending_approval", devops_branch: "release/2026Q4" }),
+  ] } };
+  rerunAssignment.mockResolvedValue(a("Android", { run_status: "queued", queue_position: 1, devops_branch: "release/2026Q4" }));
+  render(<ManageCycleDialog project={{ id: "p1", name: "Moove" }} year={2026} entry={withBranch} onChanged={jest.fn()} onClose={jest.fn()} />);
+  await user.click(screen.getByRole("button", { name: "Re-run" }));
+  expect(screen.getByLabelText("Branch for the Android re-run")).toHaveValue("release/2026Q4");
+  await user.click(screen.getByRole("button", { name: "Queue re-run" }));
+  await waitFor(() => expect(rerunAssignment).toHaveBeenCalledWith("c1", "Android", {
+    devopsUrl: "https://dev.azure.com/o/p/_git/x", devopsBranch: "release/2026Q4",
+  }));
 });

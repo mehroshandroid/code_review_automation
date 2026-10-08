@@ -34,6 +34,7 @@ from app.analyzer.llm_client import generate_general_remarks, score_category
 from app.auth.dependencies import get_current_user
 from app.auth.permissions import PERMISSIONS, can, can_view_review, require_permission, visible_project_ids
 from app.automation.notify import cycle_payload, notify, project_manager_ids
+from app.automation.reviewers import APPROVED_LOCKED, reassign_cycle_reviewer
 from app.db import crud
 from app.db.session import new_session
 from app.utils.logger import get_logger
@@ -801,6 +802,11 @@ async def update_review(review_id: str, body: UpdateReviewRequest, user=Depends(
 
     async with new_session() as session:
         existing = await _get_visible_review(session, user, review_id)
+        linked = await crud.get_assignment_by_review_id(session, review_id) if body.status == "approved" else None
+    if linked is not None and linked.run_status in ("queued", "running"):
+        raise HTTPException(
+            status_code=409, detail="A re-run of this review is in progress; approve the new review once it finishes.",
+        )
     is_assigned = existing.reviewer_id == user.id
     if not (can(user, "reviews.edit") or (can(user, "reviews.finalize_own") and is_assigned)):
         raise HTTPException(status_code=403, detail="You don't have permission to do this")
@@ -855,7 +861,20 @@ async def update_review_reviewer(
             raise HTTPException(status_code=400, detail="reviewer_id must be an active reviewer, management or admin account.")
 
     async with new_session() as session:
-        review = await crud.set_review_reviewer(session, review_id, body.reviewer_id)
+        assignment = await crud.get_assignment_by_review_id(session, review_id)
+        if assignment is not None:
+            # A quarterly cycle review: keep the cycle assignment in sync and notify.
+            current = await crud.get_review_by_id(session, review_id)
+            if current is not None and current.status == "approved":
+                raise HTTPException(status_code=409, detail=APPROVED_LOCKED)
+            if body.reviewer_id is None:
+                raise HTTPException(status_code=400, detail="A quarterly cycle review always needs a reviewer.")
+            cycle = await crud.get_cycle_by_id(session, assignment.cycle_id)
+            project = await crud.get_project(session, cycle.project_id)
+            await reassign_cycle_reviewer(session, cycle, project, assignment, body.reviewer_id, user.id)
+            review = await crud.get_review_by_id(session, review_id)
+        else:
+            review = await crud.set_review_reviewer(session, review_id, body.reviewer_id)
         if review is None:
             raise HTTPException(status_code=404, detail="Review not found")
         visible = await can_view_review(session, user, review)

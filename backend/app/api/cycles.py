@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from app.analyzer.devops_client import parse_repo_url
 from app.auth.permissions import PERMISSIONS, can, require_permission, visible_project_ids
 from app.automation.assignments import assignment_dicts
-from app.automation.notify import cycle_payload, notify
+from app.automation.reviewers import APPROVED_LOCKED, reassign_cycle_reviewer
 from app.db import crud
 from app.db.session import new_session
 from app.quarterly import canonical_platform
@@ -110,7 +110,11 @@ async def rerun(cycle_id: str, platform: str, body: UrlBody, user=Depends(requir
         statuses = await crud.get_review_statuses(session, [assignment.review_id])
         if assignment.run_status != "completed" or statuses.get(assignment.review_id) == "approved":
             raise HTTPException(status_code=409, detail="Only a completed review that isn't approved yet can be re-run.")
-        await crud.update_assignment(session, assignment, **_queue_fields(body, user))
+        fields = _queue_fields(body, user)
+        if "devops_branch" not in body.model_fields_set:
+            # A re-run with only a corrected URL keeps the branch the PM chose.
+            fields["devops_branch"] = assignment.devops_branch
+        await crud.update_assignment(session, assignment, **fields)
         return await _one(session, assignment)
 
 
@@ -120,20 +124,9 @@ async def change_reviewer(cycle_id: str, platform: str, body: ReviewerBody, user
         cycle, project, assignment = await _load(session, user, cycle_id, platform)
         statuses = await crud.get_review_statuses(session, [assignment.review_id])
         if statuses.get(assignment.review_id) == "approved":
-            raise HTTPException(status_code=409, detail="This review is already approved; its reviewer can't change.")
+            raise HTTPException(status_code=409, detail=APPROVED_LOCKED)
         reviewer = (await crud.get_users_by_ids(session, [body.reviewer_id])).get(body.reviewer_id)
         if reviewer is None or not reviewer.is_active or reviewer.role not in PERMISSIONS["reviews.finalize_own"]:
             raise HTTPException(status_code=400, detail="The reviewer must be an active reviewer, management or admin account.")
-        previous = assignment.reviewer_id
-        if previous == body.reviewer_id:
-            return await _one(session, assignment)
-        await crud.update_assignment(
-            session, assignment, reviewer_id=body.reviewer_id, reviewer_assigned_by=user.id, reviewer_assigned_at=_now(),
-        )
-        if assignment.review_id:
-            await crud.set_review_reviewer(session, assignment.review_id, body.reviewer_id)
-        link = {"link": f"/reports/{assignment.review_id}"} if assignment.review_id else {}
-        payload = cycle_payload(project.name, assignment.platform, cycle.year, cycle.quarter, **link)
-        await notify(session, "reviewer_assigned", [body.reviewer_id], payload)
-        await notify(session, "reviewer_unassigned", [previous], cycle_payload(project.name, assignment.platform, cycle.year, cycle.quarter))
+        await reassign_cycle_reviewer(session, cycle, project, assignment, body.reviewer_id, user.id)
         return await _one(session, assignment)
