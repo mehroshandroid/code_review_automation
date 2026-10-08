@@ -17,6 +17,7 @@ from app.api.reviews import router as reviews_router
 from app.api.settings import router as settings_router
 from app.api.users import router as users_router
 from app.auth.hashing import hash_password
+from app.automation.worker import start_worker
 from app.db import crud
 from app.db.session import new_session
 from app.utils.logger import get_logger
@@ -46,7 +47,11 @@ async def _seed_admin_if_needed() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await _seed_admin_if_needed()
+    # Exactly one backend instance should run the review worker (docker-compose sets this).
+    worker_task = start_worker() if environ.get("REVIEW_WORKER_ENABLED", "").lower() == "true" else None
     yield
+    if worker_task is not None:
+        worker_task.cancel()
 
 
 app = FastAPI(title="CodeAssure", lifespan=lifespan)
