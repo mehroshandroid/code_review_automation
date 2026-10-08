@@ -157,6 +157,22 @@ Spec: `docs/superpowers/specs/2026-10-08-queue-monitor-design.md`. Plan: `docs/s
 - **Review statuses:** reviews now have two statuses, Pending approval and Approved. The four reviews marked "Completed" were migrated to Approved.
 - **Tables:** tables on the Users, Projects, My reviews and cycle screens now have padding around their cells (`.table--padded`).
 
+### Phase 12: Email delivery, stage tracker and reminders (2026-10-08). Branch: `email-and-tracker`
+
+Spec: `docs/superpowers/specs/2026-10-08-email-and-stage-tracker-design.md`. Plan: `docs/superpowers/plans/2026-10-08-email-and-stage-tracker.md`.
+
+- **Mailer (`backend/app/email/`):** the outbox is now delivered. Each email goes out with an HTML and a plain-text version and a link back to CodeAssure. It's retried with a growing delay, and after 5 failed attempts it's marked `failed`. The sender runs alongside the review worker, checks every 15 seconds, and is woken immediately when a new email is recorded.
+- **Delivery mode** is set by `EMAIL_MODE`:
+  - `log` (default): nothing is sent, the email only appears in the server log.
+  - `graph`: Microsoft Graph `sendMail`. It uses `GRAPH_*`, or falls back to `AZURE_AD_*`.
+  - `smtp`: uses `SMTP_*`.
+
+  Also set `EMAIL_FROM` and `EMAIL_FROM_NAME`, and `FRONTEND_BASE_URL` so links point to the right place.
+- **Existing outbox rows** were marked `skipped`, so turning email on doesn't send old notifications.
+- **Stage tracker:** each platform has four stages: Initiated → URL added → AI review done → Reviewer feedback. A stage shows green when done, orange while pending, and coral if the AI run failed. Quarter cards show these as dots, with the time on hover. The Manage dialog shows the full timeline, with **Remind PM** and **Remind reviewer** buttons (manual only) and a "Reminded … ago" note.
+- **Settings → Email (admin only):** shows the delivery mode and any setup problems, has a **Send test email** button, and lists the 50 most recent emails with their status and error, plus **Retry** for failed ones.
+- **To turn real email on:** the network team creates a sender mailbox and grants either Graph `Mail.Send` (restricted to that mailbox by an application access policy) or SMTP AUTH. Then set the variables above and restart the backend.
+
 ---
 
 ## Running locally
