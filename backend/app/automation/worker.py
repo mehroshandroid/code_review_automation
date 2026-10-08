@@ -5,7 +5,6 @@ nothing: recover() re-queues runs that were interrupted, plus runs that
 failed for system reasons (an admin fix + restart is the retry).
 """
 import asyncio
-import logging
 import shutil
 import tempfile
 import uuid
@@ -18,8 +17,9 @@ from app.automation.notify import admin_ids, cycle_payload, notify
 from app.db import crud
 from app.db.session import new_session
 from app.secrets import decrypt
+from app.utils.logger import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 POLL_SECONDS = 5
 PROGRESS_SYNC_SECONDS = 3
