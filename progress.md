@@ -139,6 +139,24 @@ Spec: `docs/superpowers/specs/2026-10-07-automated-cycle-reviews-design.md`. Pla
   - **Slice 3:** a coordinator stage tracker with green and orange dots, timestamps and reminder buttons.
   - **Part 3:** a mailer that sends what's waiting in the outbox.
 
+### Phase 11: Admin queue monitor, two review statuses, table padding (2026-10-08). Branch: `queue-monitor`, stacked on `automated-reviews`
+
+Spec: `docs/superpowers/specs/2026-10-08-queue-monitor-design.md`. Plan: `docs/superpowers/plans/2026-10-08-queue-monitor.md`.
+
+- **Queue tab** (admin only, after Users; capability `queue.manage`): a live view of the automated review queue, refreshing every 5 seconds.
+
+  | Panel | Shows | Actions |
+  |---|---|---|
+  | Running now | Phase, progress bar, time elapsed, attempt | Stop |
+  | Queued | Position, time waited | Move to front, Remove (PMs are notified), Run settings |
+  | Failed | The error, tagged URL, System or Stopped | Retry, Run settings |
+  | Recently completed | How long it took | View |
+
+- **Pause and resume:** pause stops the running review immediately, puts it back at the front of the queue and saves nothing for the cancelled run. The pause state is kept in `review_queue_state`, not in org settings.
+- **Run settings:** each review can override the LLM provider (and model) and the compile check for that review only, including its retries. Settings stays unchanged and supplies the defaults.
+- **Review statuses:** reviews now have two statuses, Pending approval and Approved. The four reviews marked "Completed" were migrated to Approved.
+- **Tables:** tables on the Users, Projects, My reviews and cycle screens now have padding around their cells (`.table--padded`).
+
 ---
 
 ## Running locally
