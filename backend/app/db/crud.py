@@ -2,12 +2,12 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import delete, extract, func, select
+from sqlalchemy import and_, delete, extract, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import (
-    ClauseChecklist, OrgSettings, PlatformReview, Project, ProjectManager, ProjectPlatform, ReviewCycle,
-    ReviewCycleAssignment, SampleTemplate, User,
+    ClauseChecklist, NotificationOutbox, OrgSettings, PlatformReview, Project, ProjectManager, ProjectPlatform,
+    ReviewCycle, ReviewCycleAssignment, SampleTemplate, User,
 )
 from app.quarterly import sort_platforms
 
@@ -533,3 +533,135 @@ async def get_first_review_dates(session: AsyncSession, project_ids: list[str]) 
         .group_by(PlatformReview.project_id)
     )
     return {project_id: first for project_id, first in result.all()}
+
+
+# --- automated cycle reviews ---
+
+async def get_cycle_by_id(session: AsyncSession, cycle_id: str) -> Optional[ReviewCycle]:
+    return await session.get(ReviewCycle, cycle_id)
+
+
+async def get_assignment(session: AsyncSession, cycle_id: str, platform: str) -> Optional[ReviewCycleAssignment]:
+    return await session.get(ReviewCycleAssignment, (cycle_id, platform))
+
+
+async def update_assignment(session: AsyncSession, assignment: ReviewCycleAssignment, **fields) -> ReviewCycleAssignment:
+    for name, value in fields.items():
+        setattr(assignment, name, value)
+    await session.commit()
+    await session.refresh(assignment)
+    return assignment
+
+
+_QUEUE_ORDER = (ReviewCycleAssignment.queued_at, ReviewCycleAssignment.cycle_id, ReviewCycleAssignment.platform)
+
+
+async def list_queued_keys(session: AsyncSession) -> list[tuple[str, str]]:
+    result = await session.execute(
+        select(ReviewCycleAssignment.cycle_id, ReviewCycleAssignment.platform)
+        .where(ReviewCycleAssignment.run_status == "queued")
+        .order_by(*_QUEUE_ORDER)
+    )
+    return [(cycle_id, platform) for cycle_id, platform in result.all()]
+
+
+async def claim_next_queued(session: AsyncSession) -> Optional[ReviewCycleAssignment]:
+    result = await session.execute(
+        select(ReviewCycleAssignment).where(ReviewCycleAssignment.run_status == "queued").order_by(*_QUEUE_ORDER).limit(1)
+    )
+    assignment = result.scalar_one_or_none()
+    if assignment is None:
+        return None
+    return await update_assignment(
+        session, assignment, run_status="running", started_at=datetime.now(timezone.utc),
+        attempts=(assignment.attempts or 0) + 1, run_phase=None, run_progress=0, run_error=None, failure_kind=None,
+    )
+
+
+async def requeue_assignments(session: AsyncSession, include_running: bool) -> int:
+    condition = and_(ReviewCycleAssignment.run_status == "failed", ReviewCycleAssignment.failure_kind == "system")
+    if include_running:
+        condition = or_(condition, ReviewCycleAssignment.run_status == "running")
+    result = await session.execute(
+        update(ReviewCycleAssignment).where(condition).values(
+            run_status="queued", queued_at=datetime.now(timezone.utc),
+            run_error=None, failure_kind=None, run_phase=None, run_progress=None,
+        )
+    )
+    await session.commit()
+    return result.rowcount
+
+
+async def get_review_statuses(session: AsyncSession, review_ids: list[str]) -> dict[str, str]:
+    ids = [review_id for review_id in set(review_ids) if review_id]
+    if not ids:
+        return {}
+    result = await session.execute(select(PlatformReview.id, PlatformReview.status).where(PlatformReview.id.in_(ids)))
+    return {review_id: status for review_id, status in result.all()}
+
+
+async def list_open_cycles(session: AsyncSession, project_ids: Optional[set[str]]) -> list[ReviewCycle]:
+    if project_ids is not None and not project_ids:
+        return []
+    open_cycle_ids = select(ReviewCycleAssignment.cycle_id).where(ReviewCycleAssignment.run_status != "completed")
+    query = select(ReviewCycle).where(ReviewCycle.id.in_(open_cycle_ids))
+    if project_ids is not None:
+        query = query.where(ReviewCycle.project_id.in_(project_ids))
+    result = await session.execute(query.order_by(ReviewCycle.initiated_at.desc()))
+    return list(result.scalars().all())
+
+
+async def get_assignment_by_review_id(session: AsyncSession, review_id: str) -> Optional[ReviewCycleAssignment]:
+    result = await session.execute(select(ReviewCycleAssignment).where(ReviewCycleAssignment.review_id == review_id))
+    return result.scalars().first()
+
+
+async def add_notifications(session: AsyncSession, event: str, recipient_ids: list[str], payload: dict) -> None:
+    now = datetime.now(timezone.utc)
+    for recipient_id in recipient_ids:
+        session.add(NotificationOutbox(
+            id=str(uuid.uuid4()), event=event, recipient_user_id=recipient_id, payload=payload, created_at=now,
+        ))
+    await session.commit()
+
+
+async def list_notifications(session: AsyncSession, event: Optional[str] = None) -> list[NotificationOutbox]:
+    query = select(NotificationOutbox).order_by(NotificationOutbox.created_at, NotificationOutbox.recipient_user_id)
+    if event:
+        query = query.where(NotificationOutbox.event == event)
+    result = await session.execute(query)
+    return list(result.scalars().all())
+
+
+async def list_active_user_ids_with_roles(session: AsyncSession, roles: frozenset[str]) -> list[str]:
+    result = await session.execute(
+        select(User.id).where(User.role.in_(roles), User.is_active.is_(True)).order_by(User.email)
+    )
+    return [user_id for (user_id,) in result.all()]
+
+
+async def _org_settings_row(session: AsyncSession) -> OrgSettings:
+    settings = await session.get(OrgSettings, _ORG_SETTINGS_ID)
+    if settings is None:
+        settings = OrgSettings(id=_ORG_SETTINGS_ID, default_llm_provider="ollama", updated_at=datetime.now(timezone.utc))
+        session.add(settings)
+    return settings
+
+
+async def update_devops_pat(session: AsyncSession, encrypted: str, last4: str, user_id: str) -> OrgSettings:
+    settings = await _org_settings_row(session)
+    settings.devops_pat_encrypted = encrypted
+    settings.devops_pat_last4 = last4
+    settings.devops_pat_updated_at = datetime.now(timezone.utc)
+    settings.devops_pat_updated_by = user_id
+    await session.commit()
+    await session.refresh(settings)
+    return settings
+
+
+async def update_auto_compile_modes(session: AsyncSession, modes: dict) -> OrgSettings:
+    settings = await _org_settings_row(session)
+    settings.auto_compile_modes = dict(modes)
+    await session.commit()
+    await session.refresh(settings)
+    return settings
