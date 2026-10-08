@@ -331,3 +331,19 @@ async def test_cancelled_pipeline_does_not_persist(monkeypatch, tmp_path):
     with pytest.raises(asyncio.CancelledError):
         await task
     assert calls == []
+
+
+async def test_a_stop_landing_as_the_run_finishes_is_cleared(db, monkeypatch):
+    monkeypatch.setattr(worker, "PROGRESS_SYNC_SECONDS", 60)  # the sync loop never sees it
+    inner = _fake_pipeline(db, "completed")
+
+    async def stop_arrives_late(review_id, *args, **kwargs):
+        await inner(review_id, *args, **kwargs)
+        async with db() as s:
+            await crud.update_assignment(s, await crud.get_assignment(s, "c1", "Android"), cancel_requested="stop")
+
+    monkeypatch.setattr(reviews_module, "_run_review", stop_arrives_late)
+    await worker.run_one()
+    async with db() as s:
+        a = await crud.get_assignment(s, "c1", "Android")
+    assert a.run_status == "completed" and a.cancel_requested is None

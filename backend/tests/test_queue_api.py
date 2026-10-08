@@ -111,3 +111,10 @@ def test_queue_is_admin_only(db, role):
     assert client.get("/api/queue").status_code == 403
     assert client.post("/api/queue/pause").status_code == 403
     assert client.post("/api/queue/items/c1/iOS/front").status_code == 403
+
+
+def test_pause_does_not_override_an_earlier_stop(db):
+    _as("admin")
+    client.post("/api/queue/items/c1/Android/stop")
+    body = client.post("/api/queue/pause").json()
+    assert body["running"][0]["cancel_requested"] == "stop"

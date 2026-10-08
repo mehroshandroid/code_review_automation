@@ -575,6 +575,7 @@ async def claim_next_queued(session: AsyncSession) -> Optional[ReviewCycleAssign
     return await update_assignment(
         session, assignment, run_status="running", started_at=datetime.now(timezone.utc),
         attempts=(assignment.attempts or 0) + 1, run_phase=None, run_progress=0, run_error=None, failure_kind=None,
+        cancel_requested=None,  # a stop/pause belongs to one run; never let a stale one kill this run
     )
 
 

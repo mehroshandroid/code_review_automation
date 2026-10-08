@@ -74,3 +74,11 @@ async def test_assignment_dicts_keep_order_and_new_fields(s):
     assert rows[1]["override_llm_provider"] == "claude" and rows[1]["override_compile_mode"] == "static"
     assert rows[0]["cycle_id"] == "c1" and rows[0]["cancel_requested"] is None
     assert [r["platform"] for r in await assignment_dicts(s, [ios, android])] == ["Android", "iOS"]
+
+
+async def test_claim_clears_a_leftover_cancel_request(s):
+    # A stop/pause that landed after a previous run finished must not kill the next run.
+    a = await crud.get_assignment(s, "c1", "Android")
+    await crud.update_assignment(s, a, run_status="queued", queued_at=datetime.now(timezone.utc), cancel_requested="stop")
+    claimed = await crud.claim_next_queued(s)
+    assert claimed.platform == "Android" and claimed.cancel_requested is None

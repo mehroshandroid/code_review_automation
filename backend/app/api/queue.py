@@ -78,7 +78,8 @@ async def pause_queue(user=Depends(require_permission("queue.manage"))):
     async with new_session() as session:
         await crud.set_queue_paused(session, True, user.id)
         for assignment in await crud.list_assignments_with_status(session, "running"):
-            await crud.update_assignment(session, assignment, cancel_requested="pause")
+            if assignment.cancel_requested is None:  # an admin's earlier Stop wins over a pause
+                await crud.update_assignment(session, assignment, cancel_requested="pause")
         return await _snapshot(session)
 
 

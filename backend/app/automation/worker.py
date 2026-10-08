@@ -77,7 +77,7 @@ async def _fail(cycle_id: str, platform: str, error: str, kind: str, review_id: 
         project = await crud.get_project(session, cycle.project_id)
         await crud.update_assignment(
             session, assignment, run_status="failed", run_error=error, failure_kind=kind,
-            review_id=review_id or assignment.review_id, finished_at=_now(),
+            review_id=review_id or assignment.review_id, finished_at=_now(), cancel_requested=None,
         )
         payload = cycle_payload(
             project.name, platform, cycle.year, cycle.quarter, error=error, failure_kind=kind,
@@ -101,7 +101,7 @@ async def _succeed(cycle_id: str, platform: str, review_id: str) -> None:
                 await crud.set_review_reviewer(session, superseded, None)
         await crud.update_assignment(
             session, assignment, run_status="completed", review_id=review_id, run_progress=100,
-            run_phase="completed", finished_at=_now(),
+            run_phase="completed", finished_at=_now(), cancel_requested=None,
         )
         payload = cycle_payload(project.name, platform, cycle.year, cycle.quarter, review_id=review_id, link=f"/reports/{review_id}")
         await notify(session, "review_ready", [assignment.reviewer_id], payload)
