@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from app.analyzer.devops_client import parse_repo_url
 from app.auth.permissions import PERMISSIONS, can, require_permission, visible_project_ids
 from app.automation.assignments import assignment_dicts
+from app.automation.notify import cycle_payload, notify, project_manager_ids
 from app.automation.reviewers import APPROVED_LOCKED, reassign_cycle_reviewer
 from app.db import crud
 from app.db.session import new_session
@@ -129,4 +130,32 @@ async def change_reviewer(cycle_id: str, platform: str, body: ReviewerBody, user
         if reviewer is None or not reviewer.is_active or reviewer.role not in PERMISSIONS["reviews.finalize_own"]:
             raise HTTPException(status_code=400, detail="The reviewer must be an active reviewer, management or admin account.")
         await reassign_cycle_reviewer(session, cycle, project, assignment, body.reviewer_id, user.id)
+        return await _one(session, assignment)
+
+
+class RemindBody(BaseModel):
+    target: str
+
+
+@router.post("/api/cycles/{cycle_id}/assignments/{platform}/remind")
+async def remind(cycle_id: str, platform: str, body: RemindBody, user=Depends(require_permission("cycles.initiate"))):
+    if body.target not in ("pm", "reviewer"):
+        raise HTTPException(status_code=400, detail="target must be 'pm' or 'reviewer'")
+    async with new_session() as session:
+        cycle, project, assignment = await _load(session, user, cycle_id, platform)
+        review_status = (await crud.get_review_statuses(session, [assignment.review_id])).get(assignment.review_id)
+        needs_url = assignment.run_status == "waiting_for_url" or (
+            assignment.run_status == "failed" and assignment.failure_kind == "url"
+        )
+        needs_feedback = assignment.run_status == "completed" and review_status != "approved" and assignment.reviewer_id
+        if body.target == "pm" and needs_url:
+            payload = cycle_payload(project.name, assignment.platform, cycle.year, cycle.quarter, link="/", run_error=assignment.run_error)
+            await notify(session, "reminder_pm", await project_manager_ids(session, cycle.project_id), payload)
+            await crud.update_assignment(session, assignment, pm_reminded_at=_now())
+        elif body.target == "reviewer" and needs_feedback:
+            payload = cycle_payload(project.name, assignment.platform, cycle.year, cycle.quarter, link=f"/reports/{assignment.review_id}")
+            await notify(session, "reminder_reviewer", [assignment.reviewer_id], payload)
+            await crud.update_assignment(session, assignment, reviewer_reminded_at=_now())
+        else:
+            raise HTTPException(status_code=409, detail="A reminder isn't needed at this stage.")
         return await _one(session, assignment)
