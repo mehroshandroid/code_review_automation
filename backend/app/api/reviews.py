@@ -33,6 +33,8 @@ from app.analyzer.excel_handler import (
 from app.analyzer.llm_client import generate_general_remarks, score_category
 from app.auth.dependencies import get_current_user
 from app.auth.permissions import PERMISSIONS, can, can_view_review, require_permission, visible_project_ids
+from app.automation.notify import cycle_payload, notify, project_manager_ids
+from app.automation.reviewers import APPROVED_LOCKED, reassign_cycle_reviewer
 from app.db import crud
 from app.db.session import new_session
 from app.utils.logger import get_logger
@@ -50,7 +52,7 @@ _reviews: dict = {}
 CODE_CONTEXT_MAX_CHARS_OLLAMA = 48000
 CODE_CONTEXT_MAX_CHARS_AZURE = 120000
 
-ALLOWED_REVIEW_STATUSES = {"pending_approval", "approved", "completed"}
+ALLOWED_REVIEW_STATUSES = {"pending_approval", "approved"}
 
 
 class UpdateReviewRequest(BaseModel):
@@ -92,6 +94,10 @@ def _new_review_state() -> dict:
         "stats": {},
         "download_path": None,
         "error": None,
+        # "url" when fixing the repo URL is the remedy (bad/missing repo, wrong platform); else unset.
+        "error_kind": None,
+        # Set by the queue worker ("pause" | "stop") just before it cancels the run.
+        "cancelled": None,
         "warnings": [],
         "test_coverage": None,
         "secrets_found": [],
@@ -367,6 +373,8 @@ async def _run_review(
                 state["phase"] = "error"
                 state["message"] = "Review failed"
                 state["error"] = fetch_result["message"]
+                if fetch_result["status"] in ("invalid_url", "not_found"):
+                    state["error_kind"] = "url"
                 return
             zip_path.write_bytes(fetch_result["content"])
             stats["fetch_time_ms"] = int((time.monotonic() - t_fetch) * 1000)
@@ -395,6 +403,7 @@ async def _run_review(
             state["phase"] = "error"
             state["message"] = "Review failed"
             state["error"] = analysis.fatal_error
+            state["error_kind"] = "url"
             return
         state["warnings"] = analysis.structure_warnings + [w["issue"] for w in analysis.version_warnings]
         state["test_coverage"] = analysis.test_coverage
@@ -523,9 +532,10 @@ async def _run_review(
         shutil.rmtree(extract_dir, ignore_errors=True)
         zip_path.unlink(missing_ok=True)
         template_path.unlink(missing_ok=True)
-        await _persist_review_result(
-            review_id, project_id, project_name, platform, llm_provider, ollama_model, compile_check_mode, state,
-        )
+        if not state.get("cancelled"):
+            await _persist_review_result(
+                review_id, project_id, project_name, platform, llm_provider, ollama_model, compile_check_mode, state,
+            )
         if state["download_path"] is None:
             shutil.rmtree(work_dir, ignore_errors=True)
 
@@ -774,6 +784,20 @@ async def get_review(review_id: str, user=Depends(get_current_user)):
     return _review_to_dict(review)
 
 
+async def _notify_review_finalized(review) -> None:
+    async with new_session() as session:
+        assignment = await crud.get_assignment_by_review_id(session, review.id)
+        if assignment is None:
+            return
+        cycle = await crud.get_cycle_by_id(session, assignment.cycle_id)
+        payload = cycle_payload(
+            review.project_name, assignment.platform, cycle.year, cycle.quarter,
+            review_id=review.id, total_score_pct=float(review.total_score_pct) if review.total_score_pct is not None else None,
+            link=f"/reports/{review.id}",
+        )
+        await notify(session, "review_finalized", await project_manager_ids(session, cycle.project_id), payload)
+
+
 @router.patch("/api/reviews/{review_id}")
 async def update_review(review_id: str, body: UpdateReviewRequest, user=Depends(get_current_user)):
     if body.status is not None and body.status not in ALLOWED_REVIEW_STATUSES:
@@ -781,6 +805,11 @@ async def update_review(review_id: str, body: UpdateReviewRequest, user=Depends(
 
     async with new_session() as session:
         existing = await _get_visible_review(session, user, review_id)
+        linked = await crud.get_assignment_by_review_id(session, review_id) if body.status == "approved" else None
+    if linked is not None and linked.run_status in ("queued", "running"):
+        raise HTTPException(
+            status_code=409, detail="A re-run of this review is in progress; approve the new review once it finishes.",
+        )
     is_assigned = existing.reviewer_id == user.id
     if not (can(user, "reviews.edit") or (can(user, "reviews.finalize_own") and is_assigned)):
         raise HTTPException(status_code=403, detail="You don't have permission to do this")
@@ -796,6 +825,8 @@ async def update_review(review_id: str, body: UpdateReviewRequest, user=Depends(
         )
     if review is None:
         raise HTTPException(status_code=404, detail="Review not found")
+    if body.status == "approved" and existing.status != "approved":
+        await _notify_review_finalized(review)
     return _review_to_dict(review)
 
 
@@ -833,7 +864,20 @@ async def update_review_reviewer(
             raise HTTPException(status_code=400, detail="reviewer_id must be an active reviewer, management or admin account.")
 
     async with new_session() as session:
-        review = await crud.set_review_reviewer(session, review_id, body.reviewer_id)
+        assignment = await crud.get_assignment_by_review_id(session, review_id)
+        if assignment is not None:
+            # A quarterly cycle review: keep the cycle assignment in sync and notify.
+            current = await crud.get_review_by_id(session, review_id)
+            if current is not None and current.status == "approved":
+                raise HTTPException(status_code=409, detail=APPROVED_LOCKED)
+            if body.reviewer_id is None:
+                raise HTTPException(status_code=400, detail="A quarterly cycle review always needs a reviewer.")
+            cycle = await crud.get_cycle_by_id(session, assignment.cycle_id)
+            project = await crud.get_project(session, cycle.project_id)
+            await reassign_cycle_reviewer(session, cycle, project, assignment, body.reviewer_id, user.id)
+            review = await crud.get_review_by_id(session, review_id)
+        else:
+            review = await crud.set_review_reviewer(session, review_id, body.reviewer_id)
         if review is None:
             raise HTTPException(status_code=404, detail="Review not found")
         visible = await can_view_review(session, user, review)

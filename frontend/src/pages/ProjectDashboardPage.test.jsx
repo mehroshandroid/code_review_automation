@@ -4,7 +4,7 @@ import { MemoryRouter } from "react-router-dom";
 import ProjectDashboardPage from "./ProjectDashboardPage";
 import { AuthContext } from "../context/AuthContext";
 import { userWithRole } from "../testUtils/authUsers";
-import { getProjects, getReviews, getReviewYears, updateProject, uploadCompletedReview } from "../services/api";
+import { getMyCycles, getProjects, getReviews, getReviewYears, updateProject, uploadCompletedReview } from "../services/api";
 
 jest.mock("../services/api", () => ({
   ...jest.requireActual("../services/api"),
@@ -13,6 +13,7 @@ jest.mock("../services/api", () => ({
   getReviewYears: jest.fn(),
   updateProject: jest.fn(),
   uploadCompletedReview: jest.fn(),
+  getMyCycles: jest.fn(),
 }));
 
 const projects = [
@@ -28,6 +29,7 @@ beforeEach(() => {
   getReviewYears.mockResolvedValue([currentYear - 1, currentYear]);
   getReviews.mockResolvedValue([]);
   uploadCompletedReview.mockResolvedValue({ id: "r1" });
+  getMyCycles.mockResolvedValue([]);
 });
 
 function renderDashboard() {
@@ -200,4 +202,17 @@ test("admin with no projects still sees the filters, not the PM message", async 
   renderDashboard();
   expect(await screen.findByRole("button", { name: "Project" })).toBeInTheDocument();
   expect(screen.queryByText("No projects assigned yet — contact your admin.")).not.toBeInTheDocument();
+});
+
+test("PM sees pending quarterly reviews above the filters", async () => {
+  getMyCycles.mockResolvedValue([{ id: "c1", project_id: "p1", project_name: "Alpha", year: 2026, quarter: 4, initiated_at: "2026-10-07T00:00:00Z",
+    assignments: [{ platform: "Android", reviewer_id: "r", reviewer_name: "Rae", run_status: "waiting_for_url", devops_url: null }] }]);
+  renderAsPm([{ id: "p1", name: "Alpha" }]);
+  expect(await screen.findByRole("region", { name: "Pending quarterly reviews" })).toBeInTheDocument();
+});
+
+test("admin does not get the PM pending panel", async () => {
+  renderDashboard();
+  await screen.findByRole("button", { name: "Project" });
+  expect(getMyCycles).not.toHaveBeenCalled();
 });

@@ -3,6 +3,7 @@ import tempfile
 import zipfile
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 from openpyxl import Workbook
 
@@ -1140,3 +1141,40 @@ def test_create_review_forbidden_for_a_role_without_reviews_create(monkeypatch):
             assert response.status_code == 403
     finally:
         app.dependency_overrides.pop(get_current_user, None)
+
+
+@pytest.mark.parametrize("fetch_status,expected_kind", [("not_found", "url"), ("invalid_url", "url"), ("unauthorized", None), ("error", None)])
+async def test_run_review_marks_url_fixable_fetch_failures(monkeypatch, fetch_status, expected_kind):
+    review_id = f"error-kind-{fetch_status}"
+    work_dir = Path(tempfile.mkdtemp(prefix=f"review_{review_id}_"))
+    template_path = work_dir / "template.xlsx"
+    template_path.write_bytes(_build_xlsx_bytes())
+    _reviews[review_id] = _new_review_state()
+
+    async def fake_fetch_repo_zip(repo_url, pat, branch=None):
+        return {"status": fetch_status, "content": None, "message": "nope"}
+
+    monkeypatch.setattr(reviews_module, "fetch_repo_zip", fake_fetch_repo_zip)
+    await _run_review(
+        review_id, work_dir, work_dir / "android.zip", template_path, zip_valid=True, template_valid=True,
+        project_name="r", devops_repo_url="https://dev.azure.com/o/p/_git/r", devops_pat="pat",
+    )
+    assert _reviews[review_id]["status"] == "error"
+    assert _reviews[review_id]["error_kind"] == expected_kind
+
+
+async def test_run_review_marks_analyzer_fatal_error_as_url_fixable(monkeypatch):
+    review_id = "error-kind-fatal"
+    work_dir = Path(tempfile.mkdtemp(prefix=f"review_{review_id}_"))
+    zip_path = work_dir / "android.zip"
+    template_path = work_dir / "template.xlsx"
+    zip_path.write_bytes(_build_zip_bytes())
+    template_path.write_bytes(_build_xlsx_bytes())
+    _reviews[review_id] = _new_review_state()
+
+    class _Fatal:
+        fatal_error = "This doesn't look like an Android project."
+
+    monkeypatch.setattr(reviews_module.android_analyzer, "analyze_project", lambda path: _Fatal())
+    await _run_review(review_id, work_dir, zip_path, template_path, zip_valid=True, template_valid=True, project_name="r")
+    assert _reviews[review_id]["error_kind"] == "url"

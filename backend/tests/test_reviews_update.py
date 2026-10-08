@@ -121,14 +121,14 @@ async def test_patch_review_updates_status_to_approved(test_sessionmaker):
     assert body["approved_at"] is not None
 
 
-async def test_patch_review_updates_status_to_completed(test_sessionmaker):
+async def test_patch_review_rejects_the_retired_completed_status(test_sessionmaker):
+    # Only two review statuses remain: pending_approval -> approved.
     await _seed_review(test_sessionmaker)
 
     with TestClient(app) as client:
         response = client.patch("/api/reviews/r1", json={"status": "completed"})
 
-    assert response.status_code == 200
-    assert response.json()["status"] == "completed"
+    assert response.status_code == 400
 
 
 def test_patch_review_rejects_invalid_status(test_sessionmaker):

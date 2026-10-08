@@ -246,3 +246,78 @@ a:hover { color: var(--color-brand-coral); }
 .page-subtitle { margin: 4px 0 0; color: var(--color-text-muted); font-size: 14px; }
 .segmented { display: inline-flex; gap: var(--space-2); }
 @media (max-width: 640px) { .page-main { padding: 24px 16px 64px; } }
+
+/* — quarterly dashboard — */
+.quarterly-row { padding: 20px; display: grid; gap: var(--space-3); }
+.quarterly-row-head { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
+.quarterly-row-name { font-family: var(--font-heading); font-weight: var(--font-heading-weight); font-size: 18px; }
+.quarter-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-3); }
+@media (max-width: 900px) { .quarter-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 520px) { .quarter-grid { grid-template-columns: 1fr; } }
+.quarter-card {
+  display: flex; flex-direction: column; gap: var(--space-2);
+  padding: 14px; border-radius: 10px; border: 1px solid var(--color-divider); min-height: 140px;
+}
+.quarter-card--done { background: color-mix(in srgb, #2e9e5b 12%, var(--color-bg)); border-color: color-mix(in srgb, #2e9e5b 35%, var(--color-divider)); }
+.quarter-card--in-progress { background: color-mix(in srgb, #e0b400 16%, var(--color-bg)); border-color: color-mix(in srgb, #e0b400 40%, var(--color-divider)); }
+.quarter-card--overdue { background: color-mix(in srgb, var(--color-brand-coral) 12%, var(--color-bg)); border-color: color-mix(in srgb, var(--color-brand-coral) 40%, var(--color-divider)); }
+.quarter-card--not-started { background: var(--color-bg); }
+.quarter-card--not-applicable { background: var(--color-surface); color: var(--color-text-muted); }
+.quarter-card-head { display: flex; justify-content: space-between; align-items: center; gap: var(--space-2); }
+.quarter-card-title { font-weight: 600; font-size: 14px; }
+.quarter-badge { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+.quarter-badge--done { background: #2e9e5b; color: #fff; }
+.quarter-badge--in-progress { background: #e0b400; color: #3a2f00; }
+.quarter-badge--overdue { background: var(--color-brand-coral); color: #fff; }
+.quarter-badge--not-started { background: var(--color-surface); color: var(--color-text-muted); border: 1px solid var(--color-divider); }
+.quarter-badge--late { background: transparent; color: var(--color-brand-coral); border: 1px solid var(--color-brand-coral); }
+.quarter-badge--not-applicable { background: transparent; color: var(--color-text-muted); border: 1px solid var(--color-divider); }
+.quarter-card-platforms { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 13px; }
+.quarter-tick { color: #2e9e5b; font-weight: 700; }
+.quarter-dot { color: var(--color-text-muted); }
+.quarter-card-meta { font-size: 12px; color: var(--color-text-muted); }
+.quarter-card-action { margin-top: auto; align-self: flex-start; }
+
+/* — automated cycle runs — */
+.pending-cycles { padding: 20px; display: grid; gap: var(--space-3); border-color: color-mix(in srgb, #e0b400 45%, var(--color-divider)); }
+.pending-cycle { display: grid; gap: var(--space-2); }
+.pending-cycle-head { display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-2); flex-wrap: wrap; }
+.pending-cycle-title { font-weight: 600; }
+.assignment-url-form { display: flex; gap: var(--space-2); flex-wrap: wrap; align-items: center; }
+.assignment-url-form .input:first-child { flex: 1; min-width: 220px; }
+.run-badge { font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; white-space: nowrap; display: inline-block; }
+.run-badge--waiting-for-url { background: var(--color-surface); color: var(--color-text-muted); border: 1px solid var(--color-divider); }
+.run-badge--queued { background: color-mix(in srgb, #e0b400 18%, var(--color-bg)); color: #6b5300; }
+.run-badge--running { background: color-mix(in srgb, var(--color-accent) 15%, var(--color-bg)); color: var(--color-accent); }
+.run-badge--completed { background: color-mix(in srgb, #2e9e5b 15%, var(--color-bg)); color: #1f6e3f; }
+.run-badge--failed { background: color-mix(in srgb, var(--color-brand-coral) 15%, var(--color-bg)); color: var(--color-brand-coral); }
+.run-error { margin: 4px 0 0; font-size: 12px; color: var(--color-brand-coral); }
+
+/* Tables on the management pages sit in unpadded cards, so the cells carry the inset. */
+.table--padded th, .table--padded td { padding-left: 12px; padding-right: 12px; }
+.table--padded th:first-child, .table--padded td:first-child { padding-left: 20px; }
+.table--padded th:last-child, .table--padded td:last-child { padding-right: 20px; }
+.table--padded th { padding-top: 10px; padding-bottom: 10px; }
+.table--padded tbody tr:hover { background: color-mix(in srgb, var(--color-surface) 70%, transparent); }
+
+/* — review queue monitor — */
+.queue-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); align-items: start; }
+@media (max-width: 1000px) { .queue-grid { grid-template-columns: 1fr; } }
+.queue-panel { padding: 20px; display: grid; gap: var(--space-3); }
+.queue-panel-title { font-weight: 700; font-size: 15px; display: flex; align-items: center; gap: 8px; }
+.queue-panel-count { font-size: 12px; font-weight: 600; color: var(--color-text-muted); background: var(--color-surface); border-radius: 999px; padding: 1px 8px; }
+.queue-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
+.queue-item { border: 1px solid var(--color-divider); border-radius: 10px; padding: 12px 14px; display: grid; gap: 6px; }
+.queue-item-main { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.queue-item-title { font-weight: 600; font-size: 14px; }
+.queue-item-meta { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--color-text-muted); }
+.queue-item-actions { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
+.queue-position { font-weight: 700; color: var(--color-text-muted); font-variant-numeric: tabular-nums; }
+.queue-status { font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 999px; }
+.queue-status--running { background: color-mix(in srgb, #2e9e5b 15%, var(--color-bg)); color: #1f6e3f; }
+.queue-status--idle { background: var(--color-surface); color: var(--color-text-muted); }
+.queue-status--paused { background: color-mix(in srgb, #e0b400 20%, var(--color-bg)); color: #6b5300; }
+.progress-track { height: 6px; border-radius: 999px; background: var(--color-surface); overflow: hidden; }
+.progress-fill { height: 100%; background: var(--color-accent); transition: width 0.4s ease; }
+.failure-kind--url { color: var(--color-brand-coral); border-color: var(--color-brand-coral); }
+.failure-kind--stopped { color: var(--color-text-muted); }

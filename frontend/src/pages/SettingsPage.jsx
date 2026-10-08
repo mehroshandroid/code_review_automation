@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import AppNav from "../components/AppNav";
+import AutomationSettingsSection from "../components/AutomationSettingsSection";
 import { PLATFORMS } from "../platforms";
 import {
   getLlmProviderSettings, updateLlmProviderSettings, getOllamaModels,
@@ -462,6 +463,7 @@ export default function SettingsPage() {
         </header>
 
         <LlmProviderSection />
+        <AutomationSettingsSection />
         <ClauseChecklistSection />
         <SampleTemplateSection />
       </main>

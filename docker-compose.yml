@@ -38,6 +38,11 @@ services:
       - FRONTEND_BASE_URL=http://localhost:3000
       - REVIEW_ARTIFACTS_DIR=/data/reviews
       - SAMPLE_TEMPLATES_DIR=/data/sample-templates
+      # Runs queued quarterly-cycle reviews; enable on exactly one backend instance.
+      - REVIEW_WORKER_ENABLED=true
+      # Fernet key for the stored DevOps PAT. Unset = derived from AUTH_SECRET_KEY.
+      # Generate: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+      - SETTINGS_ENCRYPTION_KEY=${SETTINGS_ENCRYPTION_KEY:-}
     volumes:
       # Completed reviews' workbooks -- copied here (out of the per-review
       # temp work dir, which gets cleaned up) so an approver can still open

@@ -3,11 +3,15 @@ import { Link, NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { hasAny, hasPermission, initialsFor, ROLE_LABELS } from "../permissions";
 
+const DASHBOARDS = ["dashboard.view_all", "dashboard.view_assigned"];
+
 const LINKS = [
-  { to: "/", label: "Dashboard", anyOf: ["dashboard.view_all", "dashboard.view_assigned"], end: true },
-  { to: "/my-reviews", label: "My reviews", anyOf: ["my_reviews.view"] },
-  { to: "/projects", label: "Projects", anyOf: ["projects.view"] },
-  { to: "/users", label: "Users", anyOf: ["users.manage"] },
+  { to: "/", label: "Dashboard", end: true, show: (user) => hasAny(user, [...DASHBOARDS, "cycles.view"]) },
+  { to: "/quarterly", label: "Quarterly", show: (user) => hasAny(user, DASHBOARDS) && hasAny(user, ["cycles.view"]) },
+  { to: "/my-reviews", label: "My reviews", show: (user) => hasAny(user, ["my_reviews.view"]) },
+  { to: "/projects", label: "Projects", show: (user) => hasAny(user, ["projects.view"]) },
+  { to: "/users", label: "Users", show: (user) => hasAny(user, ["users.manage"]) },
+  { to: "/queue", label: "Queue", show: (user) => hasAny(user, ["queue.manage"]) },
 ];
 
 export default function AppNav() {
@@ -61,7 +65,7 @@ export default function AppNav() {
       </Link>
 
       <div className="app-nav-links">
-        {LINKS.filter((link) => hasAny(user, link.anyOf)).map((link) => (
+        {LINKS.filter((link) => link.show(user)).map((link) => (
           <NavLink key={link.to} to={link.to} end={link.end} className="app-nav-link">
             {link.label}
           </NavLink>

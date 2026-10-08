@@ -9,12 +9,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.analyzer.openai_client import is_stub_mode
 from app.api.auth import router as auth_router
 from app.api.chat import router as chat_router
+from app.api.cycles import router as cycles_router
 from app.api.ollama import router as ollama_router
 from app.api.projects import router as projects_router
+from app.api.quarterly import router as quarterly_router
+from app.api.queue import router as queue_router
 from app.api.reviews import router as reviews_router
 from app.api.settings import router as settings_router
 from app.api.users import router as users_router
 from app.auth.hashing import hash_password
+from app.automation.worker import start_worker
 from app.db import crud
 from app.db.session import new_session
 from app.utils.logger import get_logger
@@ -44,7 +48,11 @@ async def _seed_admin_if_needed() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await _seed_admin_if_needed()
+    # Exactly one backend instance should run the review worker (docker-compose sets this).
+    worker_task = start_worker() if environ.get("REVIEW_WORKER_ENABLED", "").lower() == "true" else None
     yield
+    if worker_task is not None:
+        worker_task.cancel()
 
 
 app = FastAPI(title="CodeAssure", lifespan=lifespan)
@@ -59,6 +67,9 @@ app.include_router(auth_router)
 app.include_router(reviews_router)
 app.include_router(ollama_router)
 app.include_router(projects_router)
+app.include_router(quarterly_router)
+app.include_router(cycles_router)
+app.include_router(queue_router)
 app.include_router(settings_router)
 app.include_router(users_router)
 app.include_router(chat_router)

@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import Boolean, JSON, DateTime, ForeignKey, Numeric, String, UniqueConstraint
+from sqlalchemy import Boolean, JSON, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -65,6 +65,11 @@ class OrgSettings(Base):
     default_llm_provider: Mapped[str] = mapped_column(String, nullable=False)
     default_ollama_model: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    devops_pat_encrypted: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    devops_pat_last4: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    devops_pat_updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    devops_pat_updated_by: Mapped[Optional[str]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    auto_compile_modes: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
 
 
 class ClauseChecklist(Base):
@@ -105,3 +110,79 @@ class ProjectManager(Base):
 
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
     project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), primary_key=True)
+
+
+class ProjectPlatform(Base):
+    """Which tracked platforms (app.quarterly.TRACKED_PLATFORMS) a project has."""
+
+    __tablename__ = "project_platforms"
+
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), primary_key=True)
+    platform: Mapped[str] = mapped_column(String, primary_key=True)
+
+
+class ReviewCycle(Base):
+    """A project's review for one calendar quarter, started by a coordinator."""
+
+    __tablename__ = "review_cycles"
+    __table_args__ = (UniqueConstraint("project_id", "year", "quarter"),)
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    year: Mapped[int] = mapped_column(Integer, nullable=False)
+    quarter: Mapped[int] = mapped_column(Integer, nullable=False)
+    initiated_by: Mapped[Optional[str]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    initiated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class ReviewCycleAssignment(Base):
+    __tablename__ = "review_cycle_assignments"
+
+    cycle_id: Mapped[str] = mapped_column(ForeignKey("review_cycles.id", ondelete="CASCADE"), primary_key=True)
+    platform: Mapped[str] = mapped_column(String, primary_key=True)
+    reviewer_id: Mapped[Optional[str]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    devops_url: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    devops_branch: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    url_submitted_by: Mapped[Optional[str]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    url_submitted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    # waiting_for_url -> queued -> running -> completed | failed (see app.automation.worker)
+    run_status: Mapped[str] = mapped_column(String, nullable=False, default="waiting_for_url", server_default="waiting_for_url")
+    run_phase: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    run_progress: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    run_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    failure_kind: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # "url" | "system"
+    review_id: Mapped[Optional[str]] = mapped_column(ForeignKey("platform_reviews.id", ondelete="SET NULL"), nullable=True)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    queued_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    reviewer_assigned_by: Mapped[Optional[str]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    reviewer_assigned_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancel_requested: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # "pause" | "stop"
+    override_llm_provider: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    override_llm_model: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    override_compile_mode: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
+
+class NotificationOutbox(Base):
+    """Workflow emails waiting to be sent (Part 3's mailer marks sent_at)."""
+
+    __tablename__ = "notification_outbox"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    event: Mapped[str] = mapped_column(String, nullable=False)
+    recipient_user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    payload: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ReviewQueueState(Base):
+    """Singleton (id 1): whether the automated review queue is paused."""
+
+    __tablename__ = "review_queue_state"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    paused: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    paused_by: Mapped[Optional[str]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    paused_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)

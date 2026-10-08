@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import AppNav from "../components/AppNav";
 import { getMyReviews } from "../services/api";
 
-const STATUS_LABELS = { pending_approval: "Pending approval", approved: "Approved", completed: "Completed", error: "Error" };
+const STATUS_LABELS = { pending_approval: "Pending approval", approved: "Approved", error: "Error" };
 
 export default function MyReviewsPage() {
   const [reviews, setReviews] = useState(null);
@@ -43,7 +43,7 @@ export default function MyReviewsPage() {
 
         {visible.length > 0 && (
           <div className="card" style={{ padding: 0, overflowX: "auto" }}>
-            <table className="table">
+            <table className="table table--padded">
               <thead>
                 <tr><th>Project</th><th>Platform</th><th>Date</th><th>AI score</th><th>Status</th><th aria-label="Actions" /></tr>
               </thead>

@@ -25,7 +25,12 @@ EXPECTED = {
     "users.manage": {A},
     "projects.view": {A, M, C},
     "projects.create": {A, M, C},
-    "projects.rename": {A, M, C},
+    "projects.edit": {A, M, C},
+    "cycles.view": {A, M, C},
+    "cycles.initiate": {A, M, C},
+    "cycles.submit_urls": {A, M, C, P},
+    "settings.devops_pat": {A},
+    "queue.manage": {A},
     "projects.assign_pm": {A, M, C},
     "projects.delete": {A, M},
     "chat.use": {A, M, P},
@@ -55,7 +60,7 @@ def test_retired_user_role_has_no_capabilities():
 
 
 def test_home_paths():
-    assert HOME_PATHS == {A: "/", M: "/", P: "/", R: "/my-reviews", C: "/projects"}
+    assert HOME_PATHS == {A: "/", M: "/", P: "/", R: "/my-reviews", C: "/"}
 
 
 def test_permissions_for_is_sorted():

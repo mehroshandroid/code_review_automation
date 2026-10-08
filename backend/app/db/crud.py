@@ -1,11 +1,15 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from sqlalchemy import delete, extract, func, select
+from sqlalchemy import and_, delete, extract, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import ClauseChecklist, OrgSettings, PlatformReview, Project, ProjectManager, SampleTemplate, User
+from app.db.models import (
+    ClauseChecklist, NotificationOutbox, OrgSettings, PlatformReview, Project, ProjectManager, ProjectPlatform,
+    ReviewCycle, ReviewCycleAssignment, ReviewQueueState, SampleTemplate, User,
+)
+from app.quarterly import sort_platforms
 
 
 async def create_project(session: AsyncSession, project_id: str, name: str) -> Project:
@@ -378,6 +382,10 @@ async def count_reviews_for_project(session: AsyncSession, project_id: str) -> i
 
 async def delete_project(session: AsyncSession, project_id: str) -> bool:
     # Explicit, not just ON DELETE CASCADE: SQLite (tests) doesn't enforce FKs by default.
+    cycle_ids = select(ReviewCycle.id).where(ReviewCycle.project_id == project_id)
+    await session.execute(delete(ReviewCycleAssignment).where(ReviewCycleAssignment.cycle_id.in_(cycle_ids)))
+    await session.execute(delete(ReviewCycle).where(ReviewCycle.project_id == project_id))
+    await session.execute(delete(ProjectPlatform).where(ProjectPlatform.project_id == project_id))
     await session.execute(delete(ProjectManager).where(ProjectManager.project_id == project_id))
     result = await session.execute(delete(Project).where(Project.id == project_id))
     await session.commit()
@@ -423,3 +431,290 @@ async def delete_user(session: AsyncSession, user_id: str) -> bool:
     result = await session.execute(delete(User).where(User.id == user_id))
     await session.commit()
     return result.rowcount > 0
+
+
+# --- quarterly ---
+
+async def get_platforms_for_projects(session: AsyncSession, project_ids: list[str]) -> dict[str, list[str]]:
+    mapping: dict[str, list[str]] = {project_id: [] for project_id in project_ids}
+    if not project_ids:
+        return mapping
+    result = await session.execute(
+        select(ProjectPlatform.project_id, ProjectPlatform.platform).where(ProjectPlatform.project_id.in_(project_ids))
+    )
+    for project_id, platform in result.all():
+        mapping[project_id].append(platform)
+    return {project_id: sort_platforms(platforms) for project_id, platforms in mapping.items()}
+
+
+async def set_platforms_for_project(session: AsyncSession, project_id: str, platforms: list[str]) -> None:
+    await session.execute(delete(ProjectPlatform).where(ProjectPlatform.project_id == project_id))
+    for platform in sort_platforms(platforms):
+        session.add(ProjectPlatform(project_id=project_id, platform=platform))
+    await session.commit()
+
+
+async def list_review_coverage_rows(session: AsyncSession, project_ids: list[str], year: int) -> list:
+    """Just the columns quarterly coverage needs (no result_data JSON), newest first, excluding errors."""
+    if not project_ids:
+        return []
+    result = await session.execute(
+        select(PlatformReview.id, PlatformReview.project_id, PlatformReview.platform, PlatformReview.created_at)
+        .where(
+            PlatformReview.project_id.in_(project_ids),
+            PlatformReview.status != "error",
+            extract("year", PlatformReview.created_at) == year,
+        )
+        .order_by(PlatformReview.created_at.desc())
+    )
+    return list(result.all())
+
+
+async def list_cycles_for_projects_in_year(session: AsyncSession, project_ids: list[str], year: int) -> list[ReviewCycle]:
+    if not project_ids:
+        return []
+    result = await session.execute(
+        select(ReviewCycle).where(ReviewCycle.project_id.in_(project_ids), ReviewCycle.year == year)
+    )
+    return list(result.scalars().all())
+
+
+async def get_cycle_assignments(session: AsyncSession, cycle_ids: list[str]) -> dict[str, list[ReviewCycleAssignment]]:
+    mapping: dict[str, list[ReviewCycleAssignment]] = {cycle_id: [] for cycle_id in cycle_ids}
+    if not cycle_ids:
+        return mapping
+    result = await session.execute(select(ReviewCycleAssignment).where(ReviewCycleAssignment.cycle_id.in_(cycle_ids)))
+    for assignment in result.scalars().all():
+        mapping[assignment.cycle_id].append(assignment)
+    return mapping
+
+
+async def get_cycle(session: AsyncSession, project_id: str, year: int, quarter: int) -> Optional[ReviewCycle]:
+    result = await session.execute(
+        select(ReviewCycle).where(
+            ReviewCycle.project_id == project_id, ReviewCycle.year == year, ReviewCycle.quarter == quarter,
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+async def create_cycle(
+    session: AsyncSession, cycle_id: str, project_id: str, year: int, quarter: int,
+    initiated_by: Optional[str], assignments: list[tuple[str, Optional[str]]],
+) -> ReviewCycle:
+    cycle = ReviewCycle(
+        id=cycle_id, project_id=project_id, year=year, quarter=quarter,
+        initiated_by=initiated_by, initiated_at=datetime.now(timezone.utc),
+    )
+    session.add(cycle)
+    await session.flush()
+    for platform, reviewer_id in assignments:
+        session.add(ReviewCycleAssignment(cycle_id=cycle_id, platform=platform, reviewer_id=reviewer_id))
+    await session.commit()
+    await session.refresh(cycle)
+    return cycle
+
+
+async def get_users_by_ids(session: AsyncSession, user_ids: list[str]) -> dict[str, User]:
+    ids = [user_id for user_id in set(user_ids) if user_id]
+    if not ids:
+        return {}
+    result = await session.execute(select(User).where(User.id.in_(ids)))
+    return {user.id: user for user in result.scalars().all()}
+
+
+async def get_first_review_dates(session: AsyncSession, project_ids: list[str]) -> dict[str, datetime]:
+    """Earliest non-errored review per project (reviews can predate the project record)."""
+    if not project_ids:
+        return {}
+    result = await session.execute(
+        select(PlatformReview.project_id, func.min(PlatformReview.created_at))
+        .where(PlatformReview.project_id.in_(project_ids), PlatformReview.status != "error")
+        .group_by(PlatformReview.project_id)
+    )
+    return {project_id: first for project_id, first in result.all()}
+
+
+# --- automated cycle reviews ---
+
+async def get_cycle_by_id(session: AsyncSession, cycle_id: str) -> Optional[ReviewCycle]:
+    return await session.get(ReviewCycle, cycle_id)
+
+
+async def get_assignment(session: AsyncSession, cycle_id: str, platform: str) -> Optional[ReviewCycleAssignment]:
+    return await session.get(ReviewCycleAssignment, (cycle_id, platform))
+
+
+async def update_assignment(session: AsyncSession, assignment: ReviewCycleAssignment, **fields) -> ReviewCycleAssignment:
+    for name, value in fields.items():
+        setattr(assignment, name, value)
+    await session.commit()
+    await session.refresh(assignment)
+    return assignment
+
+
+_QUEUE_ORDER = (ReviewCycleAssignment.queued_at, ReviewCycleAssignment.cycle_id, ReviewCycleAssignment.platform)
+
+
+async def list_queued_keys(session: AsyncSession) -> list[tuple[str, str]]:
+    result = await session.execute(
+        select(ReviewCycleAssignment.cycle_id, ReviewCycleAssignment.platform)
+        .where(ReviewCycleAssignment.run_status == "queued")
+        .order_by(*_QUEUE_ORDER)
+    )
+    return [(cycle_id, platform) for cycle_id, platform in result.all()]
+
+
+async def claim_next_queued(session: AsyncSession) -> Optional[ReviewCycleAssignment]:
+    result = await session.execute(
+        select(ReviewCycleAssignment).where(ReviewCycleAssignment.run_status == "queued").order_by(*_QUEUE_ORDER).limit(1)
+    )
+    assignment = result.scalar_one_or_none()
+    if assignment is None:
+        return None
+    return await update_assignment(
+        session, assignment, run_status="running", started_at=datetime.now(timezone.utc),
+        attempts=(assignment.attempts or 0) + 1, run_phase=None, run_progress=0, run_error=None, failure_kind=None,
+        cancel_requested=None,  # a stop/pause belongs to one run; never let a stale one kill this run
+    )
+
+
+async def requeue_assignments(session: AsyncSession, include_running: bool) -> int:
+    condition = and_(ReviewCycleAssignment.run_status == "failed", ReviewCycleAssignment.failure_kind == "system")
+    if include_running:
+        condition = or_(condition, ReviewCycleAssignment.run_status == "running")
+    result = await session.execute(
+        update(ReviewCycleAssignment).where(condition).values(
+            run_status="queued", queued_at=datetime.now(timezone.utc),
+            run_error=None, failure_kind=None, run_phase=None, run_progress=None, cancel_requested=None,
+        )
+    )
+    await session.commit()
+    return result.rowcount
+
+
+async def get_review_statuses(session: AsyncSession, review_ids: list[str]) -> dict[str, str]:
+    ids = [review_id for review_id in set(review_ids) if review_id]
+    if not ids:
+        return {}
+    result = await session.execute(select(PlatformReview.id, PlatformReview.status).where(PlatformReview.id.in_(ids)))
+    return {review_id: status for review_id, status in result.all()}
+
+
+async def list_open_cycles(session: AsyncSession, project_ids: Optional[set[str]]) -> list[ReviewCycle]:
+    if project_ids is not None and not project_ids:
+        return []
+    open_cycle_ids = select(ReviewCycleAssignment.cycle_id).where(ReviewCycleAssignment.run_status != "completed")
+    query = select(ReviewCycle).where(ReviewCycle.id.in_(open_cycle_ids))
+    if project_ids is not None:
+        query = query.where(ReviewCycle.project_id.in_(project_ids))
+    result = await session.execute(query.order_by(ReviewCycle.initiated_at.desc()))
+    return list(result.scalars().all())
+
+
+async def get_assignment_by_review_id(session: AsyncSession, review_id: str) -> Optional[ReviewCycleAssignment]:
+    result = await session.execute(select(ReviewCycleAssignment).where(ReviewCycleAssignment.review_id == review_id))
+    return result.scalars().first()
+
+
+async def add_notifications(session: AsyncSession, event: str, recipient_ids: list[str], payload: dict) -> None:
+    now = datetime.now(timezone.utc)
+    for recipient_id in recipient_ids:
+        session.add(NotificationOutbox(
+            id=str(uuid.uuid4()), event=event, recipient_user_id=recipient_id, payload=payload, created_at=now,
+        ))
+    await session.commit()
+
+
+async def list_notifications(session: AsyncSession, event: Optional[str] = None) -> list[NotificationOutbox]:
+    query = select(NotificationOutbox).order_by(NotificationOutbox.created_at, NotificationOutbox.recipient_user_id)
+    if event:
+        query = query.where(NotificationOutbox.event == event)
+    result = await session.execute(query)
+    return list(result.scalars().all())
+
+
+async def list_active_user_ids_with_roles(session: AsyncSession, roles: frozenset[str]) -> list[str]:
+    result = await session.execute(
+        select(User.id).where(User.role.in_(roles), User.is_active.is_(True)).order_by(User.email)
+    )
+    return [user_id for (user_id,) in result.all()]
+
+
+async def _org_settings_row(session: AsyncSession) -> OrgSettings:
+    settings = await session.get(OrgSettings, _ORG_SETTINGS_ID)
+    if settings is None:
+        settings = OrgSettings(id=_ORG_SETTINGS_ID, default_llm_provider="ollama", updated_at=datetime.now(timezone.utc))
+        session.add(settings)
+    return settings
+
+
+async def update_devops_pat(session: AsyncSession, encrypted: str, last4: str, user_id: str) -> OrgSettings:
+    settings = await _org_settings_row(session)
+    settings.devops_pat_encrypted = encrypted
+    settings.devops_pat_last4 = last4
+    settings.devops_pat_updated_at = datetime.now(timezone.utc)
+    settings.devops_pat_updated_by = user_id
+    await session.commit()
+    await session.refresh(settings)
+    return settings
+
+
+async def update_auto_compile_modes(session: AsyncSession, modes: dict) -> OrgSettings:
+    settings = await _org_settings_row(session)
+    settings.auto_compile_modes = dict(modes)
+    await session.commit()
+    await session.refresh(settings)
+    return settings
+
+
+# --- review queue monitor ---
+
+_QUEUE_STATE_ID = 1
+
+
+async def get_queue_state(session: AsyncSession) -> ReviewQueueState:
+    state = await session.get(ReviewQueueState, _QUEUE_STATE_ID)
+    if state is None:
+        state = ReviewQueueState(id=_QUEUE_STATE_ID, paused=False)
+        session.add(state)
+        await session.commit()
+        await session.refresh(state)
+    return state
+
+
+async def set_queue_paused(session: AsyncSession, paused: bool, user_id: Optional[str]) -> ReviewQueueState:
+    state = await get_queue_state(session)
+    state.paused = paused
+    state.paused_by = user_id if paused else None
+    state.paused_at = datetime.now(timezone.utc) if paused else None
+    await session.commit()
+    await session.refresh(state)
+    return state
+
+
+async def list_assignments_with_status(
+    session: AsyncSession, status: str, newest_finished_first: bool = False, limit: Optional[int] = None,
+) -> list[ReviewCycleAssignment]:
+    query = select(ReviewCycleAssignment).where(ReviewCycleAssignment.run_status == status)
+    query = query.order_by(ReviewCycleAssignment.finished_at.desc()) if newest_finished_first else query.order_by(*_QUEUE_ORDER)
+    if limit:
+        query = query.limit(limit)
+    result = await session.execute(query)
+    return list(result.scalars().all())
+
+
+async def count_assignments_with_status(session: AsyncSession, status: str) -> int:
+    result = await session.execute(
+        select(func.count()).select_from(ReviewCycleAssignment).where(ReviewCycleAssignment.run_status == status)
+    )
+    return result.scalar_one()
+
+
+async def front_of_queue_time(session: AsyncSession) -> datetime:
+    """A queued_at that sorts before every queued item."""
+    result = await session.execute(
+        select(func.min(ReviewCycleAssignment.queued_at)).where(ReviewCycleAssignment.run_status == "queued")
+    )
+    earliest = result.scalar_one_or_none()
+    return (earliest or datetime.now(timezone.utc)) - timedelta(seconds=1)

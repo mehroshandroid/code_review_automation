@@ -247,3 +247,103 @@ export async function setProjectManagers(projectId, userIds) {
 export async function deleteProject(projectId) {
   await axios.delete(`${API_BASE_URL}/projects/${projectId}`);
 }
+
+export async function getQuarterly(year) {
+  const response = await axios.get(`${API_BASE_URL}/quarterly`, { params: { year } });
+  return response.data;
+}
+
+export async function initiateCycle(projectId, { year, quarter, assignments }) {
+  const response = await axios.post(`${API_BASE_URL}/projects/${projectId}/cycles`, { year, quarter, assignments });
+  return response.data;
+}
+
+export async function setProjectPlatforms(projectId, platforms) {
+  const response = await axios.put(`${API_BASE_URL}/projects/${projectId}/platforms`, { platforms });
+  return response.data;
+}
+
+export async function getMyCycles() {
+  const response = await axios.get(`${API_BASE_URL}/my/cycles`);
+  return response.data.cycles;
+}
+
+function assignmentPath(cycleId, platform) {
+  return `${API_BASE_URL}/cycles/${cycleId}/assignments/${encodeURIComponent(platform)}`;
+}
+
+export async function submitAssignmentUrl(cycleId, platform, { devopsUrl, devopsBranch }) {
+  const response = await axios.put(`${assignmentPath(cycleId, platform)}/url`, { devops_url: devopsUrl, devops_branch: devopsBranch || null });
+  return response.data;
+}
+
+export async function retryAssignment(cycleId, platform) {
+  const response = await axios.post(`${assignmentPath(cycleId, platform)}/retry`);
+  return response.data;
+}
+
+export async function rerunAssignment(cycleId, platform, { devopsUrl, devopsBranch }) {
+  const response = await axios.post(`${assignmentPath(cycleId, platform)}/rerun`, { devops_url: devopsUrl, devops_branch: devopsBranch || null });
+  return response.data;
+}
+
+export async function changeAssignmentReviewer(cycleId, platform, reviewerId) {
+  const response = await axios.put(`${assignmentPath(cycleId, platform)}/reviewer`, { reviewer_id: reviewerId });
+  return response.data;
+}
+
+export async function getAutomationSettings() {
+  const response = await axios.get(`${API_BASE_URL}/settings/automation`);
+  return response.data;
+}
+
+export async function saveDevopsPat(pat) {
+  const response = await axios.put(`${API_BASE_URL}/settings/devops-pat`, { pat });
+  return response.data;
+}
+
+export async function saveAutoCompileModes(modes) {
+  const response = await axios.put(`${API_BASE_URL}/settings/auto-compile-modes`, { modes });
+  return response.data.compile_modes;
+}
+
+export async function getQueue() {
+  const response = await axios.get(`${API_BASE_URL}/queue`);
+  return response.data;
+}
+
+export async function pauseQueue() {
+  const response = await axios.post(`${API_BASE_URL}/queue/pause`);
+  return response.data;
+}
+
+export async function resumeQueue() {
+  const response = await axios.post(`${API_BASE_URL}/queue/resume`);
+  return response.data;
+}
+
+function queueItemPath(cycleId, platform) {
+  return `${API_BASE_URL}/queue/items/${cycleId}/${encodeURIComponent(platform)}`;
+}
+
+export async function stopQueueItem(cycleId, platform) {
+  const response = await axios.post(`${queueItemPath(cycleId, platform)}/stop`);
+  return response.data;
+}
+
+export async function removeQueueItem(cycleId, platform) {
+  const response = await axios.post(`${queueItemPath(cycleId, platform)}/remove`);
+  return response.data;
+}
+
+export async function moveQueueItemToFront(cycleId, platform) {
+  const response = await axios.post(`${queueItemPath(cycleId, platform)}/front`);
+  return response.data;
+}
+
+export async function saveQueueItemSettings(cycleId, platform, { llmProvider, llmModel, compileMode }) {
+  const response = await axios.put(`${queueItemPath(cycleId, platform)}/settings`, {
+    llm_provider: llmProvider, llm_model: llmModel, compile_mode: compileMode,
+  });
+  return response.data;
+}

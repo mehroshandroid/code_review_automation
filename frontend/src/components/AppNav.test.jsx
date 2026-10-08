@@ -24,9 +24,9 @@ test("brand links to the user's home", () => {
 });
 
 test.each([
-  ["admin", ["Dashboard", "My reviews", "Projects", "Users"]],
-  ["management", ["Dashboard", "My reviews", "Projects"]],
-  ["coordinator", ["Projects"]],
+  ["admin", ["Dashboard", "Quarterly", "My reviews", "Projects", "Users", "Queue"]],
+  ["management", ["Dashboard", "Quarterly", "My reviews", "Projects"]],
+  ["coordinator", ["Dashboard", "Projects"]],
   ["reviewer", ["My reviews"]],
   ["project_manager", ["Dashboard"]],
 ])("%s sees the right links", (role, expected) => {

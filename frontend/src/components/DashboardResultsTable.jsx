@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 const STATUS_LABELS = {
   pending_approval: "Pending approval",
   approved: "Approved",
-  completed: "Completed",
   error: "Error",
 };
 
