@@ -262,3 +262,47 @@ export async function setProjectPlatforms(projectId, platforms) {
   const response = await axios.put(`${API_BASE_URL}/projects/${projectId}/platforms`, { platforms });
   return response.data;
 }
+
+export async function getMyCycles() {
+  const response = await axios.get(`${API_BASE_URL}/my/cycles`);
+  return response.data.cycles;
+}
+
+function assignmentPath(cycleId, platform) {
+  return `${API_BASE_URL}/cycles/${cycleId}/assignments/${encodeURIComponent(platform)}`;
+}
+
+export async function submitAssignmentUrl(cycleId, platform, { devopsUrl, devopsBranch }) {
+  const response = await axios.put(`${assignmentPath(cycleId, platform)}/url`, { devops_url: devopsUrl, devops_branch: devopsBranch || null });
+  return response.data;
+}
+
+export async function retryAssignment(cycleId, platform) {
+  const response = await axios.post(`${assignmentPath(cycleId, platform)}/retry`);
+  return response.data;
+}
+
+export async function rerunAssignment(cycleId, platform, { devopsUrl, devopsBranch }) {
+  const response = await axios.post(`${assignmentPath(cycleId, platform)}/rerun`, { devops_url: devopsUrl, devops_branch: devopsBranch || null });
+  return response.data;
+}
+
+export async function changeAssignmentReviewer(cycleId, platform, reviewerId) {
+  const response = await axios.put(`${assignmentPath(cycleId, platform)}/reviewer`, { reviewer_id: reviewerId });
+  return response.data;
+}
+
+export async function getAutomationSettings() {
+  const response = await axios.get(`${API_BASE_URL}/settings/automation`);
+  return response.data;
+}
+
+export async function saveDevopsPat(pat) {
+  const response = await axios.put(`${API_BASE_URL}/settings/devops-pat`, { pat });
+  return response.data;
+}
+
+export async function saveAutoCompileModes(modes) {
+  const response = await axios.put(`${API_BASE_URL}/settings/auto-compile-modes`, { modes });
+  return response.data.compile_modes;
+}
