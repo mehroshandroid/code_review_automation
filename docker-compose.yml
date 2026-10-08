@@ -43,6 +43,18 @@ services:
       # Fernet key for the stored DevOps PAT. Unset = derived from AUTH_SECRET_KEY.
       # Generate: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
       - SETTINGS_ENCRYPTION_KEY=${SETTINGS_ENCRYPTION_KEY:-}
+      # Email delivery: log (default, no email sent) | graph | smtp. See docs/.../email-and-stage-tracker-design.md.
+      - EMAIL_MODE=${EMAIL_MODE:-log}
+      - EMAIL_FROM=${EMAIL_FROM:-}
+      - EMAIL_FROM_NAME=${EMAIL_FROM_NAME:-CodeAssure}
+      - GRAPH_TENANT_ID=${GRAPH_TENANT_ID:-}
+      - GRAPH_CLIENT_ID=${GRAPH_CLIENT_ID:-}
+      - GRAPH_CLIENT_SECRET=${GRAPH_CLIENT_SECRET:-}
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USERNAME=${SMTP_USERNAME:-}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
+      - SMTP_STARTTLS=${SMTP_STARTTLS:-true}
     volumes:
       # Completed reviews' workbooks -- copied here (out of the per-review
       # temp work dir, which gets cleaned up) so an approver can still open
