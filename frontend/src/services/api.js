@@ -347,3 +347,8 @@ export async function saveQueueItemSettings(cycleId, platform, { llmProvider, ll
   });
   return response.data;
 }
+
+export async function remindAssignment(cycleId, platform, target) {
+  const response = await axios.post(`${assignmentPath(cycleId, platform)}/remind`, { target });
+  return response.data;
+}

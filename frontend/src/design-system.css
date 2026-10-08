@@ -321,3 +321,14 @@ a:hover { color: var(--color-brand-coral); }
 .progress-fill { height: 100%; background: var(--color-accent); transition: width 0.4s ease; }
 .failure-kind--url { color: var(--color-brand-coral); border-color: var(--color-brand-coral); }
 .failure-kind--stopped { color: var(--color-text-muted); }
+
+/* — stage tracker — */
+.stage-dots { display: inline-flex; gap: 3px; vertical-align: middle; margin-left: 4px; }
+.stage-dot { width: 8px; height: 8px; border-radius: 999px; display: inline-block; background: #e0a32e; }
+.stage-dot--done { background: #2e9e5b; }
+.stage-dot--failed { background: var(--color-brand-coral); }
+.stage-timeline { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; min-width: 210px; }
+.stage { display: grid; grid-template-columns: 10px 1fr auto; gap: 8px; align-items: center; font-size: 12px; }
+.stage-label { color: var(--color-text); }
+.stage-time { color: var(--color-text-muted); white-space: nowrap; }
+.stage--pending .stage-label { color: var(--color-text-muted); }

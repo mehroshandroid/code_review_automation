@@ -1,11 +1,12 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import ManageCycleDialog from "./ManageCycleDialog";
-import { getReviewers, changeAssignmentReviewer, retryAssignment, rerunAssignment } from "../services/api";
+import { getReviewers, changeAssignmentReviewer, retryAssignment, rerunAssignment, remindAssignment } from "../services/api";
 
 jest.mock("../services/api", () => ({
   ...jest.requireActual("../services/api"),
   getReviewers: jest.fn(), changeAssignmentReviewer: jest.fn(), retryAssignment: jest.fn(), rerunAssignment: jest.fn(),
+  remindAssignment: jest.fn(),
 }));
 
 const a = (platform, extra) => ({ platform, reviewer_id: "r1", reviewer_name: "Rae", devops_url: "https://dev.azure.com/o/p/_git/x",
@@ -35,7 +36,7 @@ test("lists platforms with status, error and reviewer", async () => {
   renderDialog();
   expect(screen.getByText("Q4 2026 review — Moove")).toBeInTheDocument();
   await screen.findAllByRole("option", { name: "Sam" });
-  expect(within(row("iOS")).getByText("Failed")).toBeInTheDocument();
+  expect(within(row("iOS")).getByText("Failed", { selector: ".run-badge" })).toBeInTheDocument();
   expect(within(row("iOS")).getByText("Could not reach Azure DevOps.")).toBeInTheDocument();
   expect(within(row(".NET")).getByLabelText("Reviewer for .NET")).toBeDisabled();
   expect(within(row(".NET")).queryByRole("button", { name: "Re-run" })).not.toBeInTheDocument();
@@ -94,4 +95,21 @@ test("re-run keeps the current branch pre-filled and sends it", async () => {
   await waitFor(() => expect(rerunAssignment).toHaveBeenCalledWith("c1", "Android", {
     devopsUrl: "https://dev.azure.com/o/p/_git/x", devopsBranch: "release/2026Q4",
   }));
+});
+
+test("progress column and reminder buttons", async () => {
+  const user = userEvent.setup();
+  const stagesEntry = { ...entry, cycle: { ...entry.cycle, assignments: [
+    a("Android", { run_status: "waiting_for_url", devops_url: null, pm_reminded_at: "2026-10-08T08:00:00Z" }),
+    a("iOS", { run_status: "completed", review_id: "rv1", review_status: "pending_approval", url_submitted_at: "2026-10-07T10:00:00Z", finished_at: "2026-10-07T11:00:00Z" }),
+  ] } };
+  remindAssignment.mockResolvedValue(a("iOS", { run_status: "completed", review_id: "rv1", review_status: "pending_approval", reviewer_reminded_at: "2026-10-08T12:00:00Z" }));
+  render(<ManageCycleDialog project={{ id: "p1", name: "Moove" }} year={2026} entry={stagesEntry} onChanged={jest.fn()} onClose={jest.fn()} />);
+  expect(within(row("Android")).getByRole("button", { name: "Remind PM" })).toBeInTheDocument();
+  expect(within(row("Android")).queryByRole("button", { name: "Remind reviewer" })).not.toBeInTheDocument();
+  expect(within(row("Android")).getByText(/Reminded PM/)).toBeInTheDocument();
+  expect(within(row("iOS")).getAllByText("Reviewer feedback").length).toBeGreaterThan(0);
+  await user.click(within(row("iOS")).getByRole("button", { name: "Remind reviewer" }));
+  await waitFor(() => expect(remindAssignment).toHaveBeenCalledWith("c1", "iOS", "reviewer"));
+  expect(await within(row("iOS")).findByText(/Reminded reviewer/)).toBeInTheDocument();
 });

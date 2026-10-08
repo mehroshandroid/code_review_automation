@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import AssignmentStatusBadge from "./AssignmentStatusBadge";
-import { changeAssignmentReviewer, getReviewers, rerunAssignment, retryAssignment } from "../services/api";
+import { relativeTime, StageTimeline } from "./StageTracker";
+import { changeAssignmentReviewer, getReviewers, remindAssignment, rerunAssignment, retryAssignment } from "../services/api";
 
 export default function ManageCycleDialog({ project, year, entry, onChanged, onClose }) {
   const cycleId = entry.cycle.id;
@@ -50,7 +51,7 @@ export default function ManageCycleDialog({ project, year, entry, onChanged, onC
         <div className="dialog-body" style={{ display: "grid", gap: "var(--space-3)" }}>
           <div style={{ overflowX: "auto" }}>
             <table className="table table--padded">
-              <thead><tr><th>Platform</th><th>Status</th><th>Reviewer</th><th aria-label="Actions" /></tr></thead>
+              <thead><tr><th>Platform</th><th>Status</th><th>Progress</th><th>Reviewer</th><th aria-label="Actions" /></tr></thead>
               <tbody>
                 {assignments.map((assignment) => {
                   const approved = assignment.review_status === "approved";
@@ -64,6 +65,7 @@ export default function ManageCycleDialog({ project, year, entry, onChanged, onC
                         <AssignmentStatusBadge assignment={assignment} />
                         {assignment.run_status === "failed" && assignment.run_error && <div className="run-error">{assignment.run_error}</div>}
                       </td>
+                      <td><StageTimeline assignment={assignment} initiatedAt={entry.cycle.initiated_at} /></td>
                       <td>
                         <select
                           aria-label={`Reviewer for ${assignment.platform}`} className="input" disabled={approved}
@@ -76,7 +78,13 @@ export default function ManageCycleDialog({ project, year, entry, onChanged, onC
                           ))}
                         </select>
                       </td>
-                      <td style={{ whiteSpace: "nowrap" }}>
+                      <td style={{ whiteSpace: "nowrap", verticalAlign: "top" }}>
+                        {(assignment.run_status === "waiting_for_url" || (assignment.run_status === "failed" && assignment.failure_kind === "url")) && (
+                          <button type="button" className="btn btn-ghost" onClick={() => act(() => remindAssignment(cycleId, assignment.platform, "pm"))}>Remind PM</button>
+                        )}
+                        {assignment.run_status === "completed" && !approved && assignment.reviewer_id && (
+                          <button type="button" className="btn btn-ghost" onClick={() => act(() => remindAssignment(cycleId, assignment.platform, "reviewer"))}>Remind reviewer</button>
+                        )}
                         {assignment.run_status === "failed" && (
                           <button type="button" className="btn btn-ghost" onClick={() => act(() => retryAssignment(cycleId, assignment.platform))}>Retry</button>
                         )}
@@ -87,6 +95,8 @@ export default function ManageCycleDialog({ project, year, entry, onChanged, onC
                             setRerunBranch(assignment.devops_branch || "");
                           }}>Re-run</button>
                         )}
+                        {assignment.pm_reminded_at && <div className="quarter-card-meta">Reminded PM {relativeTime(assignment.pm_reminded_at)}</div>}
+                        {assignment.reviewer_reminded_at && <div className="quarter-card-meta">Reminded reviewer {relativeTime(assignment.reviewer_reminded_at)}</div>}
                       </td>
                     </tr>
                   );
