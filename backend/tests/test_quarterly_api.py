@@ -97,9 +97,8 @@ def test_initiate_cycle(db):
     assert response.status_code == 200
     entry = response.json()
     assert entry["status"] == "in_progress" and entry["can_initiate"] is False
-    assert entry["cycle"]["assignments"] == [
-        {"platform": "Android", "reviewer_id": "rev", "reviewer_name": "Rae"},
-        {"platform": "iOS", "reviewer_id": "rev", "reviewer_name": "Rae"},
+    assert [(a["platform"], a["reviewer_id"], a["reviewer_name"], a["run_status"]) for a in entry["cycle"]["assignments"]] == [
+        ("Android", "rev", "Rae", "waiting_for_url"), ("iOS", "rev", "Rae", "waiting_for_url"),
     ]
 
 

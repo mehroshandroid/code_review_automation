@@ -6,6 +6,8 @@ from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 
 from app.auth.permissions import PERMISSIONS, require_permission
+from app.automation.assignments import assignment_dicts
+from app.automation.notify import cycle_payload, notify, project_manager_ids
 from app.db import crud
 from app.db.session import new_session
 from app.quarterly import (
@@ -96,10 +98,7 @@ async def _quarter_entries(session, projects, year: int, today: date) -> dict[st
                     "id": cycle.id,
                     "initiated_at": cycle.initiated_at.isoformat(),
                     "initiated_by_name": _display_name(users.get(cycle.initiated_by)),
-                    "assignments": [
-                        {"platform": a.platform, "reviewer_id": a.reviewer_id, "reviewer_name": _display_name(users.get(a.reviewer_id))}
-                        for a in sorted(assignments[cycle.id], key=lambda a: TRACKED_PLATFORMS.index(a.platform))
-                    ],
+                    "assignments": await assignment_dicts(session, assignments[cycle.id]),
                 },
             })
         entries[project.id] = project_quarters
@@ -157,4 +156,11 @@ async def initiate_cycle(project_id: str, body: InitiateCycleRequest, user=Depen
             # Lost a race with a concurrent initiate: the unique constraint held.
             await session.rollback()
             raise HTTPException(status_code=409, detail=ALREADY_INITIATED)
+        for_pms = cycle_payload(project.name, None, body.year, body.quarter, link="/")
+        await notify(session, "cycle_initiated", await project_manager_ids(session, project_id), for_pms)
+        for assignment in body.assignments:
+            await notify(
+                session, "reviewer_assigned", [assignment.reviewer_id],
+                cycle_payload(project.name, canonical_platform(assignment.platform), body.year, body.quarter),
+            )
         return (await _quarter_entries(session, [project], body.year, today))[project_id][body.quarter - 1]

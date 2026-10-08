@@ -33,6 +33,7 @@ from app.analyzer.excel_handler import (
 from app.analyzer.llm_client import generate_general_remarks, score_category
 from app.auth.dependencies import get_current_user
 from app.auth.permissions import PERMISSIONS, can, can_view_review, require_permission, visible_project_ids
+from app.automation.notify import cycle_payload, notify, project_manager_ids
 from app.db import crud
 from app.db.session import new_session
 from app.utils.logger import get_logger
@@ -779,6 +780,20 @@ async def get_review(review_id: str, user=Depends(get_current_user)):
     return _review_to_dict(review)
 
 
+async def _notify_review_finalized(review) -> None:
+    async with new_session() as session:
+        assignment = await crud.get_assignment_by_review_id(session, review.id)
+        if assignment is None:
+            return
+        cycle = await crud.get_cycle_by_id(session, assignment.cycle_id)
+        payload = cycle_payload(
+            review.project_name, assignment.platform, cycle.year, cycle.quarter,
+            review_id=review.id, total_score_pct=float(review.total_score_pct) if review.total_score_pct is not None else None,
+            link=f"/reports/{review.id}",
+        )
+        await notify(session, "review_finalized", await project_manager_ids(session, cycle.project_id), payload)
+
+
 @router.patch("/api/reviews/{review_id}")
 async def update_review(review_id: str, body: UpdateReviewRequest, user=Depends(get_current_user)):
     if body.status is not None and body.status not in ALLOWED_REVIEW_STATUSES:
@@ -801,6 +816,8 @@ async def update_review(review_id: str, body: UpdateReviewRequest, user=Depends(
         )
     if review is None:
         raise HTTPException(status_code=404, detail="Review not found")
+    if body.status == "approved" and existing.status != "approved":
+        await _notify_review_finalized(review)
     return _review_to_dict(review)
 
 
