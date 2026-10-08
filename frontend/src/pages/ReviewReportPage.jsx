@@ -11,11 +11,10 @@ import { hasPermission } from "../permissions";
 const STATUS_LABELS = {
   pending_approval: "Pending approval",
   approved: "Approved",
-  completed: "Completed",
   error: "Error",
 };
 
-const SELECTABLE_STATUSES = ["pending_approval", "approved", "completed"];
+const SELECTABLE_STATUSES = ["pending_approval", "approved"];
 
 function cloneCategoryScores(categoryScores) {
   return categoryScores.map((category) => ({

@@ -52,7 +52,7 @@ _reviews: dict = {}
 CODE_CONTEXT_MAX_CHARS_OLLAMA = 48000
 CODE_CONTEXT_MAX_CHARS_AZURE = 120000
 
-ALLOWED_REVIEW_STATUSES = {"pending_approval", "approved", "completed"}
+ALLOWED_REVIEW_STATUSES = {"pending_approval", "approved"}
 
 
 class UpdateReviewRequest(BaseModel):

@@ -110,7 +110,7 @@ test("shows approval status buttons and an Edit scores button when there are cat
   await screen.findByText("Moove");
   expect(screen.getByRole("button", { name: "Pending approval" })).toHaveClass("btn-primary");
   expect(screen.getByRole("button", { name: "Approved" })).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Completed" })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Completed" })).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: /edit scores/i })).toBeInTheDocument();
 });
 
@@ -367,4 +367,13 @@ test("coordinator can assign a reviewer but not edit scores", async () => {
   await screen.findByText("Moove");
   expect(screen.getByLabelText("Reviewer")).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Edit scores" })).not.toBeInTheDocument();
+});
+
+test("offers only Pending approval and Approved as review statuses", async () => {
+  getReview.mockResolvedValue(review);
+  renderReport();
+  await screen.findByText("Moove");
+  expect(screen.getByRole("button", { name: "Pending approval" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Approved" })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Completed" })).not.toBeInTheDocument();
 });

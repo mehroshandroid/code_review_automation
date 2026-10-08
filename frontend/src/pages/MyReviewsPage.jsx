@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import AppNav from "../components/AppNav";
 import { getMyReviews } from "../services/api";
 
-const STATUS_LABELS = { pending_approval: "Pending approval", approved: "Approved", completed: "Completed", error: "Error" };
+const STATUS_LABELS = { pending_approval: "Pending approval", approved: "Approved", error: "Error" };
 
 export default function MyReviewsPage() {
   const [reviews, setReviews] = useState(null);
