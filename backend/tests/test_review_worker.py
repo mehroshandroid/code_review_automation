@@ -22,7 +22,10 @@ async def db(monkeypatch):
         await conn.run_sync(Base.metadata.create_all)
     maker = async_sessionmaker(engine, expire_on_commit=False)
     monkeypatch.setattr(worker, "new_session", lambda: maker())
-    monkeypatch.setattr(worker, "PROGRESS_SYNC_SECONDS", 0.01)
+    # Slow by default: in-memory SQLite shares one connection across sessions, so a sync
+    # session closing mid-way can roll back a concurrent fake-pipeline insert. Tests that
+    # need the sync loop (progress, pause/stop) switch it on with _fast_sync().
+    monkeypatch.setattr(worker, "PROGRESS_SYNC_SECONDS", 60)
 
     async def fake_template(file, platform):
         return b"xlsx", "template.xlsx"
@@ -38,6 +41,10 @@ async def db(monkeypatch):
         await crud.update_assignment(s, a, run_status="queued", queued_at=datetime.now(timezone.utc), devops_url=URL, devops_branch="main")
     yield maker
     await engine.dispose()
+
+
+def _fast_sync(monkeypatch):
+    monkeypatch.setattr(worker, "PROGRESS_SYNC_SECONDS", 0.01)
 
 
 def _fake_pipeline(maker, outcome, error=None, error_kind=None, captured=None):
@@ -128,8 +135,15 @@ async def test_progress_is_synced_while_running(db, monkeypatch):
             seen.append(fields.get("run_progress"))
         return await real_update(session, assignment, **fields)
 
+    async def running_without_db_writes(review_id, *args, **kwargs):
+        state = reviews_module._reviews[review_id]
+        state["phase"], state["progress"] = "scoring", 60
+        await asyncio.sleep(0.05)
+        state["status"], state["error"] = "error", "done"
+
+    _fast_sync(monkeypatch)
     monkeypatch.setattr(worker.crud, "update_assignment", spy)
-    monkeypatch.setattr(reviews_module, "_run_review", _fake_pipeline(db, "completed"))
+    monkeypatch.setattr(reviews_module, "_run_review", running_without_db_writes)
     await worker.run_one()
     assert 60 in seen
 
@@ -245,6 +259,7 @@ async def test_paused_queue_claims_nothing(db):
 
 
 async def test_pause_cancels_the_running_review_and_requeues_it_first(db, monkeypatch):
+    _fast_sync(monkeypatch)
     started, persisted = asyncio.Event(), []
     monkeypatch.setattr(reviews_module, "_run_review", _slow_pipeline(started, persisted))
     task = asyncio.create_task(worker.run_one())
@@ -264,6 +279,7 @@ async def test_pause_cancels_the_running_review_and_requeues_it_first(db, monkey
 
 
 async def test_stop_fails_the_run_without_storing_a_review(db, monkeypatch):
+    _fast_sync(monkeypatch)
     started, persisted = asyncio.Event(), []
     monkeypatch.setattr(reviews_module, "_run_review", _slow_pipeline(started, persisted))
     task = asyncio.create_task(worker.run_one())
@@ -285,6 +301,7 @@ async def test_stopped_runs_are_not_requeued(db):
 
 
 async def test_worker_cancellation_is_not_mistaken_for_a_pause(db, monkeypatch):
+    _fast_sync(monkeypatch)
     started, persisted = asyncio.Event(), []
     monkeypatch.setattr(reviews_module, "_run_review", _slow_pipeline(started, persisted))
     task = asyncio.create_task(worker.run_one())
