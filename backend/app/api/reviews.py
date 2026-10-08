@@ -96,6 +96,8 @@ def _new_review_state() -> dict:
         "error": None,
         # "url" when fixing the repo URL is the remedy (bad/missing repo, wrong platform); else unset.
         "error_kind": None,
+        # Set by the queue worker ("pause" | "stop") just before it cancels the run.
+        "cancelled": None,
         "warnings": [],
         "test_coverage": None,
         "secrets_found": [],
@@ -530,9 +532,10 @@ async def _run_review(
         shutil.rmtree(extract_dir, ignore_errors=True)
         zip_path.unlink(missing_ok=True)
         template_path.unlink(missing_ok=True)
-        await _persist_review_result(
-            review_id, project_id, project_name, platform, llm_provider, ollama_model, compile_check_mode, state,
-        )
+        if not state.get("cancelled"):
+            await _persist_review_result(
+                review_id, project_id, project_name, platform, llm_provider, ollama_model, compile_check_mode, state,
+            )
         if state["download_path"] is None:
             shutil.rmtree(work_dir, ignore_errors=True)
 

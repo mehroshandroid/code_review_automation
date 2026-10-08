@@ -24,6 +24,7 @@ logger = get_logger(__name__)
 POLL_SECONDS = 5
 PROGRESS_SYNC_SECONDS = 3
 NO_PAT = "No usable Azure DevOps PAT is configured in Settings."
+STOPPED = "Stopped by an admin."
 
 
 def _now():
@@ -38,13 +39,35 @@ async def recover() -> int:
     return count
 
 
-async def _sync_progress(cycle_id: str, platform: str, state: dict) -> None:
+async def _sync_progress(cycle_id: str, platform: str, state: dict, run_task: asyncio.Task) -> None:
+    """Copies progress to the row, and cancels the run when an admin pauses the queue or stops it."""
     while True:
         await asyncio.sleep(PROGRESS_SYNC_SECONDS)
         async with new_session() as session:
             assignment = await crud.get_assignment(session, cycle_id, platform)
-            if assignment is not None:
-                await crud.update_assignment(session, assignment, run_phase=state.get("phase"), run_progress=state.get("progress"))
+            if assignment is None:
+                continue
+            if assignment.cancel_requested:
+                state["cancelled"] = assignment.cancel_requested
+                run_task.cancel()
+                return
+            await crud.update_assignment(session, assignment, run_phase=state.get("phase"), run_progress=state.get("progress"))
+
+
+async def _cancelled(cycle_id: str, platform: str, reason: str) -> None:
+    async with new_session() as session:
+        assignment = await crud.get_assignment(session, cycle_id, platform)
+        if reason == "pause":
+            await crud.update_assignment(
+                session, assignment, run_status="queued", queued_at=await crud.front_of_queue_time(session),
+                cancel_requested=None, run_phase=None, run_progress=None, started_at=None,
+            )
+        else:
+            await crud.update_assignment(
+                session, assignment, run_status="failed", failure_kind="stopped", run_error=STOPPED,
+                finished_at=_now(), cancel_requested=None,
+            )
+    logger.info("Review worker: %s/%s %s by an admin", cycle_id, platform, "paused" if reason == "pause" else "stopped")
 
 
 async def _fail(cycle_id: str, platform: str, error: str, kind: str, review_id: str | None) -> None:
@@ -99,6 +122,11 @@ async def _process(cycle_id: str, platform: str) -> None:
         await _fail(cycle_id, platform, f"No sample template is configured for {platform} in Settings.", "system", None)
         return
 
+    # Per-run overrides from the admin queue page win over the org defaults.
+    provider = assignment.override_llm_provider or org.default_llm_provider
+    model = assignment.override_llm_model if assignment.override_llm_provider else org.default_ollama_model
+    compile_mode = assignment.override_compile_mode or effective_compile_modes(org.auto_compile_modes)[platform]
+
     review_id = str(uuid.uuid4())
     work_dir = Path(tempfile.mkdtemp(prefix=f"review_{review_id}_"))
     state = reviews_module._new_review_state()
@@ -109,13 +137,17 @@ async def _process(cycle_id: str, platform: str) -> None:
     try:
         template_path = work_dir / "template.xlsx"
         template_path.write_bytes(template_bytes)
-        sync = asyncio.create_task(_sync_progress(cycle_id, platform, state))
-        await reviews_module._run_review(
+        run_task = asyncio.create_task(reviews_module._run_review(
             review_id, work_dir, work_dir / "android.zip", template_path, True, True, project.name,
-            org.default_llm_provider, org.default_ollama_model,
-            effective_compile_modes(org.auto_compile_modes)[platform], platform,
+            provider, model, compile_mode, platform,
             assignment.devops_url, pat, assignment.devops_branch, project_id=project.id,
-        )
+        ))
+        sync = asyncio.create_task(_sync_progress(cycle_id, platform, state, run_task))
+        try:
+            await run_task
+        except asyncio.CancelledError:
+            if not state.get("cancelled"):
+                raise  # the worker itself is shutting down
     finally:
         if sync is not None:
             sync.cancel()
@@ -124,6 +156,9 @@ async def _process(cycle_id: str, platform: str) -> None:
         reviews_module._reviews.pop(review_id, None)
         shutil.rmtree(work_dir, ignore_errors=True)
 
+    if state.get("cancelled"):
+        await _cancelled(cycle_id, platform, state["cancelled"])
+        return
     if state["status"] == "completed":
         await _succeed(cycle_id, platform, review_id)
     else:
@@ -132,6 +167,8 @@ async def _process(cycle_id: str, platform: str) -> None:
 
 async def run_one() -> bool:
     async with new_session() as session:
+        if (await crud.get_queue_state(session)).paused:
+            return False
         assignment = await crud.claim_next_queued(session)
     if assignment is None:
         return False

@@ -217,3 +217,117 @@ async def test_recover_is_retried_until_the_database_answers(db, monkeypatch):
     with pytest.raises(asyncio.CancelledError):
         await worker.worker_loop()
     assert attempts["n"] == 2
+
+
+def _slow_pipeline(started: asyncio.Event, persisted: list):
+    async def fake_run_review(review_id, work_dir, zip_path, template_path, zip_valid, template_valid, project_name, *args, **kwargs):
+        state = reviews_module._reviews[review_id]
+        state["phase"], state["progress"] = "scoring", 30
+        started.set()
+        try:
+            await asyncio.sleep(10)
+        finally:
+            if not state.get("cancelled"):
+                persisted.append(review_id)
+    return fake_run_review
+
+
+async def _wait_until_started(started):
+    await asyncio.wait_for(started.wait(), 2)
+
+
+async def test_paused_queue_claims_nothing(db):
+    async with db() as s:
+        await crud.set_queue_paused(s, True, "adm")
+    assert await worker.run_one() is False
+    async with db() as s:
+        assert (await crud.get_assignment(s, "c1", "Android")).run_status == "queued"
+
+
+async def test_pause_cancels_the_running_review_and_requeues_it_first(db, monkeypatch):
+    started, persisted = asyncio.Event(), []
+    monkeypatch.setattr(reviews_module, "_run_review", _slow_pipeline(started, persisted))
+    task = asyncio.create_task(worker.run_one())
+    await _wait_until_started(started)
+    async with db() as s:
+        ios = await crud.get_assignment(s, "c1", "iOS")
+        await crud.update_assignment(s, ios, run_status="queued", queued_at=datetime(2020, 1, 1, tzinfo=timezone.utc), devops_url=URL)
+        android = await crud.get_assignment(s, "c1", "Android")
+        await crud.update_assignment(s, android, cancel_requested="pause")
+    assert await asyncio.wait_for(task, 2) is True
+    async with db() as s:
+        android = await crud.get_assignment(s, "c1", "Android")
+        keys = await crud.list_queued_keys(s)
+    assert android.run_status == "queued" and android.cancel_requested is None and android.run_progress is None
+    assert keys == [("c1", "Android"), ("c1", "iOS")]
+    assert persisted == []
+
+
+async def test_stop_fails_the_run_without_storing_a_review(db, monkeypatch):
+    started, persisted = asyncio.Event(), []
+    monkeypatch.setattr(reviews_module, "_run_review", _slow_pipeline(started, persisted))
+    task = asyncio.create_task(worker.run_one())
+    await _wait_until_started(started)
+    async with db() as s:
+        await crud.update_assignment(s, await crud.get_assignment(s, "c1", "Android"), cancel_requested="stop")
+    await asyncio.wait_for(task, 2)
+    async with db() as s:
+        a = await crud.get_assignment(s, "c1", "Android")
+        failed = await crud.list_notifications(s, "review_failed")
+    assert (a.run_status, a.failure_kind, a.run_error, a.cancel_requested) == ("failed", "stopped", "Stopped by an admin.", None)
+    assert a.finished_at is not None and persisted == [] and failed == []
+
+
+async def test_stopped_runs_are_not_requeued(db):
+    async with db() as s:
+        await crud.update_assignment(s, await crud.get_assignment(s, "c1", "Android"), run_status="failed", failure_kind="stopped")
+    assert await worker.recover() == 0
+
+
+async def test_worker_cancellation_is_not_mistaken_for_a_pause(db, monkeypatch):
+    started, persisted = asyncio.Event(), []
+    monkeypatch.setattr(reviews_module, "_run_review", _slow_pipeline(started, persisted))
+    task = asyncio.create_task(worker.run_one())
+    await _wait_until_started(started)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    async with db() as s:
+        assert (await crud.get_assignment(s, "c1", "Android")).run_status == "running"
+
+
+async def test_overrides_reach_the_pipeline(db, monkeypatch):
+    captured = {}
+    async with db() as s:
+        await crud.update_assignment(
+            s, await crud.get_assignment(s, "c1", "Android"),
+            override_llm_provider="claude", override_compile_mode="static",
+        )
+    monkeypatch.setattr(reviews_module, "_run_review", _fake_pipeline(db, "completed", captured=captured))
+    await worker.run_one()
+    assert captured["llm_provider"] == "claude" and captured["ollama_model"] is None
+    assert captured["compile_check_mode"] == "static"
+
+
+async def test_cancelled_pipeline_does_not_persist(monkeypatch, tmp_path):
+    calls = []
+
+    async def record(*args, **kwargs):
+        calls.append(args)
+
+    async def slow_fetch(repo_url, pat, branch=None):
+        await asyncio.sleep(10)
+
+    monkeypatch.setattr(reviews_module, "_persist_review_result", record)
+    monkeypatch.setattr(reviews_module, "fetch_repo_zip", slow_fetch)
+    reviews_module._reviews["cx"] = state = reviews_module._new_review_state()
+    task = asyncio.create_task(reviews_module._run_review(
+        "cx", tmp_path, tmp_path / "a.zip", tmp_path / "t.xlsx", True, True, "P",
+        devops_repo_url=URL, devops_pat="pat",
+    ))
+    await asyncio.sleep(0.05)
+    state["cancelled"] = "pause"
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert calls == []
