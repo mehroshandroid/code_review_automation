@@ -106,3 +106,18 @@ async def test_retry_only_failed(db):
     body = client.post(f"/api/email/outbox/{row['id']}/retry").json()
     assert (body["status"], body["attempts"], body["last_error"]) == ("pending", 0, None)
     assert client.post("/api/email/outbox/nope/retry").status_code == 404
+
+
+async def test_remind_with_nobody_to_reach_is_an_error_not_a_silent_success(db):
+    async with db() as s:
+        await crud.update_user(s, "pm", is_active=False)
+        await crud.update_user(s, "rev", is_active=False)
+    _as("coordinator", "co")
+    pm = _remind("Android", "pm")
+    assert pm.status_code == 409 and pm.json()["detail"] == "This project has no active project manager to remind."
+    reviewer = _remind("iOS", "reviewer")
+    assert reviewer.status_code == 409 and reviewer.json()["detail"] == "The assigned reviewer's account is inactive."
+    async with db() as s:
+        android = await crud.get_assignment(s, "c1", "Android")
+        ios = await crud.get_assignment(s, "c1", "iOS")
+    assert android.pm_reminded_at is None and ios.reviewer_reminded_at is None

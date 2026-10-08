@@ -38,7 +38,7 @@ def _send_smtp(settings: EmailSettings, to_address, to_name, subject, html, text
     message = EmailMessage()
     message["Subject"] = subject
     message["From"] = formataddr((settings.from_name, settings.from_address))
-    message["To"] = formataddr((to_name or "", to_address))
+    message["To"] = formataddr((" ".join((to_name or "").split()), to_address))
     message.set_content(text)
     message.add_alternative(html, subtype="html")
     try:

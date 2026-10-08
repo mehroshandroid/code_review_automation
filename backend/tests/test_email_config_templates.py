@@ -81,3 +81,9 @@ def test_payload_is_escaped():
     _, html, _ = render("review_failed", evil, "<i>Rae</i>", BASE)
     assert "<script>" not in html and "&lt;script&gt;" in html
     assert "<b>boom</b>" not in html and "<i>Rae</i>" not in html
+
+
+def test_line_breaks_in_untrusted_text_never_reach_the_subject():
+    subject, _, _ = render("review_ready", {**PAYLOAD, "project_name": "Moove\r\nBcc: x@evil.com"}, "Rae", BASE)
+    assert "\r" not in subject and "\n" not in subject
+    assert subject == "Ready for your review: Moove Bcc: x@evil.com · iOS (Q4 2026)"

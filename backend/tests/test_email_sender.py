@@ -217,3 +217,26 @@ def test_graph_token_failure_is_an_email_error(monkeypatch):
     with pytest.raises(EmailError) as exc:
         asyncio.run(transport.send(email_settings(), "rae@example.com", None, "Hi", "<p>x</p>", "x"))
     assert "invalid_client" in str(exc.value) and "s3cret" not in str(exc.value)
+
+
+def test_smtp_accepts_a_recipient_name_with_line_breaks(monkeypatch):
+    sent = []
+
+    class FakeSMTP:
+        def __init__(self, *args, **kwargs):
+            pass
+        def __enter__(self):
+            return self
+        def __exit__(self, *exc):
+            return False
+        def starttls(self, context=None):
+            pass
+        def send_message(self, message):
+            sent.append(message["To"])
+
+    monkeypatch.setattr(transport.smtplib, "SMTP", FakeSMTP)
+    monkeypatch.setenv("EMAIL_MODE", "smtp")
+    monkeypatch.setenv("EMAIL_FROM", "codeassure@example.com")
+    monkeypatch.setenv("SMTP_HOST", "smtp.example.com")
+    asyncio.run(transport.send(email_settings(), "rae@example.com", "Rae\r\nSmith", "Hi", "<p>x</p>", "x"))
+    assert sent == ["Rae Smith <rae@example.com>"]

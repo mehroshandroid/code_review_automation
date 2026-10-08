@@ -150,11 +150,13 @@ async def remind(cycle_id: str, platform: str, body: RemindBody, user=Depends(re
         needs_feedback = assignment.run_status == "completed" and review_status != "approved" and assignment.reviewer_id
         if body.target == "pm" and needs_url:
             payload = cycle_payload(project.name, assignment.platform, cycle.year, cycle.quarter, link="/", run_error=assignment.run_error)
-            await notify(session, "reminder_pm", await project_manager_ids(session, cycle.project_id), payload)
+            if not await notify(session, "reminder_pm", await project_manager_ids(session, cycle.project_id), payload):
+                raise HTTPException(status_code=409, detail="This project has no active project manager to remind.")
             await crud.update_assignment(session, assignment, pm_reminded_at=_now())
         elif body.target == "reviewer" and needs_feedback:
             payload = cycle_payload(project.name, assignment.platform, cycle.year, cycle.quarter, link=f"/reports/{assignment.review_id}")
-            await notify(session, "reminder_reviewer", [assignment.reviewer_id], payload)
+            if not await notify(session, "reminder_reviewer", [assignment.reviewer_id], payload):
+                raise HTTPException(status_code=409, detail="The assigned reviewer's account is inactive.")
             await crud.update_assignment(session, assignment, reviewer_reminded_at=_now())
         else:
             raise HTTPException(status_code=409, detail="A reminder isn't needed at this stage.")

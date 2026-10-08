@@ -78,7 +78,8 @@ _GENERIC = (lambda p: "CodeAssure notification", lambda p: "There's an update fo
 
 def render(event: str, payload: dict, recipient_name: str | None, base_url: str) -> tuple[str, str, str]:
     subject_fn, message_fn, button = _EVENTS.get(event, _GENERIC)
-    subject = subject_fn(payload)
+    # Collapse whitespace: untrusted names with line breaks must never reach an email header.
+    subject = " ".join(subject_fn(payload).split())
     message = message_fn(payload)
     link = f"{base_url}{payload.get('link') or '/'}"
     greeting = f"Hi {recipient_name}," if recipient_name else "Hi,"
