@@ -158,6 +158,10 @@ class ReviewCycleAssignment(Base):
     finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     reviewer_assigned_by: Mapped[Optional[str]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     reviewer_assigned_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancel_requested: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # "pause" | "stop"
+    override_llm_provider: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    override_llm_model: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    override_compile_mode: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
 
 class NotificationOutbox(Base):
@@ -171,3 +175,14 @@ class NotificationOutbox(Base):
     payload: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ReviewQueueState(Base):
+    """Singleton (id 1): whether the automated review queue is paused."""
+
+    __tablename__ = "review_queue_state"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    paused: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    paused_by: Mapped[Optional[str]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    paused_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)

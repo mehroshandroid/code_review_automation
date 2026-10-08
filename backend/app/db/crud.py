@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from sqlalchemy import and_, delete, extract, func, or_, select, update
@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import (
     ClauseChecklist, NotificationOutbox, OrgSettings, PlatformReview, Project, ProjectManager, ProjectPlatform,
-    ReviewCycle, ReviewCycleAssignment, SampleTemplate, User,
+    ReviewCycle, ReviewCycleAssignment, ReviewQueueState, SampleTemplate, User,
 )
 from app.quarterly import sort_platforms
 
@@ -585,7 +585,7 @@ async def requeue_assignments(session: AsyncSession, include_running: bool) -> i
     result = await session.execute(
         update(ReviewCycleAssignment).where(condition).values(
             run_status="queued", queued_at=datetime.now(timezone.utc),
-            run_error=None, failure_kind=None, run_phase=None, run_progress=None,
+            run_error=None, failure_kind=None, run_phase=None, run_progress=None, cancel_requested=None,
         )
     )
     await session.commit()
@@ -665,3 +665,55 @@ async def update_auto_compile_modes(session: AsyncSession, modes: dict) -> OrgSe
     await session.commit()
     await session.refresh(settings)
     return settings
+
+
+# --- review queue monitor ---
+
+_QUEUE_STATE_ID = 1
+
+
+async def get_queue_state(session: AsyncSession) -> ReviewQueueState:
+    state = await session.get(ReviewQueueState, _QUEUE_STATE_ID)
+    if state is None:
+        state = ReviewQueueState(id=_QUEUE_STATE_ID, paused=False)
+        session.add(state)
+        await session.commit()
+        await session.refresh(state)
+    return state
+
+
+async def set_queue_paused(session: AsyncSession, paused: bool, user_id: Optional[str]) -> ReviewQueueState:
+    state = await get_queue_state(session)
+    state.paused = paused
+    state.paused_by = user_id if paused else None
+    state.paused_at = datetime.now(timezone.utc) if paused else None
+    await session.commit()
+    await session.refresh(state)
+    return state
+
+
+async def list_assignments_with_status(
+    session: AsyncSession, status: str, newest_finished_first: bool = False, limit: Optional[int] = None,
+) -> list[ReviewCycleAssignment]:
+    query = select(ReviewCycleAssignment).where(ReviewCycleAssignment.run_status == status)
+    query = query.order_by(ReviewCycleAssignment.finished_at.desc()) if newest_finished_first else query.order_by(*_QUEUE_ORDER)
+    if limit:
+        query = query.limit(limit)
+    result = await session.execute(query)
+    return list(result.scalars().all())
+
+
+async def count_assignments_with_status(session: AsyncSession, status: str) -> int:
+    result = await session.execute(
+        select(func.count()).select_from(ReviewCycleAssignment).where(ReviewCycleAssignment.run_status == status)
+    )
+    return result.scalar_one()
+
+
+async def front_of_queue_time(session: AsyncSession) -> datetime:
+    """A queued_at that sorts before every queued item."""
+    result = await session.execute(
+        select(func.min(ReviewCycleAssignment.queued_at)).where(ReviewCycleAssignment.run_status == "queued")
+    )
+    earliest = result.scalar_one_or_none()
+    return (earliest or datetime.now(timezone.utc)) - timedelta(seconds=1)

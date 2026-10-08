@@ -30,6 +30,7 @@ EXPECTED = {
     "cycles.initiate": {A, M, C},
     "cycles.submit_urls": {A, M, C, P},
     "settings.devops_pat": {A},
+    "queue.manage": {A},
     "projects.assign_pm": {A, M, C},
     "projects.delete": {A, M},
     "chat.use": {A, M, P},
