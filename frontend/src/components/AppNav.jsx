@@ -11,6 +11,7 @@ const LINKS = [
   { to: "/my-reviews", label: "My reviews", show: (user) => hasAny(user, ["my_reviews.view"]) },
   { to: "/projects", label: "Projects", show: (user) => hasAny(user, ["projects.view"]) },
   { to: "/users", label: "Users", show: (user) => hasAny(user, ["users.manage"]) },
+  { to: "/queue", label: "Queue", show: (user) => hasAny(user, ["queue.manage"]) },
 ];
 
 export default function AppNav() {

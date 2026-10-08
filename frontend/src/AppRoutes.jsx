@@ -8,6 +8,7 @@ import UsersPage from "./pages/UsersPage";
 import MyReviewsPage from "./pages/MyReviewsPage";
 import ProjectsPage from "./pages/ProjectsPage";
 import QuarterlyDashboardPage from "./pages/QuarterlyDashboardPage";
+import QueuePage from "./pages/QueuePage";
 import { DashboardOrHome, RequireAuth, RequirePermission } from "./components/RouteGuards";
 
 export default function AppRoutes() {
@@ -22,6 +23,7 @@ export default function AppRoutes() {
       <Route path="/projects" element={<RequirePermission anyOf={["projects.view"]}><ProjectsPage /></RequirePermission>} />
       <Route path="/settings" element={<RequirePermission anyOf={["settings.manage"]}><SettingsPage /></RequirePermission>} />
       <Route path="/users" element={<RequirePermission anyOf={["users.manage"]}><UsersPage /></RequirePermission>} />
+      <Route path="/queue" element={<RequirePermission anyOf={["queue.manage"]}><QueuePage /></RequirePermission>} />
     </Routes>
   );
 }

@@ -14,7 +14,7 @@ const DEFAULT_CONTEXT = {
     permissions: [
       "chat.use", "cycles.initiate", "cycles.submit_urls", "cycles.view", "dashboard.view_all", "my_reviews.view", "projects.assign_pm", "projects.create",
       "projects.delete", "projects.edit", "projects.view", "reviews.assign_reviewer", "reviews.create",
-      "reviews.delete", "reviews.edit", "reviews.finalize_own", "settings.devops_pat", "settings.manage", "users.manage",
+      "reviews.delete", "reviews.edit", "queue.manage", "reviews.finalize_own", "settings.devops_pat", "settings.manage", "users.manage",
     ],
   },
   loading: false,

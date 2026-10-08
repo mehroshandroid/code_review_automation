@@ -3,7 +3,7 @@ import { useAuth } from "../context/AuthContext";
 import { hasPermission } from "../permissions";
 import { getAutomationSettings, saveAutoCompileModes, saveDevopsPat } from "../services/api";
 
-const COMPILE_OPTIONS = {
+export const COMPILE_OPTIONS = {
   Android: [["compiler", "Docker lint"], ["local", "Local lint (Mac agent)"], ["static", "Static analysis"]],
   ".NET": [["compiler", "Docker build"], ["static", "Static analysis"]],
   iOS: [["compiler", "Mac build agent"], ["static", "Static analysis"]],

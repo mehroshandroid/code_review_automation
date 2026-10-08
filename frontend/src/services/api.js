@@ -306,3 +306,44 @@ export async function saveAutoCompileModes(modes) {
   const response = await axios.put(`${API_BASE_URL}/settings/auto-compile-modes`, { modes });
   return response.data.compile_modes;
 }
+
+export async function getQueue() {
+  const response = await axios.get(`${API_BASE_URL}/queue`);
+  return response.data;
+}
+
+export async function pauseQueue() {
+  const response = await axios.post(`${API_BASE_URL}/queue/pause`);
+  return response.data;
+}
+
+export async function resumeQueue() {
+  const response = await axios.post(`${API_BASE_URL}/queue/resume`);
+  return response.data;
+}
+
+function queueItemPath(cycleId, platform) {
+  return `${API_BASE_URL}/queue/items/${cycleId}/${encodeURIComponent(platform)}`;
+}
+
+export async function stopQueueItem(cycleId, platform) {
+  const response = await axios.post(`${queueItemPath(cycleId, platform)}/stop`);
+  return response.data;
+}
+
+export async function removeQueueItem(cycleId, platform) {
+  const response = await axios.post(`${queueItemPath(cycleId, platform)}/remove`);
+  return response.data;
+}
+
+export async function moveQueueItemToFront(cycleId, platform) {
+  const response = await axios.post(`${queueItemPath(cycleId, platform)}/front`);
+  return response.data;
+}
+
+export async function saveQueueItemSettings(cycleId, platform, { llmProvider, llmModel, compileMode }) {
+  const response = await axios.put(`${queueItemPath(cycleId, platform)}/settings`, {
+    llm_provider: llmProvider, llm_model: llmModel, compile_mode: compileMode,
+  });
+  return response.data;
+}

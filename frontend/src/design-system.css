@@ -299,3 +299,25 @@ a:hover { color: var(--color-brand-coral); }
 .table--padded th:last-child, .table--padded td:last-child { padding-right: 20px; }
 .table--padded th { padding-top: 10px; padding-bottom: 10px; }
 .table--padded tbody tr:hover { background: color-mix(in srgb, var(--color-surface) 70%, transparent); }
+
+/* — review queue monitor — */
+.queue-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); align-items: start; }
+@media (max-width: 1000px) { .queue-grid { grid-template-columns: 1fr; } }
+.queue-panel { padding: 20px; display: grid; gap: var(--space-3); }
+.queue-panel-title { font-weight: 700; font-size: 15px; display: flex; align-items: center; gap: 8px; }
+.queue-panel-count { font-size: 12px; font-weight: 600; color: var(--color-text-muted); background: var(--color-surface); border-radius: 999px; padding: 1px 8px; }
+.queue-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
+.queue-item { border: 1px solid var(--color-divider); border-radius: 10px; padding: 12px 14px; display: grid; gap: 6px; }
+.queue-item-main { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.queue-item-title { font-weight: 600; font-size: 14px; }
+.queue-item-meta { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--color-text-muted); }
+.queue-item-actions { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
+.queue-position { font-weight: 700; color: var(--color-text-muted); font-variant-numeric: tabular-nums; }
+.queue-status { font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 999px; }
+.queue-status--running { background: color-mix(in srgb, #2e9e5b 15%, var(--color-bg)); color: #1f6e3f; }
+.queue-status--idle { background: var(--color-surface); color: var(--color-text-muted); }
+.queue-status--paused { background: color-mix(in srgb, #e0b400 20%, var(--color-bg)); color: #6b5300; }
+.progress-track { height: 6px; border-radius: 999px; background: var(--color-surface); overflow: hidden; }
+.progress-fill { height: 100%; background: var(--color-accent); transition: width 0.4s ease; }
+.failure-kind--url { color: var(--color-brand-coral); border-color: var(--color-brand-coral); }
+.failure-kind--stopped { color: var(--color-text-muted); }
