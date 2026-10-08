@@ -95,7 +95,7 @@ export default function PendingCyclesPanel() {
             <span className="quarter-card-meta">Initiated {new Date(cycle.initiated_at).toLocaleDateString()}</span>
           </div>
           <div style={{ overflowX: "auto" }}>
-            <table className="table">
+            <table className="table table--padded">
               <thead><tr><th>Platform</th><th>Reviewer</th><th>Status</th><th>Repository</th></tr></thead>
               <tbody>
                 {cycle.assignments.map((assignment) => (

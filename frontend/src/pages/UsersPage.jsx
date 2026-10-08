@@ -186,7 +186,7 @@ export default function UsersPage() {
 
         {users && (
           <div className="card" style={{ padding: 0, overflowX: "auto" }}>
-            <table className="table">
+            <table className="table table--padded">
               <thead>
                 <tr><th>Name</th><th>Email</th><th>Role</th><th>Projects</th><th>Status</th><th aria-label="Actions" /></tr>
               </thead>

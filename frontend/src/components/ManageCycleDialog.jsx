@@ -49,7 +49,7 @@ export default function ManageCycleDialog({ project, year, entry, onChanged, onC
         <div className="dialog-title">Q{entry.quarter} {year} review — {project.name}</div>
         <div className="dialog-body" style={{ display: "grid", gap: "var(--space-3)" }}>
           <div style={{ overflowX: "auto" }}>
-            <table className="table">
+            <table className="table table--padded">
               <thead><tr><th>Platform</th><th>Status</th><th>Reviewer</th><th aria-label="Actions" /></tr></thead>
               <tbody>
                 {assignments.map((assignment) => {

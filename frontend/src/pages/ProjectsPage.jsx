@@ -74,7 +74,7 @@ export default function ProjectsPage() {
 
         {visible.length > 0 && (
           <div className="card" style={{ padding: 0, overflowX: "auto" }}>
-            <table className="table">
+            <table className="table table--padded">
               <thead>
                 <tr><th>Project</th><th>Platforms</th><th>Project managers</th><th>Reviews</th><th>Created</th><th aria-label="Actions" /></tr>
               </thead>

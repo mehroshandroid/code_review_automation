@@ -43,7 +43,7 @@ export default function MyReviewsPage() {
 
         {visible.length > 0 && (
           <div className="card" style={{ padding: 0, overflowX: "auto" }}>
-            <table className="table">
+            <table className="table table--padded">
               <thead>
                 <tr><th>Project</th><th>Platform</th><th>Date</th><th>AI score</th><th>Status</th><th aria-label="Actions" /></tr>
               </thead>
