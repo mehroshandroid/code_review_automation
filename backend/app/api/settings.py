@@ -8,8 +8,10 @@ from pydantic import BaseModel
 
 from app.analyzer.excel_handler import discover_structure
 from app.auth.permissions import require_permission
+from app.automation.config import ALLOWED_COMPILE_MODES, effective_compile_modes
 from app.db import crud
 from app.db.session import new_session
+from app.secrets import encrypt
 
 router = APIRouter(dependencies=[Depends(require_permission("settings.manage"))])
 
@@ -141,3 +143,59 @@ async def delete_sample_template(platform: str):
         Path(template.file_path).unlink(missing_ok=True)
         await crud.delete_sample_template(session, platform)
     return Response(status_code=204)
+
+
+class DevopsPatBody(BaseModel):
+    pat: str
+
+
+class CompileModesBody(BaseModel):
+    modes: dict[str, str]
+
+
+def _pat_summary(settings, users: dict) -> dict:
+    if settings is None or not settings.devops_pat_encrypted:
+        return {"configured": False, "last4": None, "updated_at": None, "updated_by_name": None}
+    updater = users.get(settings.devops_pat_updated_by)
+    return {
+        "configured": True,
+        "last4": settings.devops_pat_last4,
+        "updated_at": settings.devops_pat_updated_at.isoformat() if settings.devops_pat_updated_at else None,
+        "updated_by_name": (updater.name or updater.email) if updater else None,
+    }
+
+
+@router.get("/api/settings/automation")
+async def get_automation_settings():
+    async with new_session() as session:
+        settings = await crud.get_org_settings(session)
+        users = await crud.get_users_by_ids(session, [settings.devops_pat_updated_by] if settings else [])
+    return {
+        "pat": _pat_summary(settings, users),
+        "compile_modes": effective_compile_modes(settings.auto_compile_modes if settings else None),
+    }
+
+
+@router.put("/api/settings/devops-pat")
+async def put_devops_pat(body: DevopsPatBody, user=Depends(require_permission("settings.devops_pat"))):
+    pat = body.pat.strip()
+    if not pat:
+        raise HTTPException(status_code=400, detail="PAT must not be empty")
+    async with new_session() as session:
+        settings = await crud.update_devops_pat(session, encrypt(pat), pat[-4:], user.id)
+        # A new PAT is the usual fix for system failures (missing/expired PAT).
+        await crud.requeue_assignments(session, include_running=False)
+        users = await crud.get_users_by_ids(session, [user.id])
+    return _pat_summary(settings, users)
+
+
+@router.put("/api/settings/auto-compile-modes")
+async def put_auto_compile_modes(body: CompileModesBody):
+    for platform, mode in body.modes.items():
+        if mode not in ALLOWED_COMPILE_MODES.get(platform, ()):
+            raise HTTPException(status_code=400, detail=f"{mode!r} isn't a valid compile check for {platform}")
+    async with new_session() as session:
+        current = await crud.get_org_settings(session)
+        merged = {**effective_compile_modes(current.auto_compile_modes if current else None), **body.modes}
+        settings = await crud.update_auto_compile_modes(session, merged)
+    return {"compile_modes": effective_compile_modes(settings.auto_compile_modes)}
