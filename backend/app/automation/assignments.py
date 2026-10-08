@@ -9,6 +9,7 @@ def _iso(value):
 async def assignment_dicts(session, assignments, keep_order=False) -> list[dict]:
     users = await crud.get_users_by_ids(session, [a.reviewer_id for a in assignments])
     statuses = await crud.get_review_statuses(session, [a.review_id for a in assignments])
+    approved_times = await crud.get_review_approved_times(session, [a.review_id for a in assignments])
     positions = {key: index + 1 for index, key in enumerate(await crud.list_queued_keys(session))}
     rows = []
     for a in assignments if keep_order else sorted(assignments, key=lambda a: TRACKED_PLATFORMS.index(a.platform)):
@@ -32,6 +33,10 @@ async def assignment_dicts(session, assignments, keep_order=False) -> list[dict]
             "finished_at": _iso(a.finished_at),
             "queue_position": positions.get((a.cycle_id, a.platform)) if a.run_status == "queued" else None,
             "cycle_id": a.cycle_id,
+            "url_submitted_at": _iso(a.url_submitted_at),
+            "review_approved_at": _iso(approved_times.get(a.review_id)),
+            "pm_reminded_at": _iso(a.pm_reminded_at),
+            "reviewer_reminded_at": _iso(a.reviewer_reminded_at),
             "cancel_requested": a.cancel_requested,
             "override_llm_provider": a.override_llm_provider,
             "override_llm_model": a.override_llm_model,

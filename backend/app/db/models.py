@@ -162,6 +162,8 @@ class ReviewCycleAssignment(Base):
     override_llm_provider: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     override_llm_model: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     override_compile_mode: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    pm_reminded_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    reviewer_reminded_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class NotificationOutbox(Base):
@@ -175,6 +177,12 @@ class NotificationOutbox(Base):
     payload: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    # pending -> sent | logged (log mode) | failed (after retries) | skipped (stale or inactive recipient)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="pending", server_default="pending")
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    last_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    next_attempt_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    subject: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
 
 class ReviewQueueState(Base):

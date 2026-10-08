@@ -617,13 +617,17 @@ async def get_assignment_by_review_id(session: AsyncSession, review_id: str) -> 
     return result.scalars().first()
 
 
-async def add_notifications(session: AsyncSession, event: str, recipient_ids: list[str], payload: dict) -> None:
+async def add_notifications(session: AsyncSession, event: str, recipient_ids: list[str], payload: dict) -> list[NotificationOutbox]:
     now = datetime.now(timezone.utc)
-    for recipient_id in recipient_ids:
-        session.add(NotificationOutbox(
-            id=str(uuid.uuid4()), event=event, recipient_user_id=recipient_id, payload=payload, created_at=now,
-        ))
+    rows = [
+        NotificationOutbox(id=str(uuid.uuid4()), event=event, recipient_user_id=recipient_id, payload=payload, created_at=now)
+        for recipient_id in recipient_ids
+    ]
+    session.add_all(rows)
     await session.commit()
+    for row in rows:
+        await session.refresh(row)
+    return rows
 
 
 async def list_notifications(session: AsyncSession, event: Optional[str] = None) -> list[NotificationOutbox]:
@@ -718,3 +722,45 @@ async def front_of_queue_time(session: AsyncSession) -> datetime:
     )
     earliest = result.scalar_one_or_none()
     return (earliest or datetime.now(timezone.utc)) - timedelta(seconds=1)
+
+
+# --- email delivery ---
+
+async def list_due_notifications(session: AsyncSession, now: datetime, limit: int) -> list[NotificationOutbox]:
+    result = await session.execute(
+        select(NotificationOutbox)
+        .where(
+            NotificationOutbox.status == "pending",
+            or_(NotificationOutbox.next_attempt_at.is_(None), NotificationOutbox.next_attempt_at <= now),
+        )
+        .order_by(NotificationOutbox.created_at, NotificationOutbox.id)
+        .limit(limit)
+    )
+    return list(result.scalars().all())
+
+
+async def get_notification(session: AsyncSession, notification_id: str) -> Optional[NotificationOutbox]:
+    return await session.get(NotificationOutbox, notification_id)
+
+
+async def list_recent_notifications(session: AsyncSession, limit: int) -> list[NotificationOutbox]:
+    result = await session.execute(
+        select(NotificationOutbox).order_by(NotificationOutbox.created_at.desc(), NotificationOutbox.id).limit(limit)
+    )
+    return list(result.scalars().all())
+
+
+async def update_notification(session: AsyncSession, row: NotificationOutbox, **fields) -> NotificationOutbox:
+    for name, value in fields.items():
+        setattr(row, name, value)
+    await session.commit()
+    await session.refresh(row)
+    return row
+
+
+async def get_review_approved_times(session: AsyncSession, review_ids: list[str]) -> dict:
+    ids = [review_id for review_id in set(review_ids) if review_id]
+    if not ids:
+        return {}
+    result = await session.execute(select(PlatformReview.id, PlatformReview.approved_at).where(PlatformReview.id.in_(ids)))
+    return {review_id: approved_at for review_id, approved_at in result.all()}
