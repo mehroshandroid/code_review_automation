@@ -55,3 +55,23 @@ test("an on-time in-progress quarter has no Late marker", () => {
   render(<QuarterCard entry={{ ...base, status: "in_progress", late: false }} platforms={["Android", "iOS"]} canInitiate={false} onInitiate={jest.fn()} />);
   expect(screen.queryByText("Late")).not.toBeInTheDocument();
 });
+
+test("Manage button and run status lines for an initiated quarter", async () => {
+  const user = userEvent.setup();
+  const onManage = jest.fn();
+  const entry = { ...base, status: "in_progress", covered: [], missing: ["Android", "iOS"], can_initiate: false, cycle: {
+    id: "c1", initiated_at: "2026-10-02T10:00:00Z", initiated_by_name: "Cora", assignments: [
+      { platform: "Android", reviewer_id: "r", reviewer_name: "Rae", run_status: "running", run_phase: "scoring", run_progress: 50 },
+      { platform: "iOS", reviewer_id: "r", reviewer_name: "Rae", run_status: "failed" },
+    ] } };
+  render(<QuarterCard entry={entry} platforms={["Android", "iOS"]} canInitiate canManage onManage={onManage} onInitiate={jest.fn()} />);
+  expect(screen.getByText(/Running · Scoring 50%/)).toBeInTheDocument();
+  expect(screen.getByText(/Failed/)).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Manage" }));
+  expect(onManage).toHaveBeenCalled();
+});
+
+test("no Manage button without a cycle or permission", () => {
+  render(<QuarterCard entry={base} platforms={["Android", "iOS"]} canInitiate={false} canManage onManage={jest.fn()} onInitiate={jest.fn()} />);
+  expect(screen.queryByRole("button", { name: "Manage" })).not.toBeInTheDocument();
+});

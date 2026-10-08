@@ -1,3 +1,5 @@
+import { assignmentStatusLabel } from "./AssignmentStatusBadge";
+
 export const STATUS_LABELS = {
   done: "Done", in_progress: "In progress", overdue: "Overdue", not_started: "Not started", not_applicable: "N/A",
 };
@@ -8,9 +10,10 @@ function shortDate(iso) {
   return new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short" });
 }
 
-export default function QuarterCard({ entry, platforms, canInitiate, onInitiate }) {
+export default function QuarterCard({ entry, platforms, canInitiate, onInitiate, canManage = false, onManage }) {
   const coveredByPlatform = Object.fromEntries(entry.covered.map((c) => [c.platform, c]));
   const reviewerByPlatform = Object.fromEntries((entry.cycle?.assignments || []).map((a) => [a.platform, a.reviewer_name]));
+  const assignmentByPlatform = Object.fromEntries((entry.cycle?.assignments || []).map((a) => [a.platform, a]));
   const statusClass = entry.status.replace("_", "-");
 
   return (
@@ -32,6 +35,9 @@ export default function QuarterCard({ entry, platforms, canInitiate, onInitiate 
                 {" "}{platform}
                 {covered && <span className="quarter-card-meta"> · {shortDate(covered.reviewed_at)}</span>}
                 {reviewerByPlatform[platform] && <span className="quarter-card-meta"> · {reviewerByPlatform[platform]}</span>}
+                {!covered && assignmentByPlatform[platform]?.run_status && assignmentByPlatform[platform].run_status !== "completed" && (
+                  <span className="quarter-card-meta"> · {assignmentStatusLabel(assignmentByPlatform[platform])}</span>
+                )}
               </li>
             );
           })}
@@ -44,6 +50,9 @@ export default function QuarterCard({ entry, platforms, canInitiate, onInitiate 
       )}
       {canInitiate && entry.can_initiate && (
         <button type="button" className="btn btn-primary quarter-card-action" onClick={onInitiate}>Initiate review</button>
+      )}
+      {canManage && entry.cycle && (
+        <button type="button" className="btn btn-ghost quarter-card-action" onClick={onManage}>Manage</button>
       )}
     </div>
   );

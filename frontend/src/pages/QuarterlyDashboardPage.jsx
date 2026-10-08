@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import AppNav from "../components/AppNav";
 import QuarterCard from "../components/QuarterCard";
 import InitiateCycleDialog from "../components/InitiateCycleDialog";
+import ManageCycleDialog from "../components/ManageCycleDialog";
 import { useCan } from "../context/AuthContext";
 import { getQuarterly, getReviewYears } from "../services/api";
 
@@ -15,6 +16,7 @@ export default function QuarterlyDashboardPage() {
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
   const [initiating, setInitiating] = useState(null); // { project, entry, year }
+  const [managing, setManaging] = useState(null); // { project, entry, year }
 
   useEffect(() => {
     let cancelled = false;
@@ -34,6 +36,14 @@ export default function QuarterlyDashboardPage() {
       .catch(() => { if (!cancelled) setError("Couldn't load quarterly status."); });
     return () => { cancelled = true; };
   }, [year]);
+
+  function reload() {
+    const loadedYear = data?.year;
+    if (!loadedYear) return;
+    getQuarterly(loadedYear)
+      .then((result) => setData((current) => (current && current.year === result.year ? result : current)))
+      .catch(() => {});
+  }
 
   function replaceEntry(projectId, entryYear, updated) {
     // Only apply to the year the initiate was for; the user may have switched years meanwhile.
@@ -92,6 +102,8 @@ export default function QuarterlyDashboardPage() {
                     key={entry.quarter} entry={entry} platforms={project.platforms}
                     canInitiate={can("cycles.initiate")}
                     onInitiate={() => setInitiating({ project, entry, year: data.year })}
+                    canManage={can("cycles.initiate")}
+                    onManage={() => setManaging({ project, entry, year: data.year })}
                   />
                 ))}
               </div>
@@ -105,6 +117,12 @@ export default function QuarterlyDashboardPage() {
           project={initiating.project} year={initiating.year} entry={initiating.entry}
           onInitiated={(updated) => replaceEntry(initiating.project.id, initiating.year, updated)}
           onClose={() => setInitiating(null)}
+        />
+      )}
+      {managing && (
+        <ManageCycleDialog
+          project={managing.project} year={managing.year} entry={managing.entry}
+          onChanged={reload} onClose={() => setManaging(null)}
         />
       )}
     </div>

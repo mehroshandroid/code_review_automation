@@ -4,11 +4,11 @@ import { MemoryRouter } from "react-router-dom";
 import QuarterlyDashboardPage from "./QuarterlyDashboardPage";
 import { AuthContext } from "../context/AuthContext";
 import { userWithRole } from "../testUtils/authUsers";
-import { getQuarterly, getReviewers, getReviewYears, initiateCycle } from "../services/api";
+import { getQuarterly, getReviewers, getReviewYears, initiateCycle, retryAssignment } from "../services/api";
 
 jest.mock("../services/api", () => ({
   ...jest.requireActual("../services/api"),
-  getQuarterly: jest.fn(), getReviewers: jest.fn(), getReviewYears: jest.fn(), initiateCycle: jest.fn(),
+  getQuarterly: jest.fn(), getReviewers: jest.fn(), getReviewYears: jest.fn(), initiateCycle: jest.fn(), retryAssignment: jest.fn(),
 }));
 
 const q = (quarter, status, extra = {}) => ({
@@ -132,4 +132,18 @@ test("an initiate that finishes after switching year doesn't overwrite the other
   await act(async () => { resolveInitiate(q(4, "in_progress")); });
   expect(within(row2025).queryByText("In progress")).not.toBeInTheDocument();
   expect(within(row2025).getAllByText("Not started")).toHaveLength(1);
+});
+
+test("Manage opens the cycle dialog and changes reload the dashboard", async () => {
+  const user = userEvent.setup();
+  const cycleEntry = q(4, "in_progress", { cycle: { id: "c1", initiated_at: "2026-10-07T00:00:00Z", initiated_by_name: "Cora", assignments: [
+    { platform: "Android", reviewer_id: "r1", reviewer_name: "Rae", run_status: "failed", run_error: "boom", devops_url: "https://dev.azure.com/o/p/_git/x", review_status: null },
+  ] } });
+  getQuarterly.mockResolvedValue({ ...data, projects: [{ ...data.projects[0], quarters: [q(1, "done"), q(2, "done"), q(3, "overdue"), cycleEntry] }] });
+  retryAssignment.mockResolvedValue({ platform: "Android", reviewer_id: "r1", reviewer_name: "Rae", run_status: "queued", queue_position: 1 });
+  renderAs();
+  const row = await screen.findByRole("region", { name: "Alpha" });
+  await user.click(within(row).getByRole("button", { name: "Manage" }));
+  await user.click(screen.getByRole("button", { name: "Retry" }));
+  await waitFor(() => expect(getQuarterly).toHaveBeenCalledTimes(2));
 });
