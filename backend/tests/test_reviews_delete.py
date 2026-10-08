@@ -78,9 +78,9 @@ async def test_delete_review_returns_404_for_unknown_review(test_sessionmaker):
     assert response.status_code == 404
 
 
-async def test_delete_review_forbidden_for_reviewer(test_sessionmaker):
+async def test_delete_review_forbidden_for_management(test_sessionmaker):
     await _persist(test_sessionmaker, "r1")
-    _as("reviewer")
+    _as("management")
 
     response = client.delete("/api/reviews/r1")
 
@@ -89,9 +89,9 @@ async def test_delete_review_forbidden_for_reviewer(test_sessionmaker):
         assert await crud.get_review_by_id(session, "r1") is not None
 
 
-async def test_delete_review_forbidden_for_user(test_sessionmaker):
+async def test_delete_review_forbidden_for_project_manager(test_sessionmaker):
     await _persist(test_sessionmaker, "r1")
-    _as("user")
+    _as("project_manager")
 
     response = client.delete("/api/reviews/r1")
 

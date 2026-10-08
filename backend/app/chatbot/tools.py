@@ -58,7 +58,10 @@ async def _query_reviews(
     max_score: Optional[float] = None,
     min_score: Optional[float] = None,
     limit: int = DEFAULT_LIMIT,
+    project_ids: Optional[set[str]] = None,
 ) -> list[dict]:
+    if project_ids is not None and not project_ids:
+        return []
     limit = max(1, min(limit or DEFAULT_LIMIT, MAX_LIMIT))
     query = select(PlatformReview).where(PlatformReview.status != "error")
     if platform:
@@ -73,6 +76,8 @@ async def _query_reviews(
         query = query.where(PlatformReview.total_score_pct <= max_score)
     if min_score is not None:
         query = query.where(PlatformReview.total_score_pct >= min_score)
+    if project_ids is not None:
+        query = query.where(PlatformReview.project_id.in_(project_ids))
     query = query.order_by(PlatformReview.created_at.desc()).limit(limit)
 
     async with new_session() as session:
@@ -111,3 +116,26 @@ async def query_reviews(
     have no scores to reason about).
     """
     return await _query_reviews(platform, year, start_date, end_date, max_score, min_score, limit)
+
+
+def make_query_reviews_tool(project_ids: Optional[set[str]]):
+    """A query_reviews tool bound to one user's visible projects (None = all).
+
+    Scoping lives here in code -- not in the prompt -- so the model can't
+    talk its way into another project's data.
+    """
+    @tool("query_reviews")
+    async def scoped_query_reviews(
+        platform: Optional[str] = None,
+        year: Optional[int] = None,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        max_score: Optional[float] = None,
+        min_score: Optional[float] = None,
+        limit: int = DEFAULT_LIMIT,
+    ) -> list[dict]:
+        """Query code review history."""
+        return await _query_reviews(platform, year, start_date, end_date, max_score, min_score, limit, project_ids)
+
+    scoped_query_reviews.description = query_reviews.description
+    return scoped_query_reviews

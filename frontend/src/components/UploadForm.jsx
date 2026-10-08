@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { FileIcon, ArrowRightIcon } from "../icons";
 import { useAuth } from "../context/AuthContext";
+import { hasPermission } from "../permissions";
 import ClauseGuidanceEditor from "./ClauseGuidanceEditor";
 import { getCompileCheckMode, setCompileCheckMode } from "../services/compileCheckModeStorage";
 import { getSampleTemplates, getClausePreview } from "../services/api";
@@ -31,7 +32,7 @@ export default function UploadForm({ onSubmit, disabled, disabledLabel = "Starti
   const usingDefaultTemplate = !!defaultTemplate && !useOwnTemplate;
 
   const { user } = useAuth();
-  const canAdjustClauses = user?.role === "admin" || user?.role === "reviewer";
+  const canAdjustClauses = hasPermission(user, "reviews.create");
   const [showClauseEditor, setShowClauseEditor] = useState(false);
   const [clauseCategories, setClauseCategories] = useState(null);
   const [clauseOverrides, setClauseOverrides] = useState({});

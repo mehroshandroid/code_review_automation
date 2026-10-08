@@ -4,7 +4,7 @@ CodeAssure (formerly "Code Review Automation") is an AI-assisted tool for review
 
 This file records what has been built and in what order, so a future developer can see what exists and why. For the design behind each feature, read the specs in `docs/superpowers/specs/`. Each spec has a matching step-by-step plan in `docs/superpowers/plans/`.
 
-_Last updated: 2026-10-07_
+_Last updated: 2026-10-07 (roles & access)_
 
 ---
 
@@ -80,6 +80,23 @@ LLM providers: Azure OpenAI, Ollama (local) and Claude CLI (local). Admins set t
   - The favicon and app icons now use the nav logo mark (coral and navy split with a white check). This added `favicon.svg`.
   - Stopped browsers from autofilling the saved login (`admin@example.com` and its password) into the Azure DevOps URL and PAT fields on the review form.
   - **2026-10-07:** Added "Claude CLI (local)" to the Settings page's organization-wide default LLM provider options, which had only listed Azure and Ollama.
+
+### Phase 8: Roles and access, part 1 of the quarterly review workflow (2026-10-07). Branch: `claude-cli-provider`
+
+Spec: `docs/superpowers/specs/2026-10-07-roles-and-access-design.md`. Plan: `docs/superpowers/plans/2026-10-07-roles-and-access.md`.
+
+- **Roles:** there are now five roles: `admin`, `management`, `coordinator`, `reviewer` and `project_manager`. The old `user` role is retired, and the migration moves `user` accounts to `project_manager` with no projects assigned. Microsoft sign-in now creates new accounts as `project_manager` and fills in the person's name.
+- **Permissions:** `backend/app/auth/permissions.py` lists which roles hold each capability, and is the only place that does. Endpoints check a capability with `require_permission(...)`. Every dashboard and review query is limited by `visible_project_ids(...)`. `/api/auth/me` returns the user's `permissions` and `home_path`, and the frontend uses those to decide what to show.
+- **Projects page (`/projects`):** coordinators, Management and admins can create and rename projects and assign Project Managers. Only admins and Management can delete a project, and only when it has no reviews (otherwise the API returns 409).
+- **Project Managers:** see the dashboard, report pages and chatbot for their assigned projects only. Opening a review outside those projects returns 404.
+- **Reviewers:** have a "My reviews" page (`/my-reviews`) and can finalize only the reviews assigned to them. They no longer see the dashboard or Settings.
+- **Coordinators:** their home page is Projects. They can assign reviewers, and in Part 2 they will run quarterly cycles.
+- **Navbar:** a new shared navbar (`AppNav`) shows links for the user's role and an avatar menu with initials, name and role. It replaces `TopNav` and `NavActions`.
+- **Rollout note:** existing reviewer accounts lose access to the dashboard and Settings. The old code can't set the `management` role, so re-role people **right after the migration runs, before announcing the release**. Either use the Users page as an admin, or run the following against the database, listing the emails of reviewers who still need the dashboard:
+  ```sql
+  UPDATE users SET role = 'management' WHERE email IN ('person1@teo-intl.com', 'person2@teo-intl.com');
+  ```
+- **Next:** Part 2 is quarterly cycles (Coordinator starts a cycle, PM enters a DevOps URL for each platform, the review runs automatically). Part 3 is email notifications.
 
 ---
 

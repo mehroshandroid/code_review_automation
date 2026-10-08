@@ -2,7 +2,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import UsersPage from "./UsersPage";
-import { listUsers, createUser, updateUser, deleteUser } from "../services/api";
+import { listUsers, createUser, updateUser, deleteUser, getProjects } from "../services/api";
 import { AuthContext } from "../context/AuthContext";
 
 jest.mock("../services/api", () => ({
@@ -11,16 +11,19 @@ jest.mock("../services/api", () => ({
   createUser: jest.fn(),
   updateUser: jest.fn(),
   deleteUser: jest.fn(),
+  getProjects: jest.fn(),
 }));
 
 const users = [
-  { id: "u1", email: "admin@example.com", role: "admin", is_active: true },
-  { id: "u2", email: "reviewer@example.com", role: "reviewer", is_active: true },
+  { id: "u1", email: "admin@example.com", name: "Ada Admin", role: "admin", is_active: true },
+  { id: "u2", email: "reviewer@example.com", name: null, role: "reviewer", is_active: true },
+  { id: "u3", email: "pm@example.com", name: null, role: "project_manager", is_active: true, project_ids: ["p1"] },
 ];
 
 beforeEach(() => {
   jest.resetAllMocks();
   listUsers.mockResolvedValue(users);
+  getProjects.mockResolvedValue([{ id: "p1", name: "Alpha" }]);
 });
 
 function renderPage() {
@@ -36,30 +39,31 @@ test("lists existing users with their role and status", async () => {
 
 test("creating a new user calls createUser and refreshes the list", async () => {
   const user = userEvent.setup();
-  createUser.mockResolvedValue({ id: "u3", email: "new@example.com", role: "user", is_active: true });
+  createUser.mockResolvedValue({ id: "u9", email: "new@example.com", role: "coordinator", is_active: true });
   renderPage();
   await screen.findByText("admin@example.com");
 
   await user.click(screen.getByRole("button", { name: /add user/i }));
   const dialog = screen.getByText("New user").closest(".dialog");
+  await user.type(within(dialog).getByLabelText(/^name$/i), "Nia");
   await user.type(within(dialog).getByLabelText(/email/i), "new@example.com");
   await user.type(within(dialog).getByLabelText(/password/i), "correct horse");
-  await user.selectOptions(within(dialog).getByLabelText(/role/i), "user");
+  await user.selectOptions(within(dialog).getByLabelText(/role/i), "coordinator");
   await user.click(screen.getByRole("button", { name: /^create$/i }));
 
-  await waitFor(() => expect(createUser).toHaveBeenCalledWith("new@example.com", "correct horse", "user"));
+  await waitFor(() => expect(createUser).toHaveBeenCalledWith("new@example.com", "correct horse", "coordinator", "Nia"));
   await waitFor(() => expect(listUsers).toHaveBeenCalledTimes(2));
 });
 
 test("changing a user's role calls updateUser", async () => {
   const user = userEvent.setup();
-  updateUser.mockResolvedValue({ ...users[1], role: "user" });
+  updateUser.mockResolvedValue({ ...users[1], role: "management" });
   renderPage();
   await screen.findByText("reviewer@example.com");
 
-  await user.selectOptions(screen.getByLabelText(/role for reviewer@example\.com/i), "user");
+  await user.selectOptions(screen.getByLabelText(/role for reviewer@example\.com/i), "management");
 
-  await waitFor(() => expect(updateUser).toHaveBeenCalledWith("u2", { role: "user" }));
+  await waitFor(() => expect(updateUser).toHaveBeenCalledWith("u2", { role: "management" }));
 });
 
 test("deactivating a user calls updateUser with isActive false", async () => {
@@ -79,7 +83,7 @@ test("shows an error message instead of failing silently when a role change is r
   renderPage();
   await screen.findByText("reviewer@example.com");
 
-  await user.selectOptions(screen.getByLabelText(/role for reviewer@example\.com/i), "user");
+  await user.selectOptions(screen.getByLabelText(/role for reviewer@example\.com/i), "management");
 
   expect(await screen.findByText("You don't have permission to do this")).toBeInTheDocument();
 });
@@ -152,4 +156,39 @@ test("shows an error message instead of failing silently when delete is rejected
   await user.click(screen.getByRole("button", { name: /delete reviewer@example\.com/i }));
 
   expect(await screen.findByText("You cannot delete your own account.")).toBeInTheDocument();
+});
+
+
+test("role dropdown offers all five roles with labels", async () => {
+  renderPage();
+  await screen.findByText("reviewer@example.com");
+  const select = screen.getByLabelText(/role for reviewer@example\.com/i);
+  expect(within(select).getAllByRole("option").map((o) => o.textContent)).toEqual(
+    ["Admin", "Management", "Coordinator", "Reviewer", "Project Manager"],
+  );
+});
+
+test("PM rows show assigned projects as links to the Projects page", async () => {
+  renderPage();
+  const chip = await screen.findByRole("link", { name: "Alpha" });
+  expect(chip).toHaveAttribute("href", "/projects");
+});
+
+test("editing a name saves on blur", async () => {
+  const user = userEvent.setup();
+  updateUser.mockResolvedValue({ ...users[1], name: "Rae" });
+  renderPage();
+  const input = await screen.findByLabelText(/name for reviewer@example\.com/i);
+  await user.type(input, "Rae");
+  await user.tab();
+  await waitFor(() => expect(updateUser).toHaveBeenCalledWith("u2", { name: "Rae" }));
+});
+
+test("leaving a name unchanged does not save", async () => {
+  const user = userEvent.setup();
+  renderPage();
+  const input = await screen.findByLabelText(/name for admin@example\.com/i);
+  await user.click(input);
+  await user.tab();
+  expect(updateUser).not.toHaveBeenCalled();
 });

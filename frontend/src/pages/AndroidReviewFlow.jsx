@@ -8,7 +8,7 @@ import PromptDebugLog from "../components/PromptDebugLog";
 import ReportTable from "../components/ReportTable";
 import StatsDisplay from "../components/StatsDisplay";
 import ReviewMetaBar from "../components/ReviewMetaBar";
-import TopNav from "../components/TopNav";
+import AppNav from "../components/AppNav";
 import { createReview, getOllamaModels } from "../services/api";
 import { getLlmProvider, getOllamaModel } from "../services/llmProviderStorage";
 import { getCompileCheckMode } from "../services/compileCheckModeStorage";
@@ -79,7 +79,7 @@ export default function AndroidReviewFlow({ platform = { id: "android", label: "
 
   return (
     <div style={{ minHeight: "100vh", background: "var(--color-bg)", fontFamily: "var(--font-body)", color: "var(--color-text)" }}>
-      <TopNav />
+      <AppNav />
 
       <main style={{ maxWidth: isRunningOrDone ? 1440 : 920, margin: "0 auto", padding: "64px 24px 96px" }}>
         <header style={{ marginBottom: "var(--space-6)" }}>

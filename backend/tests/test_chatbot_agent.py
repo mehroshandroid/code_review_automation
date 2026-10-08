@@ -23,7 +23,7 @@ async def test_answer_question_returns_output_and_sources(monkeypatch):
         "output": "The .NET reviews commonly failed on naming conventions.",
         "intermediate_steps": [(object(), [source])],
     })
-    monkeypatch.setattr(agent_module, "_build_agent_executor", lambda: fake_executor)
+    monkeypatch.setattr(agent_module, "_build_agent_executor", lambda project_ids=None: fake_executor)
 
     result = await answer_question("what was the reason for .NET low score", [])
 
@@ -40,7 +40,7 @@ async def test_answer_question_deduplicates_sources_across_tool_calls(monkeypatc
         "output": "answer",
         "intermediate_steps": [(object(), [source]), (object(), [source])],
     })
-    monkeypatch.setattr(agent_module, "_build_agent_executor", lambda: fake_executor)
+    monkeypatch.setattr(agent_module, "_build_agent_executor", lambda project_ids=None: fake_executor)
 
     result = await answer_question("question", [])
 
@@ -52,7 +52,7 @@ async def test_answer_question_ignores_non_list_observations(monkeypatch):
         "output": "answer",
         "intermediate_steps": [(object(), "not a tool result list")],
     })
-    monkeypatch.setattr(agent_module, "_build_agent_executor", lambda: fake_executor)
+    monkeypatch.setattr(agent_module, "_build_agent_executor", lambda project_ids=None: fake_executor)
 
     result = await answer_question("question", [])
 
@@ -61,7 +61,7 @@ async def test_answer_question_ignores_non_list_observations(monkeypatch):
 
 async def test_answer_question_handles_missing_intermediate_steps(monkeypatch):
     fake_executor = _FakeExecutor({"output": "answer"})
-    monkeypatch.setattr(agent_module, "_build_agent_executor", lambda: fake_executor)
+    monkeypatch.setattr(agent_module, "_build_agent_executor", lambda project_ids=None: fake_executor)
 
     result = await answer_question("question", [])
 
@@ -70,7 +70,7 @@ async def test_answer_question_handles_missing_intermediate_steps(monkeypatch):
 
 async def test_answer_question_forwards_message_and_history_to_the_executor(monkeypatch):
     fake_executor = _FakeExecutor({"output": "answer", "intermediate_steps": []})
-    monkeypatch.setattr(agent_module, "_build_agent_executor", lambda: fake_executor)
+    monkeypatch.setattr(agent_module, "_build_agent_executor", lambda project_ids=None: fake_executor)
 
     await answer_question(
         "what about iOS?",
@@ -81,3 +81,15 @@ async def test_answer_question_forwards_message_and_history_to_the_executor(monk
     history = fake_executor.captured_input["chat_history"]
     assert isinstance(history[0], HumanMessage) and history[0].content == "what about .NET?"
     assert isinstance(history[1], AIMessage) and history[1].content == "..."
+
+
+async def test_answer_question_passes_scope_to_executor(monkeypatch):
+    seen = {}
+
+    def fake_build(project_ids=None):
+        seen["project_ids"] = project_ids
+        return _FakeExecutor({"output": "ok", "intermediate_steps": []})
+
+    monkeypatch.setattr(agent_module, "_build_agent_executor", fake_build)
+    await answer_question("q", [], project_ids={"p1"})
+    assert seen["project_ids"] == {"p1"}

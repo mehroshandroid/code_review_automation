@@ -27,38 +27,38 @@ def test_create_user_requires_admin_role(test_sessionmaker):
     non_admin = User(id="u2", email="reviewer@example.com", role="reviewer", is_active=True, password_hash="", created_at=None)
     app.dependency_overrides[get_current_user] = lambda: non_admin
 
-    response = client.post("/api/users", json={"email": "new@example.com", "password": "correct horse", "role": "user"})
+    response = client.post("/api/users", json={"email": "new@example.com", "password": "correct horse", "role": "reviewer"})
 
     assert response.status_code == 403
 
 
 def test_create_user_succeeds_for_admin(test_sessionmaker):
-    response = client.post("/api/users", json={"email": "new@example.com", "password": "correct horse", "role": "user"})
+    response = client.post("/api/users", json={"email": "new@example.com", "password": "correct horse", "role": "reviewer"})
 
     assert response.status_code == 200
     body = response.json()
     assert body["email"] == "new@example.com"
-    assert body["role"] == "user"
+    assert body["role"] == "reviewer"
     assert "password" not in body
     assert "password_hash" not in body
 
 
 def test_create_user_rejects_a_short_password(test_sessionmaker):
-    response = client.post("/api/users", json={"email": "new@example.com", "password": "short", "role": "user"})
+    response = client.post("/api/users", json={"email": "new@example.com", "password": "short", "role": "reviewer"})
 
     assert response.status_code == 400
 
 
 def test_create_user_rejects_a_duplicate_email(test_sessionmaker):
-    client.post("/api/users", json={"email": "dup@example.com", "password": "correct horse", "role": "user"})
+    client.post("/api/users", json={"email": "dup@example.com", "password": "correct horse", "role": "reviewer"})
 
-    response = client.post("/api/users", json={"email": "dup@example.com", "password": "correct horse", "role": "user"})
+    response = client.post("/api/users", json={"email": "dup@example.com", "password": "correct horse", "role": "reviewer"})
 
     assert response.status_code == 409
 
 
 def test_list_users_returns_created_users(test_sessionmaker):
-    client.post("/api/users", json={"email": "one@example.com", "password": "correct horse", "role": "user"})
+    client.post("/api/users", json={"email": "one@example.com", "password": "correct horse", "role": "reviewer"})
 
     response = client.get("/api/users")
 
@@ -68,7 +68,7 @@ def test_list_users_returns_created_users(test_sessionmaker):
 
 
 def test_update_user_changes_role_and_active_flag(test_sessionmaker):
-    created = client.post("/api/users", json={"email": "one@example.com", "password": "correct horse", "role": "user"}).json()
+    created = client.post("/api/users", json={"email": "one@example.com", "password": "correct horse", "role": "reviewer"}).json()
 
     response = client.patch(f"/api/users/{created['id']}", json={"role": "reviewer", "is_active": False})
 
@@ -84,7 +84,7 @@ def test_update_user_returns_404_for_an_unknown_id(test_sessionmaker):
 
 
 async def test_update_user_can_set_a_new_password(test_sessionmaker):
-    created = client.post("/api/users", json={"email": "one@example.com", "password": "correct horse", "role": "user"}).json()
+    created = client.post("/api/users", json={"email": "one@example.com", "password": "correct horse", "role": "reviewer"}).json()
 
     response = client.patch(f"/api/users/{created['id']}", json={"password": "a brand new password"})
 
@@ -95,7 +95,7 @@ async def test_update_user_can_set_a_new_password(test_sessionmaker):
 
 
 def test_update_user_rejects_a_short_new_password(test_sessionmaker):
-    created = client.post("/api/users", json={"email": "one@example.com", "password": "correct horse", "role": "user"}).json()
+    created = client.post("/api/users", json={"email": "one@example.com", "password": "correct horse", "role": "reviewer"}).json()
 
     response = client.patch(f"/api/users/{created['id']}", json={"password": "short"})
 
@@ -121,7 +121,7 @@ def test_update_user_forbids_deactivating_yourself(test_sessionmaker):
 
 
 def test_delete_user_removes_them_from_the_list(test_sessionmaker):
-    created = client.post("/api/users", json={"email": "one@example.com", "password": "correct horse", "role": "user"}).json()
+    created = client.post("/api/users", json={"email": "one@example.com", "password": "correct horse", "role": "reviewer"}).json()
 
     response = client.delete(f"/api/users/{created['id']}")
 
@@ -152,3 +152,58 @@ def test_delete_user_requires_admin_role(test_sessionmaker):
     response = client.delete("/api/users/whoever")
 
     assert response.status_code == 403
+
+
+async def test_create_user_with_new_role_and_name(test_sessionmaker):
+    response = client.post("/api/users", json={
+        "email": "co@example.com", "password": "longenough", "role": "coordinator", "name": "Cora",
+    })
+    assert response.status_code == 200
+    assert response.json()["role"] == "coordinator"
+    assert response.json()["name"] == "Cora"
+
+
+async def test_create_user_rejects_retired_user_role(test_sessionmaker):
+    response = client.post("/api/users", json={"email": "u@example.com", "password": "longenough", "role": "user"})
+    assert response.status_code == 400
+
+
+async def test_list_users_includes_pm_project_ids(test_sessionmaker):
+    async with test_sessionmaker() as session:
+        await crud.create_project(session, "p1", "One")
+        await crud.create_user(session, "pm", "pm@example.com", "h", "project_manager")
+        await crud.set_managers_for_project(session, "p1", ["pm"])
+    rows = {u["id"]: u for u in client.get("/api/users").json()["users"]}
+    assert rows["pm"]["project_ids"] == ["p1"]
+
+
+async def test_role_change_away_from_pm_clears_assignments(test_sessionmaker):
+    async with test_sessionmaker() as session:
+        await crud.create_project(session, "p1", "One")
+        await crud.create_user(session, "pm", "pm@example.com", "h", "project_manager")
+        await crud.set_managers_for_project(session, "p1", ["pm"])
+    client.patch("/api/users/pm", json={"role": "reviewer"})
+    async with test_sessionmaker() as session:
+        assert await crud.get_project_ids_for_manager(session, "pm") == set()
+
+
+async def test_deactivating_pm_clears_assignments(test_sessionmaker):
+    async with test_sessionmaker() as session:
+        await crud.create_project(session, "p1", "One")
+        await crud.create_user(session, "pm", "pm@example.com", "h", "project_manager")
+        await crud.set_managers_for_project(session, "p1", ["pm"])
+    client.patch("/api/users/pm", json={"is_active": False})
+    async with test_sessionmaker() as session:
+        assert await crud.get_project_ids_for_manager(session, "pm") == set()
+
+
+async def test_update_user_name(test_sessionmaker):
+    async with test_sessionmaker() as session:
+        await crud.create_user(session, "r", "r@example.com", "h", "reviewer")
+    assert client.patch("/api/users/r", json={"name": "Rae"}).json()["name"] == "Rae"
+
+
+def test_users_api_forbidden_for_management():
+    user = User(id="m", email="m@example.com", role="management", is_active=True, password_hash="", created_at=None)
+    app.dependency_overrides[get_current_user] = lambda: user
+    assert client.get("/api/users").status_code == 403

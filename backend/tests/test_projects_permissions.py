@@ -32,33 +32,21 @@ def test_list_projects_requires_login():
     assert response.status_code == 401
 
 
-def test_list_projects_allows_the_user_role(test_sessionmaker):
-    _as("user")
-    response = client.get("/api/projects")
-    assert response.status_code == 200
+def test_list_projects_allowed_for_pm(test_sessionmaker):
+    _as("project_manager")
+    assert client.get("/api/projects").status_code == 200
 
 
-def test_create_project_allows_the_user_role(test_sessionmaker):
-    _as("user")
-    response = client.post("/api/projects", json={"name": "New Project From User Role"})
-    assert response.status_code == 200
+def test_create_project_forbidden_for_pm(test_sessionmaker):
+    _as("project_manager")
+    assert client.post("/api/projects", json={"name": "Nope"}).status_code == 403
 
 
 def test_rename_project_forbidden_for_reviewer(test_sessionmaker):
     _as("reviewer")
-    response = client.patch("/api/projects/does-not-matter", json={"name": "Renamed"})
-    assert response.status_code == 403
+    assert client.patch("/api/projects/does-not-matter", json={"name": "Renamed"}).status_code == 403
 
 
-def test_rename_project_forbidden_for_user(test_sessionmaker):
-    _as("user")
-    response = client.patch("/api/projects/does-not-matter", json={"name": "Renamed"})
-    assert response.status_code == 403
-
-
-def test_rename_project_allowed_for_admin_reaches_the_404_not_the_403(test_sessionmaker):
-    _as("admin")
-    response = client.patch("/api/projects/does-not-exist", json={"name": "Renamed"})
-    # Passes the permission check and reaches the real 404-for-unknown-id
-    # handling -- proves admin isn't blocked, without needing a real project.
-    assert response.status_code == 404
+def test_rename_project_allowed_for_coordinator_reaches_the_404_not_the_403(test_sessionmaker):
+    _as("coordinator")
+    assert client.patch("/api/projects/does-not-exist", json={"name": "Renamed"}).status_code == 404

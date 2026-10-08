@@ -168,3 +168,32 @@ async def test_query_reviews_respects_limit_and_orders_newest_first(sessionmaker
 def test_default_and_max_limit_constants():
     assert DEFAULT_LIMIT == 20
     assert MAX_LIMIT == 50
+
+
+async def test_query_reviews_with_empty_scope_returns_nothing(monkeypatch):
+    def _boom():
+        raise AssertionError("must not open a session for an empty scope")
+
+    monkeypatch.setattr(tools_module, "new_session", _boom)
+    assert await _query_reviews(project_ids=set()) == []
+
+
+async def test_query_reviews_filters_to_scope(sessionmaker):
+    await _add_review(sessionmaker, id="r1", project_id="p1")
+    await _add_review(sessionmaker, id="r2", project_id="p2")
+    await _add_review(sessionmaker, id="r3", project_id=None)
+
+    results = await _query_reviews(project_ids={"p1"})
+
+    assert [r["id"] for r in results] == ["r1"]
+
+
+async def test_scoped_tool_is_named_query_reviews_and_applies_scope(sessionmaker):
+    await _add_review(sessionmaker, id="r1", project_id="p1")
+    await _add_review(sessionmaker, id="r2", project_id="p2")
+
+    scoped = tools_module.make_query_reviews_tool({"p2"})
+
+    assert scoped.name == "query_reviews"
+    results = await scoped.ainvoke({})
+    assert [r["id"] for r in results] == ["r2"]

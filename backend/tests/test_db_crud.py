@@ -340,22 +340,22 @@ async def test_set_review_reviewer_returns_none_when_review_does_not_exist(sessi
     assert review is None
 
 
-async def test_list_reviewer_candidates_returns_only_active_admins_and_reviewers(session):
+async def test_list_reviewer_candidates_returns_only_active_users_in_the_given_roles(session):
     await crud.create_user(session, user_id="u1", email="admin@example.com", password_hash="h", role="admin")
     await crud.create_user(session, user_id="u2", email="reviewer@example.com", password_hash="h", role="reviewer")
-    await crud.create_user(session, user_id="u3", email="plain-user@example.com", password_hash="h", role="user")
+    await crud.create_user(session, user_id="u3", email="pm@example.com", password_hash="h", role="project_manager")
     inactive = await crud.create_user(session, user_id="u4", email="inactive@example.com", password_hash="h", role="admin")
     await crud.update_user(session, inactive.id, is_active=False)
 
-    candidates = await crud.list_reviewer_candidates(session)
+    candidates = await crud.list_reviewer_candidates(session, frozenset({"admin", "reviewer"}))
 
     assert [c.email for c in candidates] == ["admin@example.com", "reviewer@example.com"]
 
 
 async def test_list_reviewer_candidates_returns_empty_list_when_none_qualify(session):
-    await crud.create_user(session, user_id="u1", email="plain-user@example.com", password_hash="h", role="user")
+    await crud.create_user(session, user_id="u1", email="pm@example.com", password_hash="h", role="project_manager")
 
-    assert await crud.list_reviewer_candidates(session) == []
+    assert await crud.list_reviewer_candidates(session, frozenset({"admin", "reviewer"})) == []
 
 
 async def test_list_reviews_filters_by_year(session):

@@ -189,3 +189,60 @@ a:hover { color: var(--color-brand-coral); }
   margin-top: var(--space-5);
   flex-shrink: 0;
 }
+
+/* — app navigation — */
+.app-nav {
+  position: sticky; top: 0; z-index: 40;
+  display: flex; align-items: center; gap: var(--space-5);
+  height: 56px; padding: 0 24px;
+  background: var(--color-bg);
+  border-bottom: 1px solid var(--color-divider);
+}
+.app-nav-brand { display: flex; align-items: center; gap: var(--space-2); text-decoration: none; color: inherit; flex-shrink: 0; }
+.app-nav-brand .logo-mark { width: 28px; height: 28px; border-radius: 7px; }
+.app-nav-links { display: flex; align-items: stretch; gap: var(--space-1); height: 100%; overflow-x: auto; }
+.app-nav-link {
+  display: flex; align-items: center; padding: 0 12px;
+  font-size: 14px; font-weight: 500; color: var(--color-text-muted); text-decoration: none;
+  border-bottom: 2px solid transparent; white-space: nowrap;
+}
+.app-nav-link:hover { color: var(--color-text); }
+.app-nav-link.active { color: var(--color-text); border-bottom-color: var(--color-brand-coral); }
+.app-nav-account { position: relative; margin-left: auto; }
+.app-nav-account-trigger {
+  display: flex; align-items: center; gap: 10px;
+  padding: 4px 8px 4px 4px; border-radius: 999px;
+  background: none; border: 1px solid transparent; cursor: pointer; color: inherit; font: inherit;
+}
+.app-nav-account-trigger:hover, .app-nav-account-trigger[aria-expanded="true"] { border-color: var(--color-divider); background: var(--color-surface); }
+.app-nav-account-trigger:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.avatar {
+  width: 32px; height: 32px; border-radius: 999px; flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--color-accent); color: #fff; font-size: 12px; font-weight: 600; letter-spacing: 0.02em;
+}
+.app-nav-account-text { display: flex; flex-direction: column; align-items: flex-start; line-height: 1.2; text-align: left; }
+.app-nav-account-name { font-size: 13px; font-weight: 600; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.app-nav-account-role { font-size: 12px; color: var(--color-text-muted); }
+.app-nav-caret { font-size: 11px; color: var(--color-text-muted); }
+.app-nav-menu { position: absolute; top: calc(100% + 6px); right: 0; min-width: 240px; padding: 6px; z-index: 50; }
+.app-nav-menu-header { padding: 8px 10px 10px; border-bottom: 1px solid var(--color-divider); margin-bottom: 4px; }
+.app-nav-menu-item {
+  display: block; width: 100%; text-align: left; padding: 8px 10px; border-radius: 6px;
+  background: none; border: none; font: inherit; font-size: 14px; color: inherit; cursor: pointer;
+}
+.app-nav-menu-item:hover, .app-nav-menu-item:focus-visible { background: var(--color-surface); outline: none; }
+.app-nav-menu-divider { height: 1px; background: var(--color-divider); margin: 4px 0; }
+@media (max-width: 640px) {
+  .app-nav { padding: 0 16px; gap: var(--space-3); }
+  .app-nav-account-text, .app-nav-caret { display: none; }
+}
+
+/* — page layout — */
+.page { min-height: 100vh; background: var(--color-bg); font-family: var(--font-body); color: var(--color-text); }
+.page-main { max-width: 1200px; margin: 0 auto; padding: 32px 24px 96px; display: grid; gap: var(--space-4); }
+.page-header { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; }
+.page-title { font-family: var(--font-heading); font-weight: var(--font-heading-weight); font-size: 28px; letter-spacing: -0.02em; margin: 0; }
+.page-subtitle { margin: 4px 0 0; color: var(--color-text-muted); font-size: 14px; }
+.segmented { display: inline-flex; gap: var(--space-2); }
+@media (max-width: 640px) { .page-main { padding: 24px 16px 64px; } }

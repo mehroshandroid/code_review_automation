@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import DashboardFilters from "./DashboardFilters";
 import { createProject, updateProject } from "../services/api";
 import { AuthContext } from "../context/AuthContext";
+import { userWithRole } from "../testUtils/authUsers";
 
 jest.mock("../services/api");
 
@@ -122,7 +123,7 @@ test("renaming the selected project calls updateProject and onProjectRenamed", a
 });
 
 function renderWithRole(role, overrides = {}) {
-  const value = { user: { id: "u1", email: `${role}@example.com`, role }, loading: false, login: jest.fn(), logout: jest.fn() };
+  const value = { user: userWithRole(role), loading: false, login: jest.fn(), logout: jest.fn() };
   return render(
     <AuthContext.Provider value={value}>
       <DashboardFilters
@@ -141,12 +142,47 @@ test("hides the rename button for a reviewer even with a project selected", () =
   expect(screen.queryByRole("button", { name: /rename/i })).not.toBeInTheDocument();
 });
 
-test("hides the rename button for the user role even with a project selected", () => {
-  renderWithRole("user", { projectId: "p1" });
+test("hides the rename button for a project manager even with a project selected", () => {
+  renderWithRole("project_manager", { projectId: "p1" });
   expect(screen.queryByRole("button", { name: /rename/i })).not.toBeInTheDocument();
 });
 
 test("shows the rename button for admin with a project selected", () => {
   renderWithRole("admin", { projectId: "p1" });
   expect(screen.getByRole("button", { name: /rename/i })).toBeInTheDocument();
+});
+
+
+test("PM sees no rename or add-project controls", async () => {
+  const user = userEvent.setup();
+  render(
+    <AuthContext.Provider value={{ user: userWithRole("project_manager"), loading: false, login: jest.fn(), logout: jest.fn() }}>
+      <DashboardFilters
+        year={2026} years={[2026]} onYearChange={jest.fn()}
+        platform={null} onPlatformChange={jest.fn()}
+        projectId="p1" projects={projects} onProjectChange={jest.fn()} onProjectCreated={jest.fn()} onProjectRenamed={jest.fn()}
+        onReset={jest.fn()}
+      />
+    </AuthContext.Provider>
+  );
+  expect(screen.queryByRole("button", { name: /rename payments service/i })).not.toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Project" }));
+  expect(screen.queryByText("+ Add new project")).not.toBeInTheDocument();
+});
+
+test("coordinator can rename and add projects", async () => {
+  const user = userEvent.setup();
+  render(
+    <AuthContext.Provider value={{ user: userWithRole("coordinator"), loading: false, login: jest.fn(), logout: jest.fn() }}>
+      <DashboardFilters
+        year={2026} years={[2026]} onYearChange={jest.fn()}
+        platform={null} onPlatformChange={jest.fn()}
+        projectId="p1" projects={projects} onProjectChange={jest.fn()} onProjectCreated={jest.fn()} onProjectRenamed={jest.fn()}
+        onReset={jest.fn()}
+      />
+    </AuthContext.Provider>
+  );
+  expect(screen.getByRole("button", { name: /rename payments service/i })).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Project" }));
+  expect(screen.getByText("+ Add new project")).toBeInTheDocument();
 });

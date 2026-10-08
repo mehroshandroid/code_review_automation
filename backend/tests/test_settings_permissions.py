@@ -32,14 +32,14 @@ def test_get_llm_provider_settings_requires_login():
     assert response.status_code == 401
 
 
-def test_get_llm_provider_settings_forbidden_for_user_role():
-    _as("user")
+def test_get_llm_provider_settings_forbidden_for_project_manager():
+    _as("project_manager")
     response = client.get("/api/settings/llm-provider")
     assert response.status_code == 403
 
 
-def test_get_llm_provider_settings_allowed_for_reviewer(test_sessionmaker):
-    _as("reviewer")
+def test_get_llm_provider_settings_allowed_for_management(test_sessionmaker):
+    _as("management")
     response = client.get("/api/settings/llm-provider")
     assert response.status_code == 200
 
@@ -50,13 +50,19 @@ def test_get_llm_provider_settings_allowed_for_admin(test_sessionmaker):
     assert response.status_code == 200
 
 
-def test_list_clause_checklists_forbidden_for_user_role():
-    _as("user")
+def test_list_clause_checklists_forbidden_for_coordinator():
+    _as("coordinator")
     response = client.get("/api/settings/clause-checklists")
     assert response.status_code == 403
 
 
-def test_list_sample_templates_forbidden_for_user_role():
-    _as("user")
+def test_list_sample_templates_forbidden_for_project_manager():
+    _as("project_manager")
     response = client.get("/api/settings/sample-templates")
+    assert response.status_code == 403
+
+
+def test_get_llm_provider_settings_forbidden_for_reviewer():
+    _as("reviewer")
+    response = client.get("/api/settings/llm-provider")
     assert response.status_code == 403

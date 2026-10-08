@@ -39,7 +39,11 @@ async def test_login_sets_a_cookie_and_returns_the_user_on_correct_credentials(t
     response = client.post("/api/auth/login", json={"email": "admin@example.com", "password": "correct horse"})
 
     assert response.status_code == 200
-    assert response.json() == {"id": "u1", "email": "admin@example.com", "role": "admin"}
+    body = response.json()
+    assert {key: body[key] for key in ("id", "email", "role", "name", "home_path")} == {
+        "id": "u1", "email": "admin@example.com", "role": "admin", "name": None, "home_path": "/",
+    }
+    assert "users.manage" in body["permissions"]
     assert "access_token" in response.cookies
 
 
@@ -110,7 +114,7 @@ def test_microsoft_login_redirects_to_the_authorization_url_and_sets_a_state_coo
     assert response.cookies["sso_state"] == captured["state"]
 
 
-async def test_microsoft_callback_creates_a_new_role_user_account_for_an_unseen_email(test_sessionmaker, monkeypatch):
+async def test_microsoft_callback_creates_a_new_project_manager_account_for_an_unseen_email(test_sessionmaker, monkeypatch):
     monkeypatch.setattr(
         auth_module.microsoft_auth, "exchange_code_for_claims",
         lambda code: {"email": "newperson@example.com"},
@@ -129,7 +133,7 @@ async def test_microsoft_callback_creates_a_new_role_user_account_for_an_unseen_
 
     async with test_sessionmaker() as session:
         user = await crud.get_user_by_email(session, "newperson@example.com")
-    assert user.role == "user"
+    assert user.role == "project_manager"
     assert user.is_active is True
 
 
@@ -223,7 +227,7 @@ def test_microsoft_callback_redirects_to_error_when_token_exchange_fails(test_se
 
 
 async def test_microsoft_callback_blocks_an_inactive_existing_account(test_sessionmaker, monkeypatch):
-    await _create_user(test_sessionmaker, email="gone@example.com", password="whatever", role="user")
+    await _create_user(test_sessionmaker, email="gone@example.com", password="whatever", role="reviewer")
     async with test_sessionmaker() as session:
         await crud.update_user(session, "u1", is_active=False)
     monkeypatch.setattr(
@@ -240,3 +244,44 @@ async def test_microsoft_callback_blocks_an_inactive_existing_account(test_sessi
 
     assert response.headers["location"] == "http://localhost:3000/login?error=sso_failed"
     assert "access_token" not in response.cookies
+
+
+async def test_me_returns_name_home_path_and_permissions(test_sessionmaker):
+    await _create_user(test_sessionmaker, email="rev@example.com", password="correct horse", role="reviewer")
+    client.post("/api/auth/login", json={"email": "rev@example.com", "password": "correct horse"})
+    body = client.get("/api/auth/me").json()
+    assert body["home_path"] == "/my-reviews"
+    assert body["permissions"] == ["my_reviews.view", "reviews.finalize_own"]
+    assert body["name"] is None
+
+
+async def test_sso_provisions_new_user_as_project_manager_with_name(test_sessionmaker, monkeypatch):
+    monkeypatch.setattr(
+        auth_module.microsoft_auth, "exchange_code_for_claims",
+        lambda code: {"email": "new@example.com", "name": "New Person"},
+    )
+    response = client.get(
+        "/api/auth/microsoft/callback", params={"code": "c", "state": "s1"},
+        cookies={"sso_state": "s1"}, follow_redirects=False,
+    )
+    assert response.status_code == 307
+    async with test_sessionmaker() as session:
+        user = await crud.get_user_by_email(session, "new@example.com")
+    assert user.role == "project_manager"
+    assert user.name == "New Person"
+
+
+async def test_sso_backfills_missing_name_for_existing_user(test_sessionmaker, monkeypatch):
+    await _create_user(test_sessionmaker, email="old@example.com", role="reviewer")
+    monkeypatch.setattr(
+        auth_module.microsoft_auth, "exchange_code_for_claims",
+        lambda code: {"email": "old@example.com", "name": "Old Timer"},
+    )
+    client.get(
+        "/api/auth/microsoft/callback", params={"code": "c", "state": "s1"},
+        cookies={"sso_state": "s1"}, follow_redirects=False,
+    )
+    async with test_sessionmaker() as session:
+        user = await crud.get_user_by_email(session, "old@example.com")
+    assert user.name == "Old Timer"
+    assert user.role == "reviewer"

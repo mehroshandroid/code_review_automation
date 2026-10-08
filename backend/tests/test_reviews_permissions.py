@@ -32,27 +32,28 @@ def test_list_reviews_requires_login():
     assert response.status_code == 401
 
 
-def test_list_reviews_allows_the_user_role(test_sessionmaker):
-    _as("user")
+def test_list_reviews_allows_a_project_manager_with_empty_results(test_sessionmaker):
+    _as("project_manager")
     response = client.get("/api/reviews", params={"year": 2026})
     assert response.status_code == 200
+    assert response.json() == {"reviews": []}
 
 
-def test_download_review_allows_the_user_role_reaches_the_real_404(test_sessionmaker):
-    _as("user")
+def test_download_review_for_a_project_manager_reaches_the_real_404(test_sessionmaker):
+    _as("project_manager")
     response = client.get("/api/reviews/does-not-exist/download")
     # Passes the permission check and reaches the real not-found handling.
     assert response.status_code == 404
 
 
-def test_edit_review_scores_forbidden_for_user():
-    _as("user")
+def test_edit_review_scores_for_project_manager_hides_unknown_review_as_404(test_sessionmaker):
+    _as("project_manager")
     response = client.patch("/api/reviews/does-not-matter", json={"status": "approved"})
-    assert response.status_code == 403
+    assert response.status_code == 404
 
 
-def test_edit_review_scores_allowed_for_reviewer_reaches_the_real_404(test_sessionmaker):
-    _as("reviewer")
+def test_edit_review_scores_allowed_for_management_reaches_the_real_404(test_sessionmaker):
+    _as("management")
     response = client.patch("/api/reviews/does-not-exist", json={"status": "approved"})
     assert response.status_code == 404
 

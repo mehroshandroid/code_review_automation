@@ -31,7 +31,8 @@ from app.analyzer.excel_handler import (
     read_scores,
 )
 from app.analyzer.llm_client import generate_general_remarks, score_category
-from app.auth.dependencies import get_current_user, require_roles
+from app.auth.dependencies import get_current_user
+from app.auth.permissions import PERMISSIONS, can, can_view_review, require_permission, visible_project_ids
 from app.db import crud
 from app.db.session import new_session
 from app.utils.logger import get_logger
@@ -240,7 +241,7 @@ async def create_review(
     devopsBranch: str | None = Form(None),
     projectId: str | None = Form(None),
     clauseChecklistOverrides: str | None = Form(None),
-    user=Depends(get_current_user),
+    user=Depends(require_permission("reviews.create")),
 ):
     review_id = str(uuid.uuid4())
     work_dir = Path(tempfile.mkdtemp(prefix=f"review_{review_id}_"))
@@ -259,13 +260,10 @@ async def create_review(
 
     clause_overrides: dict = {}
     if input_error is None and clauseChecklistOverrides:
-        if user.role not in ("admin", "reviewer"):
-            input_error = "Only admin/reviewer accounts can adjust clause guidance for a review."
-        else:
-            try:
-                clause_overrides = json.loads(clauseChecklistOverrides)
-            except json.JSONDecodeError:
-                input_error = "clauseChecklistOverrides must be valid JSON."
+        try:
+            clause_overrides = json.loads(clauseChecklistOverrides)
+        except json.JSONDecodeError:
+            input_error = "clauseChecklistOverrides must be valid JSON."
 
     if input_error:
         shutil.rmtree(work_dir, ignore_errors=True)
@@ -540,6 +538,7 @@ def _review_summary_to_dict(review) -> dict:
         "project_name": review.project_name,
         "platform": review.platform,
         "status": review.status,
+        "reviewer_id": review.reviewer_id,
         "created_at": review.created_at.isoformat(),
         "completed_at": review.completed_at.isoformat() if review.completed_at else None,
         "total_score_pct": float(review.total_score_pct) if review.total_score_pct is not None else None,
@@ -553,15 +552,24 @@ def _review_summary_to_dict(review) -> dict:
 @router.get("/api/reviews")
 async def list_reviews(year: int, platform: str | None = None, project_id: str | None = None, user=Depends(get_current_user)):
     async with new_session() as session:
-        reviews = await crud.list_reviews(session, year=year, platform=platform, project_id=project_id)
+        scope = await visible_project_ids(session, user)
+        reviews = await crud.list_reviews(session, year=year, platform=platform, project_id=project_id, project_ids=scope)
     return {"reviews": [_review_summary_to_dict(review) for review in reviews]}
 
 
 @router.get("/api/reviews/years")
 async def list_review_years(user=Depends(get_current_user)):
     async with new_session() as session:
-        years = await crud.list_review_years(session)
+        scope = await visible_project_ids(session, user)
+        years = await crud.list_review_years(session, project_ids=scope)
     return {"years": years}
+
+
+@router.get("/api/my/reviews")
+async def list_my_reviews(user=Depends(require_permission("my_reviews.view"))):
+    async with new_session() as session:
+        reviews = await crud.list_reviews_for_reviewer(session, user.id)
+    return {"reviews": [_review_summary_to_dict(review) for review in reviews]}
 
 
 @router.post("/api/reviews/upload")
@@ -569,7 +577,7 @@ async def upload_completed_review(
     file: UploadFile = File(...),
     projectId: str = Form(...),
     platform: str = Form(...),
-    user=Depends(get_current_user),
+    user=Depends(require_permission("reviews.create")),
 ):
     if not (file.filename or "").lower().endswith(".xlsx"):
         raise HTTPException(status_code=400, detail="File must be an .xlsx workbook.")
@@ -649,7 +657,7 @@ async def upload_completed_review(
 async def clause_preview(
     platform: str = Form(...),
     file: UploadFile | None = File(None),
-    user=Depends(require_roles("admin", "reviewer")),
+    user=Depends(require_permission("reviews.create")),
 ):
     template_bytes, _ = await _resolve_excel_template(file, platform)
     if template_bytes is None:
@@ -698,7 +706,7 @@ async def clause_preview(
 
 
 @router.get("/api/reviews/{review_id}/progress")
-async def get_progress(review_id: str, user=Depends(get_current_user)):
+async def get_progress(review_id: str, user=Depends(require_permission("reviews.create"))):
     state = _reviews.get(review_id)
     if state is None:
         raise HTTPException(status_code=404, detail="Unknown review_id")
@@ -752,19 +760,30 @@ def _review_to_dict(review) -> dict:
     }
 
 
+async def _get_visible_review(session, user, review_id):
+    review = await crud.get_review_by_id(session, review_id)
+    if review is None or not await can_view_review(session, user, review):
+        raise HTTPException(status_code=404, detail="Review not found")
+    return review
+
+
 @router.get("/api/reviews/{review_id}")
 async def get_review(review_id: str, user=Depends(get_current_user)):
     async with new_session() as session:
-        review = await crud.get_review_by_id(session, review_id)
-    if review is None:
-        raise HTTPException(status_code=404, detail="Review not found")
+        review = await _get_visible_review(session, user, review_id)
     return _review_to_dict(review)
 
 
 @router.patch("/api/reviews/{review_id}")
-async def update_review(review_id: str, body: UpdateReviewRequest, user=Depends(require_roles("admin", "reviewer"))):
+async def update_review(review_id: str, body: UpdateReviewRequest, user=Depends(get_current_user)):
     if body.status is not None and body.status not in ALLOWED_REVIEW_STATUSES:
         raise HTTPException(status_code=400, detail=f"status must be one of {sorted(ALLOWED_REVIEW_STATUSES)}")
+
+    async with new_session() as session:
+        existing = await _get_visible_review(session, user, review_id)
+    is_assigned = existing.reviewer_id == user.id
+    if not (can(user, "reviews.edit") or (can(user, "reviews.finalize_own") and is_assigned)):
+        raise HTTPException(status_code=403, detail="You don't have permission to do this")
 
     category_scores = None
     total_score_pct = None
@@ -781,7 +800,7 @@ async def update_review(review_id: str, body: UpdateReviewRequest, user=Depends(
 
 
 @router.delete("/api/reviews/{review_id}", status_code=204)
-async def delete_review(review_id: str, user=Depends(require_roles("admin"))):
+async def delete_review(review_id: str, user=Depends(require_permission("reviews.delete"))):
     async with new_session() as session:
         review = await crud.get_review_by_id(session, review_id)
         if review is None:
@@ -793,32 +812,42 @@ async def delete_review(review_id: str, user=Depends(require_roles("admin"))):
     return Response(status_code=204)
 
 
+REVIEWER_ROLES = PERMISSIONS["reviews.finalize_own"]
+
+
 @router.get("/api/reviewers")
-async def list_reviewers(user=Depends(get_current_user)):
+async def list_reviewers(user=Depends(require_permission("reviews.assign_reviewer"))):
     async with new_session() as session:
-        candidates = await crud.list_reviewer_candidates(session)
-    return {"reviewers": [{"id": candidate.id, "email": candidate.email} for candidate in candidates]}
+        candidates = await crud.list_reviewer_candidates(session, REVIEWER_ROLES)
+    return {"reviewers": [{"id": c.id, "email": c.email, "name": c.name} for c in candidates]}
 
 
 @router.patch("/api/reviews/{review_id}/reviewer")
-async def update_review_reviewer(review_id: str, body: UpdateReviewerRequest, user=Depends(get_current_user)):
+async def update_review_reviewer(
+    review_id: str, body: UpdateReviewerRequest, user=Depends(require_permission("reviews.assign_reviewer")),
+):
     if body.reviewer_id is not None:
         async with new_session() as session:
             candidate = await crud.get_user_by_id(session, body.reviewer_id)
-        if candidate is None or not candidate.is_active or candidate.role not in ("admin", "reviewer"):
-            raise HTTPException(status_code=400, detail="reviewer_id must be an active admin or reviewer account.")
+        if candidate is None or not candidate.is_active or candidate.role not in REVIEWER_ROLES:
+            raise HTTPException(status_code=400, detail="reviewer_id must be an active reviewer, management or admin account.")
 
     async with new_session() as session:
         review = await crud.set_review_reviewer(session, review_id, body.reviewer_id)
-    if review is None:
-        raise HTTPException(status_code=404, detail="Review not found")
+        if review is None:
+            raise HTTPException(status_code=404, detail="Review not found")
+        visible = await can_view_review(session, user, review)
+    # Assigning needs only the capability, but the report itself stays behind
+    # the same visibility rule as GET /api/reviews/{id}.
+    if not visible:
+        return {"id": review.id, "reviewer_id": review.reviewer_id}
     return _review_to_dict(review)
 
 
 @router.get("/api/reviews/{review_id}/download")
 async def download_review(review_id: str, user=Depends(get_current_user)):
     state = _reviews.get(review_id)
-    if state is not None and state["download_path"] is not None:
+    if state is not None and state["download_path"] is not None and can(user, "reviews.create"):
         path = Path(state["download_path"])
         if not path.exists():
             raise HTTPException(status_code=404, detail="Result already downloaded or expired")
@@ -835,7 +864,8 @@ async def download_review(review_id: str, user=Depends(get_current_user)):
     # to download the same persisted review more than once.
     async with new_session() as session:
         review = await crud.get_review_by_id(session, review_id)
-    if review is None or review.workbook_path is None:
+        visible = review is not None and await can_view_review(session, user, review)
+    if not visible or review.workbook_path is None:
         raise HTTPException(status_code=404, detail="Result not available")
     persisted_path = Path(review.workbook_path)
     if not persisted_path.exists():

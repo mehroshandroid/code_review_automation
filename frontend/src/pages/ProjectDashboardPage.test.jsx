@@ -2,6 +2,8 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import ProjectDashboardPage from "./ProjectDashboardPage";
+import { AuthContext } from "../context/AuthContext";
+import { userWithRole } from "../testUtils/authUsers";
 import { getProjects, getReviews, getReviewYears, updateProject, uploadCompletedReview } from "../services/api";
 
 jest.mock("../services/api", () => ({
@@ -129,10 +131,12 @@ test("a successful upload jumps the dashboard filters to the uploaded review and
   expect(screen.getByRole("button", { name: "Year" })).toHaveTextContent(String(uploadedYear));
 });
 
-test("renders a Settings link pointing at /settings", async () => {
+test("offers Settings from the account menu", async () => {
+  const user = userEvent.setup();
   renderDashboard();
 
-  expect(await screen.findByRole("link", { name: /settings/i })).toHaveAttribute("href", "/settings");
+  await user.click(await screen.findByRole("button", { name: /account menu/i }));
+  expect(screen.getByRole("menuitem", { name: "Settings" })).toBeInTheDocument();
 });
 
 test("renders the review-insights chat widget", async () => {
@@ -165,4 +169,35 @@ test("renaming a project updates it in the Project dropdown", async () => {
   await user.click(screen.getByRole("button", { name: /save/i }));
 
   await waitFor(() => expect(screen.getByRole("button", { name: "Project" })).toHaveTextContent("Payments Team"));
+});
+
+
+function renderAsPm(pmProjects) {
+  getProjects.mockResolvedValue(pmProjects);
+  getReviewYears.mockResolvedValue([]);
+  return render(
+    <AuthContext.Provider value={{ user: userWithRole("project_manager"), loading: false, login: jest.fn(), logout: jest.fn() }}>
+      <MemoryRouter><ProjectDashboardPage /></MemoryRouter>
+    </AuthContext.Provider>
+  );
+}
+
+test("PM does not see start/upload actions or rename", async () => {
+  renderAsPm([{ id: "p1", name: "Alpha" }]);
+  expect(await screen.findByRole("button", { name: "Project" })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Start review" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Upload review" })).not.toBeInTheDocument();
+});
+
+test("shows the unassigned message for a PM with no projects", async () => {
+  renderAsPm([]);
+  expect(await screen.findByText("No projects assigned yet — contact your admin.")).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Project" })).not.toBeInTheDocument();
+});
+
+test("admin with no projects still sees the filters, not the PM message", async () => {
+  getProjects.mockResolvedValue([]);
+  renderDashboard();
+  expect(await screen.findByRole("button", { name: "Project" })).toBeInTheDocument();
+  expect(screen.queryByText("No projects assigned yet — contact your admin.")).not.toBeInTheDocument();
 });

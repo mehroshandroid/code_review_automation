@@ -35,7 +35,7 @@ test("renders the upload form disabled with a coming-soon button label", () => {
   expect(screen.getByRole("button", { name: "Coming soon" })).toBeDisabled();
 });
 
-test("renders a Home link back to /", () => {
+test("renders the shared nav with the brand linking home", () => {
   renderPlaceholder();
-  expect(screen.getByText("← Home")).toHaveAttribute("href", "/");
+  expect(screen.getByRole("link", { name: /codeassure/i })).toHaveAttribute("href", "/");
 });
