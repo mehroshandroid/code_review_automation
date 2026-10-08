@@ -7,6 +7,7 @@ import StartReviewDialog from "../components/StartReviewDialog";
 import UploadReviewDialog from "../components/UploadReviewDialog";
 import ChatWidget from "../components/ChatWidget";
 import AppNav from "../components/AppNav";
+import PendingCyclesPanel from "../components/PendingCyclesPanel";
 import { getProjects, getReviews, getReviewYears } from "../services/api";
 import { useCan } from "../context/AuthContext";
 
@@ -87,6 +88,8 @@ export default function ProjectDashboardPage() {
             </div>
           )}
         </header>
+
+        {can("cycles.submit_urls") && can("dashboard.view_assigned") && <PendingCyclesPanel />}
 
         {can("dashboard.view_assigned") && projectsLoaded && projects.length === 0 ? (
           <div className="card" style={{ padding: 20 }}>

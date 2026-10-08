@@ -277,3 +277,18 @@ a:hover { color: var(--color-brand-coral); }
 .quarter-dot { color: var(--color-text-muted); }
 .quarter-card-meta { font-size: 12px; color: var(--color-text-muted); }
 .quarter-card-action { margin-top: auto; align-self: flex-start; }
+
+/* — automated cycle runs — */
+.pending-cycles { padding: 20px; display: grid; gap: var(--space-3); border-color: color-mix(in srgb, #e0b400 45%, var(--color-divider)); }
+.pending-cycle { display: grid; gap: var(--space-2); }
+.pending-cycle-head { display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-2); flex-wrap: wrap; }
+.pending-cycle-title { font-weight: 600; }
+.assignment-url-form { display: flex; gap: var(--space-2); flex-wrap: wrap; align-items: center; }
+.assignment-url-form .input:first-child { flex: 1; min-width: 220px; }
+.run-badge { font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; white-space: nowrap; display: inline-block; }
+.run-badge--waiting-for-url { background: var(--color-surface); color: var(--color-text-muted); border: 1px solid var(--color-divider); }
+.run-badge--queued { background: color-mix(in srgb, #e0b400 18%, var(--color-bg)); color: #6b5300; }
+.run-badge--running { background: color-mix(in srgb, var(--color-accent) 15%, var(--color-bg)); color: var(--color-accent); }
+.run-badge--completed { background: color-mix(in srgb, #2e9e5b 15%, var(--color-bg)); color: #1f6e3f; }
+.run-badge--failed { background: color-mix(in srgb, var(--color-brand-coral) 15%, var(--color-bg)); color: var(--color-brand-coral); }
+.run-error { margin: 4px 0 0; font-size: 12px; color: var(--color-brand-coral); }
