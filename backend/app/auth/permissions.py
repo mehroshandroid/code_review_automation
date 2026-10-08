@@ -36,6 +36,8 @@ PERMISSIONS: dict[str, frozenset[str]] = {
     "chat.use": frozenset({ADMIN, MANAGEMENT, PROJECT_MANAGER}),
     "cycles.view": _PROJECT_STAFF,
     "cycles.initiate": _PROJECT_STAFF,
+    "cycles.submit_urls": frozenset({ADMIN, MANAGEMENT, COORDINATOR, PROJECT_MANAGER}),
+    "settings.devops_pat": frozenset({ADMIN}),
 }
 
 HOME_PATHS: dict[str, str] = {
