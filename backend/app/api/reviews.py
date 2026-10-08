@@ -92,6 +92,8 @@ def _new_review_state() -> dict:
         "stats": {},
         "download_path": None,
         "error": None,
+        # "url" when fixing the repo URL is the remedy (bad/missing repo, wrong platform); else unset.
+        "error_kind": None,
         "warnings": [],
         "test_coverage": None,
         "secrets_found": [],
@@ -367,6 +369,8 @@ async def _run_review(
                 state["phase"] = "error"
                 state["message"] = "Review failed"
                 state["error"] = fetch_result["message"]
+                if fetch_result["status"] in ("invalid_url", "not_found"):
+                    state["error_kind"] = "url"
                 return
             zip_path.write_bytes(fetch_result["content"])
             stats["fetch_time_ms"] = int((time.monotonic() - t_fetch) * 1000)
@@ -395,6 +399,7 @@ async def _run_review(
             state["phase"] = "error"
             state["message"] = "Review failed"
             state["error"] = analysis.fatal_error
+            state["error_kind"] = "url"
             return
         state["warnings"] = analysis.structure_warnings + [w["issue"] for w in analysis.version_warnings]
         state["test_coverage"] = analysis.test_coverage
