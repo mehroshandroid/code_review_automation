@@ -332,3 +332,9 @@ a:hover { color: var(--color-brand-coral); }
 .stage-label { color: var(--color-text); }
 .stage-time { color: var(--color-text-muted); white-space: nowrap; }
 .stage--pending .stage-label { color: var(--color-text-muted); }
+
+.email-status { font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; text-transform: capitalize; }
+.email-status--sent, .email-status--logged { background: color-mix(in srgb, #2e9e5b 15%, var(--color-bg)); color: #1f6e3f; }
+.email-status--pending { background: color-mix(in srgb, #e0b400 18%, var(--color-bg)); color: #6b5300; }
+.email-status--failed { background: color-mix(in srgb, var(--color-brand-coral) 15%, var(--color-bg)); color: var(--color-brand-coral); }
+.email-status--skipped { background: var(--color-surface); color: var(--color-text-muted); }
