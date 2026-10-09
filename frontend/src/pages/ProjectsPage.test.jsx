@@ -162,3 +162,15 @@ test("if saving platforms fails after creating, the project still appears and th
   expect(screen.queryByLabelText("Project name")).not.toBeInTheDocument();
   expect(screen.getByText("Gamma was created, but its platforms couldn't be saved. Use Edit to set them.")).toBeInTheDocument();
 });
+
+test("a PM who already manages another project can be added to a second one", async () => {
+  const user = userEvent.setup();
+  setProjectManagers.mockResolvedValue({ ...projects[1], manager_ids: ["pm1"] });
+  renderAs("coordinator");
+  await screen.findByText("Beta");
+  await user.click(within(row("Beta")).getByRole("button", { name: "Assign PMs for Beta" }));
+  await user.click(screen.getByRole("button", { name: "Project managers" }));
+  await user.click(screen.getByRole("checkbox", { name: "Pat" }));
+  await user.click(screen.getByRole("button", { name: "Save" }));
+  await waitFor(() => expect(setProjectManagers).toHaveBeenCalledWith("p2", ["pm1"]));
+});
