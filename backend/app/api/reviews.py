@@ -335,6 +335,12 @@ async def create_review(
     return {"review_id": review_id, "status": "processing"}
 
 
+def _extract_zip(zip_path: Path, extract_dir: Path) -> None:
+    extract_dir.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(zip_path) as zf:
+        zf.extractall(extract_dir)
+
+
 async def _run_review(
     review_id: str,
     work_dir: Path,
@@ -383,9 +389,9 @@ async def _run_review(
         t0 = time.monotonic()
         state["phase"] = "extracting"
         state["message"] = "Extracting project files..."
-        extract_dir.mkdir(parents=True, exist_ok=True)
-        with zipfile.ZipFile(zip_path) as zf:
-            zf.extractall(extract_dir)
+        # Blocking file work runs in a thread (asyncio.to_thread) so the API stays
+        # responsive while a large repository is unzipped and analysed.
+        await asyncio.to_thread(_extract_zip, zip_path, extract_dir)
         stats["ingest_time_ms"] = int((time.monotonic() - t0) * 1000)
         state["progress"] = 20
 
@@ -398,7 +404,7 @@ async def _run_review(
             analyzer = dotnet_analyzer
         else:
             analyzer = android_analyzer
-        analysis = analyzer.analyze_project(extract_dir)
+        analysis = await asyncio.to_thread(analyzer.analyze_project, extract_dir)
         if analysis.fatal_error:
             state["status"] = "error"
             state["phase"] = "error"
@@ -412,9 +418,9 @@ async def _run_review(
         code_context_max_chars = (
             CODE_CONTEXT_MAX_CHARS_OLLAMA if llm_provider == "ollama" else CODE_CONTEXT_MAX_CHARS_AZURE
         )
-        code_context = analyzer.gather_code_context(extract_dir, max_chars=code_context_max_chars)
+        code_context = await asyncio.to_thread(analyzer.gather_code_context, extract_dir, max_chars=code_context_max_chars)
         state["code_context"] = code_context
-        template_ws = load_workbook(template_path).active
+        template_ws = (await asyncio.to_thread(load_workbook, template_path)).active
         categories, sub_criteria_descriptions = discover_structure(template_ws)
         state["category_scores"] = [
             {
@@ -505,7 +511,8 @@ async def _run_review(
         state["progress"] = 95
         state["message"] = "Populating review document..."
         output_path = work_dir / "output.xlsx"
-        generate_review_excel(
+        await asyncio.to_thread(
+            generate_review_excel,
             template_path,
             output_path,
             scores_by_category,

@@ -1,3 +1,4 @@
+import asyncio
 import io
 import tempfile
 import zipfile
@@ -1178,3 +1179,35 @@ async def test_run_review_marks_analyzer_fatal_error_as_url_fixable(monkeypatch)
     monkeypatch.setattr(reviews_module.android_analyzer, "analyze_project", lambda path: _Fatal())
     await _run_review(review_id, work_dir, zip_path, template_path, zip_valid=True, template_valid=True, project_name="r")
     assert _reviews[review_id]["error_kind"] == "url"
+
+
+async def test_slow_pipeline_steps_do_not_block_the_backend(monkeypatch):
+    # The pipeline runs inside the API process; blocking file work (unzip, project
+    # analysis, workbook I/O) must run off the event loop so other requests keep flowing.
+    import time
+
+    review_id = "nonblocking-check"
+    work_dir = Path(tempfile.mkdtemp(prefix=f"review_{review_id}_"))
+    zip_path = work_dir / "android.zip"
+    template_path = work_dir / "template.xlsx"
+    zip_path.write_bytes(_build_zip_bytes())
+    template_path.write_bytes(_build_xlsx_bytes())
+    _reviews[review_id] = _new_review_state()
+
+    class _Fatal:
+        fatal_error = "stop after analysis"
+
+    def slow_analysis(path):
+        time.sleep(1.0)  # stands in for scanning a large repository
+        return _Fatal()
+
+    monkeypatch.setattr(reviews_module.android_analyzer, "analyze_project", slow_analysis)
+    review = asyncio.create_task(_run_review(
+        review_id, work_dir, zip_path, template_path, zip_valid=True, template_valid=True, project_name="r",
+    ))
+    started = time.monotonic()
+    await asyncio.sleep(0.05)  # another request's turn: the review runs its slow step meanwhile
+    waited = time.monotonic() - started
+    await review
+    assert waited < 0.5, f"the event loop was blocked for {waited:.2f}s"
+    assert _reviews[review_id]["error"] == "stop after analysis"
