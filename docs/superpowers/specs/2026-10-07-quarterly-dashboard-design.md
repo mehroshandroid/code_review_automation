@@ -54,6 +54,10 @@ Part 3 adds emails.
 
 - **Quarter dates:** Q1 runs Jan 1–Mar 31, Q2 Apr 1–Jun 30, Q3 Jul 1–Sep 30, and Q4 Oct 1–Dec 31. A quarter **has ended** when `today` is after its last day.
 - **Covered:** a platform is covered when at least one review of the project on that platform has `status <> 'error'` and `created_at` within the quarter.
+- **Cycle reviews count for their cycle's quarter (added 2026-10-09):**
+  - A review produced for a quarter's cycle (an assignment's `review_id`) counts **only** for that cycle's quarter, whatever date it ran. A Q3 catch-up review that runs in October completes Q3 and does not count toward Q4.
+  - All other reviews (manual runs and uploaded sheets) still count by their `created_at` date.
+  - Each covered platform carries `late: true` when its review is dated after the quarter's end. A quarter completed late is `done` with `late: true`.
 
 The rules are checked in this order:
 

@@ -52,14 +52,27 @@ async def _quarter_entries(session, projects, year: int, today: date) -> dict[st
     users = await crud.get_users_by_ids(session, user_ids)
     cycle_by_key = {(c.project_id, c.quarter): c for c in cycles}
     first_reviews = await crud.get_first_review_dates(session, project_ids)
+    # A review run for a quarter's cycle counts only for that quarter, whatever date it ran
+    # (catching up a past quarter); every other review counts by its own date.
+    cycle_review_ids = await crud.list_cycle_review_ids(session, project_ids)
     # One pass over the year's reviews: the newest review per (project, quarter, platform).
     latest_review = {}
     for review in reviews:  # newest first
+        if review.id in cycle_review_ids:
+            continue
         platform = canonical_platform(review.platform)
         reviewed_on = _as_date(review.created_at)
         key = (review.project_id, (reviewed_on.month - 1) // 3 + 1, platform)
         if platform is not None and key not in latest_review:
             latest_review[key] = review
+    linked = {row.id: row for row in await crud.get_review_coverage_rows_by_ids(
+        session, [a.review_id for rows in assignments.values() for a in rows],
+    )}
+    for cycle in cycles:
+        for assignment in assignments[cycle.id]:
+            review = linked.get(assignment.review_id)
+            if review is not None:
+                latest_review[(cycle.project_id, cycle.quarter, canonical_platform(assignment.platform))] = review
 
     entries: dict[str, list[dict]] = {}
     for project in projects:
@@ -82,14 +95,19 @@ async def _quarter_entries(session, projects, year: int, today: date) -> dict[st
             covered = set(latest_by_platform)
             cycle = cycle_by_key.get((project.id, quarter))
             status = quarter_status(tracked_since, platforms, covered, cycle is not None, year, quarter, today)
+            late_platforms = {p for p, review in latest_by_platform.items() if _as_date(review.created_at) > end}
             project_quarters.append({
                 "quarter": quarter,
                 "start": start.isoformat(),
                 "end": end.isoformat(),
                 "status": status,
-                "late": is_late(status, year, quarter, today),
+                # Still running past the quarter's end, or completed only after it ended.
+                "late": is_late(status, year, quarter, today) or (status == "done" and bool(late_platforms)),
                 "covered": [
-                    {"platform": p, "review_id": latest_by_platform[p].id, "reviewed_at": latest_by_platform[p].created_at.isoformat()}
+                    {
+                        "platform": p, "review_id": latest_by_platform[p].id,
+                        "reviewed_at": latest_by_platform[p].created_at.isoformat(), "late": p in late_platforms,
+                    }
                     for p in sort_platforms(covered)
                 ],
                 "missing": [p for p in platforms if p not in covered],

@@ -764,3 +764,26 @@ async def get_review_approved_times(session: AsyncSession, review_ids: list[str]
         return {}
     result = await session.execute(select(PlatformReview.id, PlatformReview.approved_at).where(PlatformReview.id.in_(ids)))
     return {review_id: approved_at for review_id, approved_at in result.all()}
+
+
+async def list_cycle_review_ids(session: AsyncSession, project_ids: list[str]) -> set[str]:
+    """Reviews that belong to a quarterly cycle (any year) -- they count for that cycle's quarter, not their date's."""
+    if not project_ids:
+        return set()
+    result = await session.execute(
+        select(ReviewCycleAssignment.review_id)
+        .join(ReviewCycle, ReviewCycle.id == ReviewCycleAssignment.cycle_id)
+        .where(ReviewCycle.project_id.in_(project_ids), ReviewCycleAssignment.review_id.is_not(None))
+    )
+    return {review_id for (review_id,) in result.all()}
+
+
+async def get_review_coverage_rows_by_ids(session: AsyncSession, review_ids: list[str]) -> list:
+    ids = [review_id for review_id in set(review_ids) if review_id]
+    if not ids:
+        return []
+    result = await session.execute(
+        select(PlatformReview.id, PlatformReview.project_id, PlatformReview.platform, PlatformReview.created_at)
+        .where(PlatformReview.id.in_(ids), PlatformReview.status != "error")
+    )
+    return list(result.all())

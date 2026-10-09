@@ -37,7 +37,7 @@ export default function QuarterCard({ entry, platforms, canInitiate, onInitiate,
                 {entry.cycle && assignmentByPlatform[platform] && (
                   <>{" "}<StageDots assignment={assignmentByPlatform[platform]} initiatedAt={entry.cycle.initiated_at} /></>
                 )}
-                {covered && <span className="quarter-card-meta"> · {shortDate(covered.reviewed_at)}</span>}
+                {covered && <span className="quarter-card-meta"> · {shortDate(covered.reviewed_at)}{covered.late ? " (late)" : ""}</span>}
                 {reviewerByPlatform[platform] && <span className="quarter-card-meta"> · {reviewerByPlatform[platform]}</span>}
                 {!covered && assignmentByPlatform[platform]?.run_status && assignmentByPlatform[platform].run_status !== "completed" && (
                   <span className="quarter-card-meta"> · {assignmentStatusLabel(assignmentByPlatform[platform])}</span>

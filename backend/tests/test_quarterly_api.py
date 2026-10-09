@@ -195,3 +195,49 @@ def test_initiating_an_overdue_quarter_turns_it_in_progress_and_late(db):
     quarters = _quarters(client.get("/api/quarterly?year=2026").json())
     assert quarters[3]["status"] == "in_progress" and quarters[3]["late"] is True
     assert quarters[4]["late"] is False and quarters[1]["late"] is False
+
+
+async def _link(maker, cycle_id, platform, review_id):
+    async with maker() as s:
+        a = await crud.get_assignment(s, cycle_id, platform)
+        await crud.update_assignment(s, a, run_status="completed", review_id=review_id)
+
+
+async def test_late_cycle_review_counts_for_its_own_quarter_only(db):
+    # Q3 catch-up: the iOS review ran on 5 Oct (in Q4's dates) but belongs to the Q3 cycle.
+    async with db() as s:
+        await crud.create_cycle(s, "q3", "p1", 2026, 3, None, [("Android", "rev"), ("iOS", "rev")])
+        await _review(s, "i3late", "p1", "iOS", datetime(2026, 10, 5, tzinfo=timezone.utc))
+    await _link(db, "q3", "iOS", "i3late")
+    _as("coordinator")
+    quarters = _quarters(client.get("/api/quarterly?year=2026").json())
+    q3, q4 = quarters[3], quarters[4]
+    assert q3["status"] == "done" and q3["late"] is True and q3["missing"] == []
+    ios = next(c for c in q3["covered"] if c["platform"] == "iOS")
+    assert ios["review_id"] == "i3late" and ios["late"] is True
+    assert next(c for c in q3["covered"] if c["platform"] == "Android")["late"] is False
+    assert "iOS" in q4["missing"] and q4["status"] == "not_started"
+
+
+async def test_cycle_review_that_runs_next_year_still_counts_for_its_quarter(db, monkeypatch):
+    monkeypatch.setattr(quarterly_module, "_today", lambda: date(2027, 1, 15))
+    async with db() as s:
+        await crud.create_cycle(s, "q4", "p1", 2026, 4, None, [("Android", "rev"), ("iOS", "rev")])
+        await _review(s, "a4late", "p1", "Android", datetime(2027, 1, 10, tzinfo=timezone.utc))
+    await _link(db, "q4", "Android", "a4late")
+    _as("coordinator")
+    q4_2026 = _quarters(client.get("/api/quarterly?year=2026").json())[4]
+    assert [c["review_id"] for c in q4_2026["covered"]] == ["a4late"]
+    q1_2027 = _quarters(client.get("/api/quarterly?year=2027").json())[1]
+    assert "Android" in q1_2027["missing"]
+
+
+async def test_on_time_cycle_review_is_not_late(db):
+    async with db() as s:
+        await crud.create_cycle(s, "q3", "p1", 2026, 3, None, [("Android", "rev"), ("iOS", "rev")])
+        await _review(s, "i3ok", "p1", "iOS", datetime(2026, 9, 20, tzinfo=timezone.utc))
+    await _link(db, "q3", "iOS", "i3ok")
+    _as("coordinator")
+    q3 = _quarters(client.get("/api/quarterly?year=2026").json())[3]
+    assert q3["status"] == "done" and q3["late"] is False
+    assert all(c["late"] is False for c in q3["covered"])

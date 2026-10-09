@@ -90,3 +90,14 @@ test("no stage dots without a cycle", () => {
   const { container } = render(<QuarterCard entry={base} platforms={["Android", "iOS"]} canInitiate={false} onInitiate={jest.fn()} />);
   expect(container.querySelectorAll(".stage-dots")).toHaveLength(0);
 });
+
+test("a platform reviewed after the quarter ended is marked late", () => {
+  const entry = { ...base, status: "done", late: true, missing: [], covered: [
+    { platform: "Android", review_id: "a3", reviewed_at: "2026-08-01T00:00:00Z", late: false },
+    { platform: "iOS", review_id: "i3", reviewed_at: "2026-10-08T00:00:00Z", late: true },
+  ] };
+  render(<QuarterCard entry={entry} platforms={["Android", "iOS"]} canInitiate={false} onInitiate={jest.fn()} />);
+  expect(screen.getByText(/iOS/).closest("li")).toHaveTextContent("(late)");
+  expect(screen.getByText(/Android/).closest("li")).not.toHaveTextContent("(late)");
+  expect(screen.getByText("Late")).toBeInTheDocument();
+});

@@ -4,7 +4,7 @@ CodeAssure (formerly "Code Review Automation") is an AI-assisted tool for review
 
 This file records what has been built and in what order, so a future developer can see what exists and why. For the design behind each feature, read the specs in `docs/superpowers/specs/`. Each spec has a matching step-by-step plan in `docs/superpowers/plans/`.
 
-_Last updated: 2026-10-08_
+_Last updated: 2026-10-09_
 
 ---
 
@@ -172,6 +172,12 @@ Spec: `docs/superpowers/specs/2026-10-08-email-and-stage-tracker-design.md`. Pla
 - **Stage tracker:** each platform has four stages: Initiated → URL added → AI review done → Reviewer feedback. A stage shows green when done, orange while pending, and coral if the AI run failed. Quarter cards show these as dots, with the time on hover. The Manage dialog shows the full timeline, with **Remind PM** and **Remind reviewer** buttons (manual only) and a "Reminded … ago" note.
 - **Settings → Email (admin only):** shows the delivery mode and any setup problems, has a **Send test email** button, and lists the 50 most recent emails with their status and error, plus **Retry** for failed ones.
 - **To turn real email on:** the network team creates a sender mailbox and grants either Graph `Mail.Send` (restricted to that mailbox by an application access policy) or SMTP AUTH. Then set the variables above and restart the backend.
+
+### Phase 13: Late catch-up reviews count for their own quarter (2026-10-09). Branch: `cycle-quarter-coverage`
+
+- **The rule:** a review started from a quarter's cycle now counts **only for that quarter**, even if it runs later. For example, a Q3 catch-up review run on 8 Oct completes Q3 and no longer counts toward Q4. The review keeps its real date; nothing is backdated.
+- **On the card:** the platform reads "reviewed 8 Oct (late)", and the quarter turns green with the **Late** marker.
+- **Unchanged:** manual reviews and uploaded sheets still count by the date of the review.
 
 ---
 
