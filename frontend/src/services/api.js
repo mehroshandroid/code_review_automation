@@ -372,3 +372,17 @@ export async function retryEmail(id) {
   const response = await axios.post(`${API_BASE_URL}/email/outbox/${id}/retry`);
   return response.data;
 }
+
+export async function submitAssignmentZip(cycleId, platform, file) {
+  const form = new FormData();
+  form.append("file", file);
+  const response = await axios.put(`${assignmentPath(cycleId, platform)}/zip`, form);
+  return response.data;
+}
+
+export async function rerunAssignmentZip(cycleId, platform, file) {
+  const form = new FormData();
+  form.append("file", file);
+  const response = await axios.post(`${assignmentPath(cycleId, platform)}/rerun-zip`, form);
+  return response.data;
+}

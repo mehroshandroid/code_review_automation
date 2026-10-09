@@ -338,3 +338,6 @@ a:hover { color: var(--color-brand-coral); }
 .email-status--pending { background: color-mix(in srgb, #e0b400 18%, var(--color-bg)); color: #6b5300; }
 .email-status--failed { background: color-mix(in srgb, var(--color-brand-coral) 15%, var(--color-bg)); color: var(--color-brand-coral); }
 .email-status--skipped { background: var(--color-surface); color: var(--color-text-muted); }
+
+/* Compact buttons for in-row toggles (e.g. DevOps URL | Upload .zip). */
+.btn-sm { padding: 4px 10px; font-size: 12px; }

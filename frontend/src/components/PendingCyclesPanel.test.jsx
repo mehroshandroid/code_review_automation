@@ -2,9 +2,9 @@ import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import PendingCyclesPanel from "./PendingCyclesPanel";
-import { getMyCycles, submitAssignmentUrl } from "../services/api";
+import { getMyCycles, submitAssignmentUrl, submitAssignmentZip } from "../services/api";
 
-jest.mock("../services/api", () => ({ ...jest.requireActual("../services/api"), getMyCycles: jest.fn(), submitAssignmentUrl: jest.fn() }));
+jest.mock("../services/api", () => ({ ...jest.requireActual("../services/api"), getMyCycles: jest.fn(), submitAssignmentUrl: jest.fn(), submitAssignmentZip: jest.fn() }));
 
 const base = { reviewer_id: "r", reviewer_name: "Rae", devops_url: null, devops_branch: null, run_phase: null, run_progress: null,
   run_error: null, failure_kind: null, review_id: null, review_status: null, attempts: 0, queue_position: null };
@@ -70,4 +70,28 @@ test("refreshes every 10s while something is queued or running", async () => {
   await act(async () => { jest.advanceTimersByTime(10000); });
   expect(getMyCycles).toHaveBeenCalledTimes(2);
   jest.useRealTimers();
+});
+
+test("a PM can upload a source zip instead of a URL", async () => {
+  const user = userEvent.setup();
+  getMyCycles.mockResolvedValue(cycle([{ ...base, platform: "Android", run_status: "waiting_for_url" }]));
+  submitAssignmentZip.mockResolvedValue({ ...base, platform: "Android", run_status: "queued", queue_position: 1, source_type: "zip", source_zip_name: "android-app.zip" });
+  renderPanel();
+  await user.click(await screen.findByRole("button", { name: "Upload .zip" }));
+  expect(screen.queryByLabelText("DevOps URL for Android")).not.toBeInTheDocument();
+  const upload = screen.getByRole("button", { name: "Upload & queue" });
+  expect(upload).toBeDisabled();
+  const file = new File(["PK"], "android-app.zip", { type: "application/zip" });
+  await user.upload(screen.getByLabelText("Source zip for Android"), file);
+  await user.click(upload);
+  await waitFor(() => expect(submitAssignmentZip).toHaveBeenCalledWith("c1", "Android", file));
+  expect(await screen.findByText("Queued · #1")).toBeInTheDocument();
+  expect(screen.getByText("Zip: android-app.zip")).toBeInTheDocument();
+});
+
+test("a failed zip run offers the zip upload again", async () => {
+  getMyCycles.mockResolvedValue(cycle([{ ...base, platform: "Android", run_status: "failed", source_type: "zip", source_zip_name: "old.zip", run_error: "This doesn't look like an Android project." }]));
+  renderPanel();
+  expect(await screen.findByRole("button", { name: "Upload & retry" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Upload .zip" })).toHaveAttribute("aria-pressed", "true");
 });

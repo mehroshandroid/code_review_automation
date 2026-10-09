@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import AssignmentStatusBadge from "./AssignmentStatusBadge";
 import { relativeTime, StageTimeline } from "./StageTracker";
-import { changeAssignmentReviewer, getReviewers, remindAssignment, rerunAssignment, retryAssignment } from "../services/api";
+import { changeAssignmentReviewer, getReviewers, remindAssignment, rerunAssignment, rerunAssignmentZip, retryAssignment } from "../services/api";
 
 export default function ManageCycleDialog({ project, year, entry, onChanged, onClose }) {
   const cycleId = entry.cycle.id;
@@ -11,6 +11,8 @@ export default function ManageCycleDialog({ project, year, entry, onChanged, onC
   const [rerunFor, setRerunFor] = useState(null);
   const [rerunUrl, setRerunUrl] = useState("");
   const [rerunBranch, setRerunBranch] = useState("");
+  const [rerunMode, setRerunMode] = useState("url");
+  const [rerunZip, setRerunZip] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -39,7 +41,10 @@ export default function ManageCycleDialog({ project, year, entry, onChanged, onC
 
   async function handleRerun(event) {
     event.preventDefault();
-    if (await act(() => rerunAssignment(cycleId, rerunFor, { devopsUrl: rerunUrl.trim(), devopsBranch: rerunBranch.trim() }))) {
+    const request = rerunMode === "zip"
+      ? () => rerunAssignmentZip(cycleId, rerunFor, rerunZip)
+      : () => rerunAssignment(cycleId, rerunFor, { devopsUrl: rerunUrl.trim(), devopsBranch: rerunBranch.trim() });
+    if (await act(request)) {
       setRerunFor(null);
     }
   }
@@ -59,7 +64,9 @@ export default function ManageCycleDialog({ project, year, entry, onChanged, onC
                     <tr key={assignment.platform}>
                       <td>
                         <div style={{ fontWeight: 600 }}>{assignment.platform}</div>
-                        <div className="quarter-card-meta" style={{ wordBreak: "break-all" }}>{assignment.devops_url || "No URL yet"}</div>
+                        <div className="quarter-card-meta" style={{ wordBreak: "break-all" }}>
+                          {assignment.source_type === "zip" ? `Zip: ${assignment.source_zip_name}` : assignment.devops_url || "No source yet"}
+                        </div>
                       </td>
                       <td>
                         <AssignmentStatusBadge assignment={assignment} />
@@ -93,6 +100,8 @@ export default function ManageCycleDialog({ project, year, entry, onChanged, onC
                             setRerunFor(assignment.platform);
                             setRerunUrl(assignment.devops_url || "");
                             setRerunBranch(assignment.devops_branch || "");
+                            setRerunMode(assignment.source_type === "zip" ? "zip" : "url");
+                            setRerunZip(null);
                           }}>Re-run</button>
                         )}
                         {assignment.pm_reminded_at && <div className="quarter-card-meta">Reminded PM {relativeTime(assignment.pm_reminded_at)}</div>}
@@ -106,14 +115,27 @@ export default function ManageCycleDialog({ project, year, entry, onChanged, onC
           </div>
           {rerunFor && (
             <form onSubmit={handleRerun} className="field" style={{ display: "grid", gap: "var(--space-2)" }}>
-              <label htmlFor="rerunUrl">New DevOps URL for {rerunFor}</label>
-              <input id="rerunUrl" className="input" value={rerunUrl} onChange={(event) => setRerunUrl(event.target.value)} autoComplete="off" />
-              <input
-                className="input" aria-label={`Branch for the ${rerunFor} re-run`} placeholder="default branch"
-                value={rerunBranch} onChange={(event) => setRerunBranch(event.target.value)} autoComplete="off"
-              />
+              <div className="segmented" role="group" aria-label={`Re-run source for ${rerunFor}`}>
+                <button type="button" className={`btn btn-sm ${rerunMode === "url" ? "btn-primary" : ""}`} aria-pressed={rerunMode === "url"} onClick={() => setRerunMode("url")}>Use a URL</button>
+                <button type="button" className={`btn btn-sm ${rerunMode === "zip" ? "btn-primary" : ""}`} aria-pressed={rerunMode === "zip"} onClick={() => setRerunMode("zip")}>Use a .zip</button>
+              </div>
+              {rerunMode === "url" ? (
+                <>
+                  <label htmlFor="rerunUrl">New DevOps URL for {rerunFor}</label>
+                  <input id="rerunUrl" className="input" value={rerunUrl} onChange={(event) => setRerunUrl(event.target.value)} autoComplete="off" />
+                  <input
+                    className="input" aria-label={`Branch for the ${rerunFor} re-run`} placeholder="default branch"
+                    value={rerunBranch} onChange={(event) => setRerunBranch(event.target.value)} autoComplete="off"
+                  />
+                </>
+              ) : (
+                <>
+                  <label htmlFor="rerunZip">New source zip for {rerunFor}</label>
+                  <input id="rerunZip" type="file" accept=".zip" className="input" onChange={(event) => setRerunZip(event.target.files[0] ?? null)} />
+                </>
+              )}
               <div style={{ display: "flex", gap: "var(--space-2)" }}>
-                <button type="submit" className="btn btn-primary" disabled={!rerunUrl.trim()}>Queue re-run</button>
+                <button type="submit" className="btn btn-primary" disabled={rerunMode === "zip" ? !rerunZip : !rerunUrl.trim()}>Queue re-run</button>
                 <button type="button" className="btn" onClick={() => setRerunFor(null)}>Cancel</button>
               </div>
             </form>

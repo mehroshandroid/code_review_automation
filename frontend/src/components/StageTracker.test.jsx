@@ -25,7 +25,7 @@ test("completed and approved", () => {
 test("dots carry titles and an accessible summary", () => {
   render(<StageDots assignment={{ ...base, run_status: "queued", url_submitted_at: INIT }} initiatedAt={INIT} />);
   const group = screen.getByRole("img");
-  expect(group.getAttribute("aria-label")).toMatch(/^Initiated — done .*; URL added — done .*; AI review done — pending; Reviewer feedback — pending$/);
+  expect(group.getAttribute("aria-label")).toMatch(/^Initiated — done .*; Source added — done .*; AI review done — pending; Reviewer feedback — pending$/);
   expect(group.querySelectorAll(".stage-dot--done")).toHaveLength(2);
 });
 

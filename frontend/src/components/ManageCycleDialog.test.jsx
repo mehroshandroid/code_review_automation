@@ -1,12 +1,12 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import ManageCycleDialog from "./ManageCycleDialog";
-import { getReviewers, changeAssignmentReviewer, retryAssignment, rerunAssignment, remindAssignment } from "../services/api";
+import { getReviewers, changeAssignmentReviewer, retryAssignment, rerunAssignment, remindAssignment, rerunAssignmentZip } from "../services/api";
 
 jest.mock("../services/api", () => ({
   ...jest.requireActual("../services/api"),
   getReviewers: jest.fn(), changeAssignmentReviewer: jest.fn(), retryAssignment: jest.fn(), rerunAssignment: jest.fn(),
-  remindAssignment: jest.fn(),
+  remindAssignment: jest.fn(), rerunAssignmentZip: jest.fn(),
 }));
 
 const a = (platform, extra) => ({ platform, reviewer_id: "r1", reviewer_name: "Rae", devops_url: "https://dev.azure.com/o/p/_git/x",
@@ -112,4 +112,20 @@ test("progress column and reminder buttons", async () => {
   await user.click(within(row("iOS")).getByRole("button", { name: "Remind reviewer" }));
   await waitFor(() => expect(remindAssignment).toHaveBeenCalledWith("c1", "iOS", "reviewer"));
   expect(await within(row("iOS")).findByText(/Reminded reviewer/)).toBeInTheDocument();
+});
+
+test("shows a zip source and re-runs with a new zip", async () => {
+  const user = userEvent.setup();
+  const zipEntry = { ...entry, cycle: { ...entry.cycle, assignments: [
+    a("Android", { run_status: "completed", review_id: "rv1", review_status: "pending_approval", devops_url: null, source_type: "zip", source_zip_name: "client-app.zip" }),
+  ] } };
+  rerunAssignmentZip.mockResolvedValue(a("Android", { run_status: "queued", queue_position: 1, devops_url: null, source_type: "zip", source_zip_name: "fixed.zip" }));
+  render(<ManageCycleDialog project={{ id: "p1", name: "Moove" }} year={2026} entry={zipEntry} onChanged={jest.fn()} onClose={jest.fn()} />);
+  expect(within(row("Android")).getByText("Zip: client-app.zip")).toBeInTheDocument();
+  await user.click(within(row("Android")).getByRole("button", { name: "Re-run" }));
+  await user.click(screen.getByRole("button", { name: "Use a .zip" }));
+  const file = new File(["PK"], "fixed.zip", { type: "application/zip" });
+  await user.upload(screen.getByLabelText("New source zip for Android"), file);
+  await user.click(screen.getByRole("button", { name: "Queue re-run" }));
+  await waitFor(() => expect(rerunAssignmentZip).toHaveBeenCalledWith("c1", "Android", file));
 });

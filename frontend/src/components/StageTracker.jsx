@@ -16,7 +16,7 @@ export function stagesFor(assignment, initiatedAt) {
   const ai = assignment.run_status === "completed" ? "done" : assignment.run_status === "failed" ? "failed" : "pending";
   return [
     { key: "initiated", label: "Initiated", state: initiatedAt ? "done" : "pending", at: initiatedAt || null },
-    { key: "url", label: "URL added", state: assignment.url_submitted_at ? "done" : "pending", at: assignment.url_submitted_at || null },
+    { key: "url", label: "Source added", state: assignment.url_submitted_at ? "done" : "pending", at: assignment.url_submitted_at || null },
     { key: "ai", label: "AI review done", state: ai, at: ai === "pending" ? null : assignment.finished_at || null },
     {
       key: "feedback", label: "Reviewer feedback",

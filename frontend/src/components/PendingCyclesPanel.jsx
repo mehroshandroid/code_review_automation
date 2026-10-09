@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import AssignmentStatusBadge from "./AssignmentStatusBadge";
-import { getMyCycles, submitAssignmentUrl } from "../services/api";
+import { getMyCycles, submitAssignmentUrl, submitAssignmentZip } from "../services/api";
 
 const REFRESH_MS = 10000;
 
 function AssignmentRow({ cycleId, assignment, onUpdated }) {
   const editable = assignment.run_status === "waiting_for_url" || assignment.run_status === "failed";
+  // Code hosted on a client's DevOps can't be fetched by URL, so the PM can upload a zip instead.
+  const [mode, setMode] = useState(assignment.source_type === "zip" ? "zip" : "url");
+  const [zipFile, setZipFile] = useState(null);
   const [url, setUrl] = useState(assignment.devops_url || "");
   const [branch, setBranch] = useState(assignment.devops_branch || "");
   const [saving, setSaving] = useState(false);
@@ -17,9 +20,11 @@ function AssignmentRow({ cycleId, assignment, onUpdated }) {
     setSaving(true);
     setError("");
     try {
-      onUpdated(await submitAssignmentUrl(cycleId, assignment.platform, { devopsUrl: url.trim(), devopsBranch: branch.trim() }));
+      onUpdated(mode === "zip"
+        ? await submitAssignmentZip(cycleId, assignment.platform, zipFile)
+        : await submitAssignmentUrl(cycleId, assignment.platform, { devopsUrl: url.trim(), devopsBranch: branch.trim() }));
     } catch (err) {
-      setError(err.response?.data?.detail || "Failed to save the URL.");
+      setError(err.response?.data?.detail || (mode === "zip" ? "Failed to upload the zip." : "Failed to save the URL."));
     } finally {
       setSaving(false);
     }
@@ -36,23 +41,43 @@ function AssignmentRow({ cycleId, assignment, onUpdated }) {
       <td style={{ minWidth: 320 }}>
         {editable ? (
           <form onSubmit={handleSave} className="assignment-url-form">
-            <input
-              className="input" aria-label={`DevOps URL for ${assignment.platform}`} placeholder="https://dev.azure.com/org/project/_git/repo"
-              value={url} onChange={(event) => setUrl(event.target.value)} autoComplete="off" data-1p-ignore data-lpignore="true"
-            />
-            <input
-              className="input" aria-label={`Branch for ${assignment.platform}`} placeholder="default branch"
-              value={branch} onChange={(event) => setBranch(event.target.value)} autoComplete="off" style={{ maxWidth: 160 }}
-            />
-            <button type="submit" className="btn btn-primary" disabled={saving || !url.trim()}>
-              {assignment.run_status === "failed" ? "Save & retry" : "Save & queue"}
-            </button>
+            <div className="segmented" role="group" aria-label={`Source for ${assignment.platform}`} style={{ flexBasis: "100%" }}>
+              <button type="button" className={`btn btn-sm ${mode === "url" ? "btn-primary" : ""}`} aria-pressed={mode === "url"} onClick={() => setMode("url")}>DevOps URL</button>
+              <button type="button" className={`btn btn-sm ${mode === "zip" ? "btn-primary" : ""}`} aria-pressed={mode === "zip"} onClick={() => setMode("zip")}>Upload .zip</button>
+            </div>
+            {mode === "url" ? (
+              <>
+                <input
+                  className="input" aria-label={`DevOps URL for ${assignment.platform}`} placeholder="https://dev.azure.com/org/project/_git/repo"
+                  value={url} onChange={(event) => setUrl(event.target.value)} autoComplete="off" data-1p-ignore data-lpignore="true"
+                />
+                <input
+                  className="input" aria-label={`Branch for ${assignment.platform}`} placeholder="default branch"
+                  value={branch} onChange={(event) => setBranch(event.target.value)} autoComplete="off" style={{ maxWidth: 160 }}
+                />
+                <button type="submit" className="btn btn-primary" disabled={saving || !url.trim()}>
+                  {assignment.run_status === "failed" ? "Save & retry" : "Save & queue"}
+                </button>
+              </>
+            ) : (
+              <>
+                <input
+                  type="file" accept=".zip" className="input" aria-label={`Source zip for ${assignment.platform}`}
+                  onChange={(event) => setZipFile(event.target.files[0] ?? null)}
+                />
+                <button type="submit" className="btn btn-primary" disabled={saving || !zipFile}>
+                  {saving ? "Uploading…" : assignment.run_status === "failed" ? "Upload & retry" : "Upload & queue"}
+                </button>
+              </>
+            )}
             {error && <p className="run-error" style={{ flexBasis: "100%" }}>{error}</p>}
           </form>
         ) : assignment.run_status === "completed" && assignment.review_id ? (
           <Link to={`/reports/${assignment.review_id}`} className="btn btn-ghost">View</Link>
         ) : (
-          <span className="quarter-card-meta" style={{ wordBreak: "break-all" }}>{assignment.devops_url}</span>
+          <span className="quarter-card-meta" style={{ wordBreak: "break-all" }}>
+            {assignment.source_type === "zip" ? `Zip: ${assignment.source_zip_name}` : assignment.devops_url}
+          </span>
         )}
       </td>
     </tr>
