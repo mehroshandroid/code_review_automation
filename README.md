@@ -1,4 +1,4 @@
-# CodeAssure (Android) — Technical README
+# CodeAssure — Technical README
 
 This document explains **how the system actually works today**: the exact path a request takes from file upload to a scored Excel workbook, how the backend/frontend modules talk to each other, and how the LLM prompts are built. It reflects the current code (`backend/app/**`, `frontend/src/**`), not the original planning docs (`HANDOVER_ANDROID_CODE_REVIEW.md`, `QUICK_REFERENCE.md`), which describe the pre-implementation design and have since drifted from reality in places (e.g. no WebSocket endpoint exists; polling is HTTP only).
 
