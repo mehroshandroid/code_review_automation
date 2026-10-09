@@ -33,6 +33,8 @@ async def assignment_dicts(session, assignments, keep_order=False) -> list[dict]
             "finished_at": _iso(a.finished_at),
             "queue_position": positions.get((a.cycle_id, a.platform)) if a.run_status == "queued" else None,
             "cycle_id": a.cycle_id,
+            "source_type": a.source_type,
+            "source_zip_name": a.source_zip_name,
             "url_submitted_at": _iso(a.url_submitted_at),
             "review_approved_at": _iso(approved_times.get(a.review_id)),
             "pm_reminded_at": _iso(a.pm_reminded_at),

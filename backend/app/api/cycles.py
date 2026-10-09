@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from app.analyzer.devops_client import parse_repo_url
@@ -8,6 +8,7 @@ from app.auth.permissions import PERMISSIONS, can, require_permission, visible_p
 from app.automation.assignments import assignment_dicts
 from app.automation.notify import cycle_payload, notify, project_manager_ids
 from app.automation.reviewers import APPROVED_LOCKED, reassign_cycle_reviewer
+from app.automation.uploads import UploadError, delete_zip, save_zip
 from app.db import crud
 from app.db.session import new_session
 from app.quarterly import canonical_platform
@@ -51,6 +52,7 @@ def _validate_url(body: UrlBody):
 
 def _queue_fields(body: UrlBody, user) -> dict:
     return {
+        "source_type": "devops", "source_zip_path": None, "source_zip_name": None,
         "devops_url": body.devops_url.strip(),
         "devops_branch": (body.devops_branch or "").strip() or None,
         "url_submitted_by": user.id, "url_submitted_at": _now(),
@@ -86,6 +88,7 @@ async def submit_url(cycle_id: str, platform: str, body: UrlBody, user=Depends(r
         _, _, assignment = await _load(session, user, cycle_id, platform)
         if assignment.run_status not in ("waiting_for_url", "failed"):
             raise HTTPException(status_code=409, detail="This platform's review is already queued, running or completed.")
+        delete_zip(assignment.source_zip_path)  # a URL replaces any uploaded zip
         await crud.update_assignment(session, assignment, **_queue_fields(body, user))
         return await _one(session, assignment)
 
@@ -111,6 +114,7 @@ async def rerun(cycle_id: str, platform: str, body: UrlBody, user=Depends(requir
         statuses = await crud.get_review_statuses(session, [assignment.review_id])
         if assignment.run_status != "completed" or statuses.get(assignment.review_id) == "approved":
             raise HTTPException(status_code=409, detail="Only a completed review that isn't approved yet can be re-run.")
+        delete_zip(assignment.source_zip_path)
         fields = _queue_fields(body, user)
         if "devops_branch" not in body.model_fields_set:
             # A re-run with only a corrected URL keeps the branch the PM chose.
@@ -160,4 +164,49 @@ async def remind(cycle_id: str, platform: str, body: RemindBody, user=Depends(re
             await crud.update_assignment(session, assignment, reviewer_reminded_at=_now())
         else:
             raise HTTPException(status_code=409, detail="A reminder isn't needed at this stage.")
+        return await _one(session, assignment)
+
+
+def _zip_queue_fields(path, filename: str, user) -> dict:
+    return {
+        "source_type": "zip", "source_zip_path": str(path), "source_zip_name": filename,
+        "devops_url": None, "devops_branch": None,
+        "url_submitted_by": user.id, "url_submitted_at": _now(),
+        "run_status": "queued", "queued_at": _now(),
+        "run_error": None, "failure_kind": None, "run_phase": None, "run_progress": None,
+    }
+
+
+async def _store_zip(file: UploadFile, cycle_id: str, platform: str):
+    try:
+        return await save_zip(file, cycle_id, platform)
+    except UploadError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.put("/api/cycles/{cycle_id}/assignments/{platform}/zip")
+async def submit_zip(
+    cycle_id: str, platform: str, file: UploadFile = File(...), user=Depends(require_permission("cycles.submit_urls")),
+):
+    """For code hosted on a client's DevOps: upload the source instead of giving a URL."""
+    async with new_session() as session:
+        _, _, assignment = await _load(session, user, cycle_id, platform)
+        if assignment.run_status not in ("waiting_for_url", "failed"):
+            raise HTTPException(status_code=409, detail="This platform's review is already queued, running or completed.")
+        path = await _store_zip(file, cycle_id, assignment.platform)
+        await crud.update_assignment(session, assignment, **_zip_queue_fields(path, file.filename, user))
+        return await _one(session, assignment)
+
+
+@router.post("/api/cycles/{cycle_id}/assignments/{platform}/rerun-zip")
+async def rerun_zip(
+    cycle_id: str, platform: str, file: UploadFile = File(...), user=Depends(require_permission("cycles.initiate")),
+):
+    async with new_session() as session:
+        _, _, assignment = await _load(session, user, cycle_id, platform)
+        statuses = await crud.get_review_statuses(session, [assignment.review_id])
+        if assignment.run_status != "completed" or statuses.get(assignment.review_id) == "approved":
+            raise HTTPException(status_code=409, detail="Only a completed review that isn't approved yet can be re-run.")
+        path = await _store_zip(file, cycle_id, assignment.platform)
+        await crud.update_assignment(session, assignment, **_zip_queue_fields(path, file.filename, user))
         return await _one(session, assignment)

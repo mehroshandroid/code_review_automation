@@ -35,6 +35,7 @@ from app.auth.dependencies import get_current_user
 from app.auth.permissions import PERMISSIONS, can, can_view_review, require_permission, visible_project_ids
 from app.automation.notify import cycle_payload, notify, project_manager_ids
 from app.automation.reviewers import APPROVED_LOCKED, reassign_cycle_reviewer
+from app.automation.uploads import delete_zip
 from app.db import crud
 from app.db.session import new_session
 from app.utils.logger import get_logger
@@ -784,6 +785,15 @@ async def get_review(review_id: str, user=Depends(get_current_user)):
     return _review_to_dict(review)
 
 
+async def _release_cycle_source(review_id: str) -> None:
+    """An approved cycle review no longer needs its uploaded source zip (client code isn't kept)."""
+    async with new_session() as session:
+        assignment = await crud.get_assignment_by_review_id(session, review_id)
+        if assignment is not None and assignment.source_zip_path:
+            delete_zip(assignment.source_zip_path)
+            await crud.update_assignment(session, assignment, source_zip_path=None)
+
+
 async def _notify_review_finalized(review) -> None:
     async with new_session() as session:
         assignment = await crud.get_assignment_by_review_id(session, review.id)
@@ -826,6 +836,7 @@ async def update_review(review_id: str, body: UpdateReviewRequest, user=Depends(
     if review is None:
         raise HTTPException(status_code=404, detail="Review not found")
     if body.status == "approved" and existing.status != "approved":
+        await _release_cycle_source(review.id)
         await _notify_review_finalized(review)
     return _review_to_dict(review)
 

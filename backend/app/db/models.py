@@ -164,6 +164,9 @@ class ReviewCycleAssignment(Base):
     override_compile_mode: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     pm_reminded_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     reviewer_reminded_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    source_type: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # "devops" | "zip"
+    source_zip_path: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # cleared once the review is approved
+    source_zip_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
 
 class NotificationOutbox(Base):

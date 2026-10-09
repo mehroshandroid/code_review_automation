@@ -38,6 +38,8 @@ services:
       - FRONTEND_BASE_URL=http://localhost:3000
       - REVIEW_ARTIFACTS_DIR=/data/reviews
       - SAMPLE_TEMPLATES_DIR=/data/sample-templates
+      # Source zips uploaded for quarterly reviews (client-hosted code); deleted once the review is approved.
+      - CYCLE_UPLOADS_DIR=/data/cycle-uploads
       # Runs queued quarterly-cycle reviews; enable on exactly one backend instance.
       - REVIEW_WORKER_ENABLED=true
       # Fernet key for the stored DevOps PAT. Unset = derived from AUTH_SECRET_KEY.
@@ -63,6 +65,7 @@ services:
       # Org-wide default Excel templates configured per platform via the
       # settings page -- see app/api/settings.py.
       - sample-templates:/data/sample-templates
+      - cycle-uploads:/data/cycle-uploads
     depends_on:
       compiler:
         condition: service_started
@@ -156,3 +159,4 @@ volumes:
   postgres-data:
   review-artifacts:
   sample-templates:
+  cycle-uploads:

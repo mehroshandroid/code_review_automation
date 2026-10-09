@@ -787,3 +787,8 @@ async def get_review_coverage_rows_by_ids(session: AsyncSession, review_ids: lis
         .where(PlatformReview.id.in_(ids), PlatformReview.status != "error")
     )
     return list(result.all())
+
+
+async def list_cycle_ids_for_project(session: AsyncSession, project_id: str) -> list[str]:
+    result = await session.execute(select(ReviewCycle.id).where(ReviewCycle.project_id == project_id))
+    return [cycle_id for (cycle_id,) in result.all()]

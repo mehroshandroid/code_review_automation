@@ -364,3 +364,44 @@ async def test_a_stop_landing_as_the_run_finishes_is_cleared(db, monkeypatch):
     async with db() as s:
         a = await crud.get_assignment(s, "c1", "Android")
     assert a.run_status == "completed" and a.cancel_requested is None
+
+
+async def test_zip_source_runs_without_devops_or_pat(db, monkeypatch, tmp_path):
+    captured = {}
+    zip_file = tmp_path / "src.zip"
+    zip_file.write_bytes(b"PK-fake-zip")
+    async with db() as s:
+        settings = await crud.get_org_settings(s)
+        settings.devops_pat_encrypted = None  # a zip needs no PAT
+        await s.commit()
+        await crud.update_assignment(
+            s, await crud.get_assignment(s, "c1", "Android"),
+            source_type="zip", source_zip_path=str(zip_file), source_zip_name="src.zip", devops_url=None,
+        )
+
+    fake = _fake_pipeline(db, "completed", captured=captured)
+
+    async def check_zip_copied(review_id, work_dir, zip_path, *args, **kwargs):
+        captured["zip_bytes"] = zip_path.read_bytes()
+        await fake(review_id, work_dir, zip_path, *args, **kwargs)
+
+    monkeypatch.setattr(reviews_module, "_run_review", check_zip_copied)
+    await worker.run_one()
+    async with db() as s:
+        a = await crud.get_assignment(s, "c1", "Android")
+    assert a.run_status == "completed"
+    assert captured["zip_bytes"] == b"PK-fake-zip" and captured["devops_repo_url"] is None and captured["devops_pat"] is None
+    assert zip_file.exists()  # kept until the review is approved
+
+
+async def test_missing_zip_is_a_source_failure(db):
+    async with db() as s:
+        await crud.update_assignment(
+            s, await crud.get_assignment(s, "c1", "Android"),
+            source_type="zip", source_zip_path="/nonexistent/src.zip", source_zip_name="src.zip", devops_url=None,
+        )
+    await worker.run_one()
+    async with db() as s:
+        a = await crud.get_assignment(s, "c1", "Android")
+    assert (a.run_status, a.failure_kind) == ("failed", "url")
+    assert a.run_error == "The uploaded zip is no longer available; please upload it again."
