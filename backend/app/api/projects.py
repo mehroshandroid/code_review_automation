@@ -7,6 +7,7 @@ from sqlalchemy.exc import IntegrityError
 from app.api.reviews import _review_summary_to_dict
 from app.auth.dependencies import get_current_user
 from app.auth.permissions import PROJECT_MANAGER, can, require_permission, visible_project_ids
+from app.automation.uploads import delete_cycle_uploads
 from app.db import crud
 from app.db.session import new_session
 from app.quarterly import canonical_platform
@@ -120,6 +121,7 @@ async def delete_project(project_id: str, user=Depends(require_permission("proje
         review_count = await crud.count_reviews_for_project(session, project_id)
         if review_count > 0:
             raise HTTPException(status_code=409, detail=f"This project has {review_count} reviews and can't be deleted.")
+        delete_cycle_uploads(await crud.list_cycle_ids_for_project(session, project_id))
         await crud.delete_project(session, project_id)
     return Response(status_code=204)
 

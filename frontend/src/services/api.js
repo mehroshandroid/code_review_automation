@@ -347,3 +347,42 @@ export async function saveQueueItemSettings(cycleId, platform, { llmProvider, ll
   });
   return response.data;
 }
+
+export async function remindAssignment(cycleId, platform, target) {
+  const response = await axios.post(`${assignmentPath(cycleId, platform)}/remind`, { target });
+  return response.data;
+}
+
+export async function getEmailStatus() {
+  const response = await axios.get(`${API_BASE_URL}/email/status`);
+  return response.data;
+}
+
+export async function sendTestEmail() {
+  const response = await axios.post(`${API_BASE_URL}/email/test`);
+  return response.data;
+}
+
+export async function getEmailOutbox(limit = 50) {
+  const response = await axios.get(`${API_BASE_URL}/email/outbox`, { params: { limit } });
+  return response.data.emails;
+}
+
+export async function retryEmail(id) {
+  const response = await axios.post(`${API_BASE_URL}/email/outbox/${id}/retry`);
+  return response.data;
+}
+
+export async function submitAssignmentZip(cycleId, platform, file) {
+  const form = new FormData();
+  form.append("file", file);
+  const response = await axios.put(`${assignmentPath(cycleId, platform)}/zip`, form);
+  return response.data;
+}
+
+export async function rerunAssignmentZip(cycleId, platform, file) {
+  const form = new FormData();
+  form.append("file", file);
+  const response = await axios.post(`${assignmentPath(cycleId, platform)}/rerun-zip`, form);
+  return response.data;
+}

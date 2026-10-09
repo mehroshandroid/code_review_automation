@@ -25,6 +25,7 @@ POLL_SECONDS = 5
 PROGRESS_SYNC_SECONDS = 3
 NO_PAT = "No usable Azure DevOps PAT is configured in Settings."
 STOPPED = "Stopped by an admin."
+ZIP_MISSING = "The uploaded zip is no longer available; please upload it again."
 
 
 def _now():
@@ -113,10 +114,17 @@ async def _process(cycle_id: str, platform: str) -> None:
         cycle = await crud.get_cycle_by_id(session, cycle_id)
         project = await crud.get_project(session, cycle.project_id)
         org = await crud.get_org_settings(session)
-    pat = decrypt(org.devops_pat_encrypted) if org else None
-    if not pat:
-        await _fail(cycle_id, platform, NO_PAT, "system", None)
-        return
+    uses_zip = assignment.source_type == "zip"
+    pat = None
+    if uses_zip:
+        if not (assignment.source_zip_path and Path(assignment.source_zip_path).is_file()):
+            await _fail(cycle_id, platform, ZIP_MISSING, "url", None)
+            return
+    else:
+        pat = decrypt(org.devops_pat_encrypted) if org else None
+        if not pat:
+            await _fail(cycle_id, platform, NO_PAT, "system", None)
+            return
     template_bytes, _ = await reviews_module._resolve_excel_template(None, platform)
     if template_bytes is None:
         await _fail(cycle_id, platform, f"No sample template is configured for {platform} in Settings.", "system", None)
@@ -131,16 +139,18 @@ async def _process(cycle_id: str, platform: str) -> None:
     work_dir = Path(tempfile.mkdtemp(prefix=f"review_{review_id}_"))
     state = reviews_module._new_review_state()
     state["project_name"] = project.name
-    state["source"] = "devops"
+    state["source"] = "upload" if uses_zip else "devops"
     reviews_module._reviews[review_id] = state
     sync = None
     try:
         template_path = work_dir / "template.xlsx"
         template_path.write_bytes(template_bytes)
+        if uses_zip:
+            shutil.copyfile(assignment.source_zip_path, work_dir / "android.zip")
         run_task = asyncio.create_task(reviews_module._run_review(
             review_id, work_dir, work_dir / "android.zip", template_path, True, True, project.name,
             provider, model, compile_mode, platform,
-            assignment.devops_url, pat, assignment.devops_branch, project_id=project.id,
+            None if uses_zip else assignment.devops_url, pat, assignment.devops_branch, project_id=project.id,
         ))
         sync = asyncio.create_task(_sync_progress(cycle_id, platform, state, run_task))
         try:

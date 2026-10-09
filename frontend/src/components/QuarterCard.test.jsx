@@ -75,3 +75,29 @@ test("no Manage button without a cycle or permission", () => {
   render(<QuarterCard entry={base} platforms={["Android", "iOS"]} canInitiate={false} canManage onManage={jest.fn()} onInitiate={jest.fn()} />);
   expect(screen.queryByRole("button", { name: "Manage" })).not.toBeInTheDocument();
 });
+
+test("stage dots appear per platform once a cycle exists", () => {
+  const entry = { ...base, status: "in_progress", covered: [], missing: ["Android", "iOS"], can_initiate: false, cycle: {
+    id: "c1", initiated_at: "2026-10-02T10:00:00Z", initiated_by_name: "Cora", assignments: [
+      { platform: "Android", reviewer_id: "r", reviewer_name: "Rae", run_status: "waiting_for_url" },
+      { platform: "iOS", reviewer_id: "r", reviewer_name: "Rae", run_status: "queued", url_submitted_at: "2026-10-03T10:00:00Z" },
+    ] } };
+  const { container } = render(<QuarterCard entry={entry} platforms={["Android", "iOS"]} canInitiate={false} onInitiate={jest.fn()} />);
+  expect(container.querySelectorAll(".stage-dots")).toHaveLength(2);
+});
+
+test("no stage dots without a cycle", () => {
+  const { container } = render(<QuarterCard entry={base} platforms={["Android", "iOS"]} canInitiate={false} onInitiate={jest.fn()} />);
+  expect(container.querySelectorAll(".stage-dots")).toHaveLength(0);
+});
+
+test("a platform reviewed after the quarter ended is marked late", () => {
+  const entry = { ...base, status: "done", late: true, missing: [], covered: [
+    { platform: "Android", review_id: "a3", reviewed_at: "2026-08-01T00:00:00Z", late: false },
+    { platform: "iOS", review_id: "i3", reviewed_at: "2026-10-08T00:00:00Z", late: true },
+  ] };
+  render(<QuarterCard entry={entry} platforms={["Android", "iOS"]} canInitiate={false} onInitiate={jest.fn()} />);
+  expect(screen.getByText(/iOS/).closest("li")).toHaveTextContent("(late)");
+  expect(screen.getByText(/Android/).closest("li")).not.toHaveTextContent("(late)");
+  expect(screen.getByText("Late")).toBeInTheDocument();
+});

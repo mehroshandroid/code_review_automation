@@ -39,6 +39,7 @@ PERMISSIONS: dict[str, frozenset[str]] = {
     "cycles.submit_urls": frozenset({ADMIN, MANAGEMENT, COORDINATOR, PROJECT_MANAGER}),
     "settings.devops_pat": frozenset({ADMIN}),
     "queue.manage": frozenset({ADMIN}),
+    "email.manage": frozenset({ADMIN}),
 }
 
 HOME_PATHS: dict[str, str] = {

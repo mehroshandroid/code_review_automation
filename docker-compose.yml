@@ -38,11 +38,25 @@ services:
       - FRONTEND_BASE_URL=http://localhost:3000
       - REVIEW_ARTIFACTS_DIR=/data/reviews
       - SAMPLE_TEMPLATES_DIR=/data/sample-templates
+      # Source zips uploaded for quarterly reviews (client-hosted code); deleted once the review is approved.
+      - CYCLE_UPLOADS_DIR=/data/cycle-uploads
       # Runs queued quarterly-cycle reviews; enable on exactly one backend instance.
       - REVIEW_WORKER_ENABLED=true
       # Fernet key for the stored DevOps PAT. Unset = derived from AUTH_SECRET_KEY.
       # Generate: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
       - SETTINGS_ENCRYPTION_KEY=${SETTINGS_ENCRYPTION_KEY:-}
+      # Email delivery: log (default, no email sent) | graph | smtp. See docs/.../email-and-stage-tracker-design.md.
+      - EMAIL_MODE=${EMAIL_MODE:-log}
+      - EMAIL_FROM=${EMAIL_FROM:-}
+      - EMAIL_FROM_NAME=${EMAIL_FROM_NAME:-CodeAssure}
+      - GRAPH_TENANT_ID=${GRAPH_TENANT_ID:-}
+      - GRAPH_CLIENT_ID=${GRAPH_CLIENT_ID:-}
+      - GRAPH_CLIENT_SECRET=${GRAPH_CLIENT_SECRET:-}
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USERNAME=${SMTP_USERNAME:-}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
+      - SMTP_STARTTLS=${SMTP_STARTTLS:-true}
     volumes:
       # Completed reviews' workbooks -- copied here (out of the per-review
       # temp work dir, which gets cleaned up) so an approver can still open
@@ -51,6 +65,7 @@ services:
       # Org-wide default Excel templates configured per platform via the
       # settings page -- see app/api/settings.py.
       - sample-templates:/data/sample-templates
+      - cycle-uploads:/data/cycle-uploads
     depends_on:
       compiler:
         condition: service_started
@@ -144,3 +159,4 @@ volumes:
   postgres-data:
   review-artifacts:
   sample-templates:
+  cycle-uploads:
