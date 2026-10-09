@@ -179,6 +179,17 @@ Spec: `docs/superpowers/specs/2026-10-08-email-and-stage-tracker-design.md`. Pla
 - **On the card:** the platform reads "reviewed 8 Oct (late)", and the quarter turns green with the **Late** marker.
 - **Unchanged:** manual reviews and uploaded sheets still count by the date of the review.
 
+### Phase 14: Upload a source zip instead of a DevOps URL (2026-10-09). Branch: `zip-source`
+
+- **Why:** some projects live in a client's Azure DevOps, which our PAT can't reach. For those, the PM, or a coordinator, Management or admin, can **upload a .zip** of the code. Each platform row has a **DevOps URL | Upload .zip** toggle.
+- **Upload rules:**
+  - The file must be a `.zip` of at most 500 MB, and a readable zip archive.
+  - A zip and a URL replace each other, so each platform has only one source.
+  - Manage → Re-run also accepts a zip.
+- **Running:** the zip is queued and run like a URL, with no PAT needed. The review is recorded with source "upload".
+- **Storage:** zips are kept on the `cycle-uploads` volume (`CYCLE_UPLOADS_DIR`). Each one is **deleted when the review is approved**, when it's replaced, or when the project is deleted.
+- **Stage tracker:** the "URL added" stage is now "Source added".
+
 ---
 
 ## Running locally
