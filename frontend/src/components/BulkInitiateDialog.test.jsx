@@ -58,25 +58,30 @@ test("Set for all fills only empty slots", async () => {
   expect(screen.getByLabelText("Alpha reviewer for iOS")).toHaveValue("");
 });
 
-test("Initiate stays disabled until every ticked project is complete, then posts the body", async () => {
+test("posts only filled slots and leaves empty platforms for later", async () => {
   const user = userEvent.setup();
   bulkInitiate.mockResolvedValue({ results: [
     { project_id: "p1", project_name: "Alpha", status: "started", reason: null },
   ] });
   renderDialog();
   await screen.findAllByRole("option", { name: "Sam" });
-  const submit = screen.getByRole("button", { name: "Initiate 2 projects" });
-  expect(submit).toBeDisabled();
-  await user.selectOptions(screen.getByLabelText("Alpha reviewer for iOS"), "r2");
-  expect(submit).toBeDisabled();
-  await user.click(screen.getByLabelText("Include Beta"));
-  const one = screen.getByRole("button", { name: "Initiate 1 project" });
-  expect(one).toBeEnabled();
-  await user.click(one);
+  // Alpha has Android pre-filled; Beta has nothing filled, so it isn't counted.
+  expect(within(screen.getByRole("row", { name: /Alpha/ })).getByText("iOS left for later")).toBeInTheDocument();
+  const submit = screen.getByRole("button", { name: "Initiate 1 project" });
+  expect(submit).toBeEnabled();
+  await user.click(submit);
   await waitFor(() => expect(bulkInitiate).toHaveBeenCalledWith({
     year: 2026, quarter: 4,
-    projects: [{ project_id: "p1", assignments: [{ platform: "Android", reviewer_id: "r1" }, { platform: "iOS", reviewer_id: "r2" }] }],
+    projects: [{ project_id: "p1", assignments: [{ platform: "Android", reviewer_id: "r1" }] }],
   }));
+});
+
+test("unticked projects aren't sent", async () => {
+  const user = userEvent.setup();
+  renderDialog();
+  await screen.findAllByRole("option", { name: "Sam" });
+  await user.click(screen.getByLabelText("Include Alpha"));
+  expect(screen.getByRole("button", { name: "Initiate 0 projects" })).toBeDisabled();
 });
 
 test("shows the results summary and reloads the dashboard on Done", async () => {
@@ -110,8 +115,6 @@ test("clicking outside while initiating doesn't close the dialog", async () => {
   bulkInitiate.mockReturnValue(new Promise(() => {}));
   const { container } = renderDialog({ onClose });
   await screen.findAllByRole("option", { name: "Sam" });
-  await user.click(screen.getByLabelText("Include Beta"));
-  await user.selectOptions(screen.getByLabelText("Alpha reviewer for iOS"), "r2");
   await user.click(screen.getByRole("button", { name: "Initiate 1 project" }));
   await screen.findByRole("button", { name: "Initiating…" });
   await user.click(container.querySelector(".dialog-backdrop"));
@@ -124,8 +127,6 @@ test("a failed submit shows the error and reloads the dashboard, since some proj
   bulkInitiate.mockRejectedValue({ response: { data: { detail: "Server error" } } });
   renderDialog({ onDone });
   await screen.findAllByRole("option", { name: "Sam" });
-  await user.click(screen.getByLabelText("Include Beta"));
-  await user.selectOptions(screen.getByLabelText("Alpha reviewer for iOS"), "r2");
   await user.click(screen.getByRole("button", { name: "Initiate 1 project" }));
   expect(await screen.findByText("Server error")).toBeInTheDocument();
   expect(onDone).toHaveBeenCalled();

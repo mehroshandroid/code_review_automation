@@ -140,6 +140,10 @@ export default function QuarterlyDashboardPage() {
         <ManageCycleDialog
           project={managing.project} year={managing.year} entry={managing.entry}
           onChanged={reload} onClose={() => setManaging(null)}
+          onAddPlatforms={can("cycles.initiate") ? () => {
+            setInitiating({ project: managing.project, entry: managing.entry, year: managing.year });
+            setManaging(null);
+          } : undefined}
         />
       )}
     </div>

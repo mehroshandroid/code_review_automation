@@ -39,6 +39,10 @@ export default function QuarterCard({ entry, platforms, canInitiate, onInitiate,
                 )}
                 {covered && <span className="quarter-card-meta"> · {shortDate(covered.reviewed_at)}{covered.late ? " (late)" : ""}</span>}
                 {reviewerByPlatform[platform] && <span className="quarter-card-meta"> · {reviewerByPlatform[platform]}</span>}
+                {assignmentByPlatform[platform]?.approved_rounds > 1 && (
+                  <span className="quarter-card-meta"> · {assignmentByPlatform[platform].approved_rounds} reviews</span>
+                )}
+                {entry.cycle && !assignmentByPlatform[platform] && !covered && <span className="quarter-card-meta"> · Not started</span>}
                 {!covered && assignmentByPlatform[platform]?.run_status && assignmentByPlatform[platform].run_status !== "completed" && (
                   <span className="quarter-card-meta"> · {assignmentStatusLabel(assignmentByPlatform[platform])}</span>
                 )}
@@ -54,6 +58,9 @@ export default function QuarterCard({ entry, platforms, canInitiate, onInitiate,
       )}
       {canInitiate && entry.can_initiate && (
         <button type="button" className="btn btn-primary quarter-card-action" onClick={onInitiate}>Initiate review</button>
+      )}
+      {canInitiate && entry.can_add_platforms && (
+        <button type="button" className="btn btn-primary quarter-card-action" onClick={onInitiate}>Initiate remaining</button>
       )}
       {canManage && entry.cycle && (
         <button type="button" className="btn btn-ghost quarter-card-action" onClick={onManage}>Manage</button>

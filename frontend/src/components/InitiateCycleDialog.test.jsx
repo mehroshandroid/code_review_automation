@@ -42,3 +42,41 @@ test("shows the API error", async () => {
   await user.click(screen.getByRole("button", { name: "Initiate" }));
   expect(await screen.findByText("This quarter's review has already been initiated.")).toBeInTheDocument();
 });
+
+test("only ticked platforms need a reviewer", async () => {
+  const user = userEvent.setup();
+  initiateCycle.mockResolvedValue({ quarter: 4, status: "in_progress" });
+  render(<InitiateCycleDialog project={project} year={2026} entry={entry} onInitiated={jest.fn()} onClose={jest.fn()} />);
+  await screen.findAllByRole("option", { name: "Rae" });
+  await user.click(screen.getByLabelText("Start iOS"));
+  expect(screen.queryByLabelText("Reviewer for iOS")).not.toBeInTheDocument();
+  await user.selectOptions(screen.getByLabelText("Reviewer for Android"), "r1");
+  await user.click(screen.getByRole("button", { name: "Initiate" }));
+  await waitFor(() => expect(initiateCycle).toHaveBeenCalledWith("p1", {
+    year: 2026, quarter: 4, assignments: [{ platform: "Android", reviewer_id: "r1" }],
+  }));
+});
+
+test("nothing ticked can't be submitted", async () => {
+  const user = userEvent.setup();
+  render(<InitiateCycleDialog project={project} year={2026} entry={entry} onInitiated={jest.fn()} onClose={jest.fn()} />);
+  await screen.findAllByRole("option", { name: "Rae" });
+  await user.click(screen.getByLabelText("Start Android"));
+  await user.click(screen.getByLabelText("Start iOS"));
+  expect(screen.getByRole("button", { name: "Initiate" })).toBeDisabled();
+});
+
+test("add mode offers only the platforms not started yet", async () => {
+  const user = userEvent.setup();
+  initiateCycle.mockResolvedValue({ quarter: 4, status: "in_progress" });
+  const started = { quarter: 4, status: "in_progress", uninitiated_platforms: ["iOS"], cycle: { id: "c1", assignments: [{ platform: "Android" }] } };
+  render(<InitiateCycleDialog project={project} year={2026} entry={started} onInitiated={jest.fn()} onClose={jest.fn()} />);
+  expect(screen.getByText("Add platforms — Alpha · Q4 2026")).toBeInTheDocument();
+  await screen.findAllByRole("option", { name: "Rae" });
+  expect(screen.queryByLabelText("Start Android")).not.toBeInTheDocument();
+  await user.selectOptions(screen.getByLabelText("Reviewer for iOS"), "r2");
+  await user.click(screen.getByRole("button", { name: "Initiate" }));
+  await waitFor(() => expect(initiateCycle).toHaveBeenCalledWith("p1", {
+    year: 2026, quarter: 4, assignments: [{ platform: "iOS", reviewer_id: "r2" }],
+  }));
+});

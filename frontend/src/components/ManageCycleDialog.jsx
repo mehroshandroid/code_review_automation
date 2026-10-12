@@ -1,9 +1,16 @@
 import { useEffect, useState } from "react";
 import AssignmentStatusBadge from "./AssignmentStatusBadge";
 import { relativeTime, StageTimeline } from "./StageTracker";
-import { changeAssignmentReviewer, getReviewers, remindAssignment, rerunAssignment, rerunAssignmentZip, retryAssignment } from "../services/api";
+import { Link } from "react-router-dom";
+import {
+  changeAssignmentReviewer, getReviewers, reinitiateAssignment, remindAssignment, rerunAssignment, rerunAssignmentZip, retryAssignment,
+} from "../services/api";
 
-export default function ManageCycleDialog({ project, year, entry, onChanged, onClose }) {
+function shortDate(iso) {
+  return iso ? new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "—";
+}
+
+export default function ManageCycleDialog({ project, year, entry, onChanged, onClose, onAddPlatforms }) {
   const cycleId = entry.cycle.id;
   const [assignments, setAssignments] = useState(entry.cycle.assignments);
   const [reviewers, setReviewers] = useState([]);
@@ -13,6 +20,10 @@ export default function ManageCycleDialog({ project, year, entry, onChanged, onC
   const [rerunBranch, setRerunBranch] = useState("");
   const [rerunMode, setRerunMode] = useState("url");
   const [rerunZip, setRerunZip] = useState(null);
+  const [reinitFor, setReinitFor] = useState(null); // { platform, round }
+  const [reinitReviewer, setReinitReviewer] = useState("");
+  const [historyOpen, setHistoryOpen] = useState({});
+  const notStarted = entry.uninitiated_platforms || [];
 
   useEffect(() => {
     let cancelled = false;
@@ -49,6 +60,13 @@ export default function ManageCycleDialog({ project, year, entry, onChanged, onC
     }
   }
 
+  async function handleReinitiate(event) {
+    event.preventDefault();
+    if (await act(() => reinitiateAssignment(cycleId, reinitFor.platform, reinitReviewer))) {
+      setReinitFor(null);
+    }
+  }
+
   return (
     <div className="dialog-backdrop" onClick={onClose}>
       <div className="dialog" role="dialog" aria-label="Manage review cycle" style={{ maxWidth: 760 }} onClick={(event) => event.stopPropagation()}>
@@ -64,6 +82,7 @@ export default function ManageCycleDialog({ project, year, entry, onChanged, onC
                     <tr key={assignment.platform}>
                       <td>
                         <div style={{ fontWeight: 600 }}>{assignment.platform}</div>
+                        {assignment.round > 1 && <div className="quarter-card-meta">Round {assignment.round}</div>}
                         <div className="quarter-card-meta" style={{ wordBreak: "break-all" }}>
                           {assignment.source_type === "zip" ? `Zip: ${assignment.source_zip_name}` : assignment.devops_url || "No source yet"}
                         </div>
@@ -104,12 +123,49 @@ export default function ManageCycleDialog({ project, year, entry, onChanged, onC
                             setRerunZip(null);
                           }}>Re-run</button>
                         )}
+                        {approved && (
+                          <button type="button" className="btn btn-ghost" onClick={() => {
+                            setReinitFor({ platform: assignment.platform, round: (assignment.round || 1) + 1 });
+                            setReinitReviewer(assignment.reviewer_id || "");
+                          }}>Reinitiate</button>
+                        )}
+                        {assignment.history?.length > 0 && (
+                          <div>
+                            <button
+                              type="button" className="btn btn-ghost" aria-expanded={!!historyOpen[assignment.platform]}
+                              onClick={() => setHistoryOpen((current) => ({ ...current, [assignment.platform]: !current[assignment.platform] }))}
+                            >Earlier rounds ({assignment.history.length})</button>
+                            {historyOpen[assignment.platform] && (
+                              <ul className="quarter-card-meta" style={{ margin: 0, paddingLeft: 16 }}>
+                                {assignment.history.map((past) => (
+                                  <li key={past.round}>
+                                    {past.review_id ? <Link to={`/review/${past.review_id}`}>Round {past.round}</Link> : `Round ${past.round}`}
+                                    {" "}· approved {shortDate(past.approved_at)}{past.reviewer_name ? ` · ${past.reviewer_name}` : ""}
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </div>
+                        )}
                         {assignment.pm_reminded_at && <div className="quarter-card-meta">Reminded PM {relativeTime(assignment.pm_reminded_at)}</div>}
                         {assignment.reviewer_reminded_at && <div className="quarter-card-meta">Reminded reviewer {relativeTime(assignment.reviewer_reminded_at)}</div>}
                       </td>
                     </tr>
                   );
                 })}
+                {notStarted.map((platform) => (
+                  <tr key={platform}>
+                    <td><div style={{ fontWeight: 600 }}>{platform}</div></td>
+                    <td><span className="quarter-card-meta">Not started</span></td>
+                    <td />
+                    <td />
+                    <td>
+                      {onAddPlatforms && entry.can_add_platforms && (
+                        <button type="button" className="btn btn-ghost" onClick={onAddPlatforms}>Initiate</button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
@@ -137,6 +193,22 @@ export default function ManageCycleDialog({ project, year, entry, onChanged, onC
               <div style={{ display: "flex", gap: "var(--space-2)" }}>
                 <button type="submit" className="btn btn-primary" disabled={rerunMode === "zip" ? !rerunZip : !rerunUrl.trim()}>Queue re-run</button>
                 <button type="button" className="btn" onClick={() => setRerunFor(null)}>Cancel</button>
+              </div>
+            </form>
+          )}
+          {reinitFor && (
+            <form onSubmit={handleReinitiate} aria-label={`Reinitiate ${reinitFor.platform}`} className="field" style={{ display: "grid", gap: "var(--space-2)" }}>
+              <p className="card-body" style={{ margin: 0 }}>
+                Start round {reinitFor.round} for {reinitFor.platform}. The approved review stays in the history; the PM is asked for the source again.
+              </p>
+              <label htmlFor="reinitReviewer">Reviewer for round {reinitFor.round}</label>
+              <select id="reinitReviewer" className="input" value={reinitReviewer} onChange={(event) => setReinitReviewer(event.target.value)}>
+                <option value="" disabled>Choose…</option>
+                {reviewers.map((reviewer) => <option key={reviewer.id} value={reviewer.id}>{reviewer.name || reviewer.email}</option>)}
+              </select>
+              <div style={{ display: "flex", gap: "var(--space-2)" }}>
+                <button type="submit" className="btn btn-primary" disabled={!reinitReviewer}>Start round {reinitFor.round}</button>
+                <button type="button" className="btn" onClick={() => setReinitFor(null)}>Cancel</button>
               </div>
             </form>
           )}

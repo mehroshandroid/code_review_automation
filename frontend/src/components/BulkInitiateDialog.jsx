@@ -38,8 +38,10 @@ export default function BulkInitiateDialog({ year, quarters, onDone, onClose }) 
   }, [year, quarter]);
 
   const eligible = preview?.eligible || [];
-  const ticked = eligible.filter((p) => included[p.project_id]);
-  const complete = ticked.length > 0 && ticked.every((p) => p.platforms.every((platform) => selected[p.project_id]?.[platform]));
+  const filledPlatforms = (p) => p.platforms.filter((platform) => selected[p.project_id]?.[platform]);
+  // A ticked project goes in with whichever platforms have a reviewer; empty ones are left for later.
+  const ticked = eligible.filter((p) => included[p.project_id] && filledPlatforms(p).length > 0);
+  const complete = ticked.length > 0;
   const allPlatforms = [...new Set(eligible.flatMap((p) => p.platforms))];
 
   function choose(projectId, platform, reviewerId) {
@@ -63,7 +65,7 @@ export default function BulkInitiateDialog({ year, quarters, onDone, onClose }) 
         year, quarter,
         projects: ticked.map((p) => ({
           project_id: p.project_id,
-          assignments: p.platforms.map((platform) => ({ platform, reviewer_id: selected[p.project_id][platform] })),
+          assignments: filledPlatforms(p).map((platform) => ({ platform, reviewer_id: selected[p.project_id][platform] })),
         })),
       });
       setResults(response.results);
@@ -157,7 +159,14 @@ export default function BulkInitiateDialog({ year, quarters, onDone, onClose }) 
                           onChange={(event) => setIncluded((current) => ({ ...current, [p.project_id]: event.target.checked }))}
                         />
                       </td>
-                      <td>{p.project_name}</td>
+                      <td>
+                        {p.project_name}
+                        {included[p.project_id] && filledPlatforms(p).length > 0 && filledPlatforms(p).length < p.platforms.length && (
+                          <div className="quarter-card-meta">
+                            {p.platforms.filter((platform) => !selected[p.project_id]?.[platform]).join(", ")} left for later
+                          </div>
+                        )}
+                      </td>
                       <td>
                         {p.managers.length === 0 ? (
                           <span style={{ color: "var(--color-brand-coral)" }}>No PM assigned — nobody will be emailed</span>

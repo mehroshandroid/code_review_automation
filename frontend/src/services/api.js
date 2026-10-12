@@ -292,6 +292,11 @@ export async function retryAssignment(cycleId, platform) {
   return response.data;
 }
 
+export async function reinitiateAssignment(cycleId, platform, reviewerId) {
+  const response = await axios.post(`${assignmentPath(cycleId, platform)}/reinitiate`, { reviewer_id: reviewerId });
+  return response.data;
+}
+
 export async function rerunAssignment(cycleId, platform, { devopsUrl, devopsBranch }) {
   const response = await axios.post(`${assignmentPath(cycleId, platform)}/rerun`, { devops_url: devopsUrl, devops_branch: devopsBranch || null });
   return response.data;

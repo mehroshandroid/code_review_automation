@@ -110,3 +110,10 @@ test("empty states", async () => {
   expect(screen.getByText("Nothing is running.")).toBeInTheDocument();
   expect(screen.getByText("The queue is empty.")).toBeInTheDocument();
 });
+
+test("Stop is marked with a stop icon in the danger style", async () => {
+  renderPage();
+  const stop = await within(await screen.findByRole("region", { name: "Running now" })).findByRole("button", { name: "Stop" });
+  expect(stop).toHaveClass("btn-danger");
+  expect(stop.querySelector("svg")).not.toBeNull();
+});

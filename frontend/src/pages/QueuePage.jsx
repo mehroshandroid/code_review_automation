@@ -162,11 +162,14 @@ export default function QueuePage() {
                   </div>
                   <div className="queue-item-actions">
                     {item.cancel_requested ? <span className="quarter-card-meta">Stopping…</span> : (
-                      <button type="button" className="btn btn-ghost" onClick={() => setConfirm({
+                      <button type="button" className="btn btn-danger" onClick={() => setConfirm({
                         title: "Stop this review?",
                         body: `${label(item)} will be marked failed (stopped). You can retry it later.`,
                         confirmLabel: "Stop review", action: () => stopQueueItem(item.cycle_id, item.platform),
-                      })}>Stop</button>
+                      })}>
+                        <svg aria-hidden="true" width="12" height="12" viewBox="0 0 12 12"><rect x="1" y="1" width="10" height="10" rx="1.5" fill="currentColor" /></svg>
+                        Stop
+                      </button>
                     )}
                   </div>
                 </li>
