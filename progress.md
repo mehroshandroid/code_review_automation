@@ -190,6 +190,20 @@ Spec: `docs/superpowers/specs/2026-10-08-email-and-stage-tracker-design.md`. Pla
 - **Storage:** zips are kept on the `cycle-uploads` volume (`CYCLE_UPLOADS_DIR`). Each one is **deleted when the review is approved**, when it's replaced, or when the project is deleted.
 - **Stage tracker:** the "URL added" stage is now "Source added".
 
+### Bulk quarter initiation (branch `bulk-initiate`)
+- **Why:** demo feedback. Coordinators had to click Initiate on every card.
+- **Button:** **Initiate quarter for all projects**, next to the search box. It needs `cycles.initiate` and appears only for the current year.
+- **Quarter choice:** the current quarter, plus earlier quarters of this year that some project can still start.
+- **Dialog:**
+  - Every eligible project has a tick box, its PM chips, and a reviewer select per platform. Projects with no PM get a "No PM assigned — nobody will be emailed" warning.
+  - Reviewers are pre-filled from the project's last cycle, but only if that person can still review.
+  - "Set for all" per platform fills only empty slots.
+  - Skipped projects are listed with a reason: already initiated, already done, no platforms, not tracked yet, or the quarter hasn't started.
+  - A results summary appears at the end.
+- **Results:** each project starts or is skipped on its own, using the same validation as single initiation.
+- **Emails:** one `cycles_initiated_digest` per PM listing their started projects, and one `reviewer_assigned_digest` per reviewer. Single initiation still sends the per-project emails.
+- **API:** `GET /api/quarterly/bulk-preview?year&quarter` and `POST /api/quarterly/bulk-initiate`.
+
 ---
 
 ## Running locally
