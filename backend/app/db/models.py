@@ -167,6 +167,25 @@ class ReviewCycleAssignment(Base):
     source_type: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # "devops" | "zip"
     source_zip_path: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # cleared once the review is approved
     source_zip_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # 1 for the first review of the quarter; each reinitiate after approval starts the next round.
+    round: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+
+
+class ReviewCycleRound(Base):
+    """A finished (approved) round of a cycle platform, archived when the platform is reinitiated."""
+
+    __tablename__ = "review_cycle_rounds"
+    __table_args__ = (UniqueConstraint("cycle_id", "platform", "round", name="uq_review_cycle_rounds_round"),)
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    cycle_id: Mapped[str] = mapped_column(ForeignKey("review_cycles.id", ondelete="CASCADE"), nullable=False, index=True)
+    platform: Mapped[str] = mapped_column(String, nullable=False)
+    round: Mapped[int] = mapped_column(Integer, nullable=False)
+    review_id: Mapped[Optional[str]] = mapped_column(ForeignKey("platform_reviews.id", ondelete="SET NULL"), nullable=True)
+    reviewer_id: Mapped[Optional[str]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    approved_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    archived_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    archived_by: Mapped[Optional[str]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
 
 class NotificationOutbox(Base):

@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import (
     ClauseChecklist, NotificationOutbox, OrgSettings, PlatformReview, Project, ProjectManager, ProjectPlatform,
-    ReviewCycle, ReviewCycleAssignment, ReviewQueueState, SampleTemplate, User,
+    ReviewCycle, ReviewCycleAssignment, ReviewCycleRound, ReviewQueueState, SampleTemplate, User,
 )
 from app.quarterly import sort_platforms
 
@@ -384,6 +384,7 @@ async def delete_project(session: AsyncSession, project_id: str) -> bool:
     # Explicit, not just ON DELETE CASCADE: SQLite (tests) doesn't enforce FKs by default.
     cycle_ids = select(ReviewCycle.id).where(ReviewCycle.project_id == project_id)
     await session.execute(delete(ReviewCycleAssignment).where(ReviewCycleAssignment.cycle_id.in_(cycle_ids)))
+    await session.execute(delete(ReviewCycleRound).where(ReviewCycleRound.cycle_id.in_(cycle_ids)))
     await session.execute(delete(ReviewCycle).where(ReviewCycle.project_id == project_id))
     await session.execute(delete(ProjectPlatform).where(ProjectPlatform.project_id == project_id))
     await session.execute(delete(ProjectManager).where(ProjectManager.project_id == project_id))
@@ -794,12 +795,17 @@ async def list_cycle_review_ids(session: AsyncSession, project_ids: list[str]) -
     """Reviews that belong to a quarterly cycle (any year) -- they count for that cycle's quarter, not their date's."""
     if not project_ids:
         return set()
-    result = await session.execute(
+    current = await session.execute(
         select(ReviewCycleAssignment.review_id)
         .join(ReviewCycle, ReviewCycle.id == ReviewCycleAssignment.cycle_id)
         .where(ReviewCycle.project_id.in_(project_ids), ReviewCycleAssignment.review_id.is_not(None))
     )
-    return {review_id for (review_id,) in result.all()}
+    archived = await session.execute(
+        select(ReviewCycleRound.review_id)
+        .join(ReviewCycle, ReviewCycle.id == ReviewCycleRound.cycle_id)
+        .where(ReviewCycle.project_id.in_(project_ids), ReviewCycleRound.review_id.is_not(None))
+    )
+    return {review_id for (review_id,) in current.all()} | {review_id for (review_id,) in archived.all()}
 
 
 async def get_review_coverage_rows_by_ids(session: AsyncSession, review_ids: list[str]) -> list:
@@ -816,3 +822,46 @@ async def get_review_coverage_rows_by_ids(session: AsyncSession, review_ids: lis
 async def list_cycle_ids_for_project(session: AsyncSession, project_id: str) -> list[str]:
     result = await session.execute(select(ReviewCycle.id).where(ReviewCycle.project_id == project_id))
     return [cycle_id for (cycle_id,) in result.all()]
+
+async def list_rounds(session: AsyncSession, cycle_ids: list[str]) -> list[ReviewCycleRound]:
+    """Archived rounds of the given cycles, oldest first per platform."""
+    if not cycle_ids:
+        return []
+    result = await session.execute(
+        select(ReviewCycleRound).where(ReviewCycleRound.cycle_id.in_(cycle_ids))
+        .order_by(ReviewCycleRound.cycle_id, ReviewCycleRound.platform, ReviewCycleRound.round)
+    )
+    return list(result.scalars().all())
+
+
+# Everything a round's run leaves on the assignment; a new round starts from none of it.
+_ROUND_RESET = {
+    "devops_url": None, "devops_branch": None, "url_submitted_by": None, "url_submitted_at": None,
+    "run_status": "waiting_for_url", "run_phase": None, "run_progress": None, "run_error": None, "failure_kind": None,
+    "review_id": None, "attempts": 0, "queued_at": None, "started_at": None, "finished_at": None,
+    "cancel_requested": None, "override_llm_provider": None, "override_llm_model": None, "override_compile_mode": None,
+    "pm_reminded_at": None, "reviewer_reminded_at": None,
+    "source_type": None, "source_zip_path": None, "source_zip_name": None,
+}
+
+
+async def start_next_round(
+    session: AsyncSession, assignment: ReviewCycleAssignment, approved_at: Optional[datetime],
+    reviewer_id: str, by_user_id: Optional[str],
+) -> ReviewCycleAssignment:
+    """Archive the assignment's finished round and reset it for the next one, in one commit."""
+    now = datetime.now(timezone.utc)
+    session.add(ReviewCycleRound(
+        id=str(uuid.uuid4()), cycle_id=assignment.cycle_id, platform=assignment.platform, round=assignment.round,
+        review_id=assignment.review_id, reviewer_id=assignment.reviewer_id, approved_at=approved_at,
+        archived_at=now, archived_by=by_user_id,
+    ))
+    for field, value in _ROUND_RESET.items():
+        setattr(assignment, field, value)
+    assignment.round += 1
+    assignment.reviewer_id = reviewer_id
+    assignment.reviewer_assigned_by = by_user_id
+    assignment.reviewer_assigned_at = now
+    await session.commit()
+    await session.refresh(assignment)
+    return assignment

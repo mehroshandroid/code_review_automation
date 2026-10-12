@@ -78,14 +78,24 @@ async def _quarter_entries(session, projects, year: int, today: date) -> dict[st
         key = (review.project_id, (reviewed_on.month - 1) // 3 + 1, platform)
         if platform is not None and key not in latest_review:
             latest_review[key] = review
+    rounds = await crud.list_rounds(session, [c.id for c in cycles])
     linked = {row.id: row for row in await crud.get_review_coverage_rows_by_ids(
-        session, [a.review_id for rows in assignments.values() for a in rows],
+        session, [a.review_id for rows in assignments.values() for a in rows] + [r.review_id for r in rounds],
     )}
-    for cycle in cycles:
-        for assignment in assignments[cycle.id]:
-            review = linked.get(assignment.review_id)
-            if review is not None:
-                latest_review[(cycle.project_id, cycle.quarter, canonical_platform(assignment.platform))] = review
+    cycle_by_id = {c.id: c for c in cycles}
+    # A cycle platform is covered by its newest review across all its rounds: an earlier
+    # approved round keeps covering it while a reinitiated round is still under way.
+    cycle_links = [(a.cycle_id, a.platform, a.review_id) for rows in assignments.values() for a in rows]
+    cycle_links += [(r.cycle_id, r.platform, r.review_id) for r in rounds]
+    newest_linked = {}
+    for cycle_id, platform, review_id in cycle_links:
+        review = linked.get(review_id)
+        if review is None:
+            continue
+        key = (cycle_by_id[cycle_id].project_id, cycle_by_id[cycle_id].quarter, canonical_platform(platform))
+        if key not in newest_linked or review.created_at > newest_linked[key].created_at:
+            newest_linked[key] = review
+    latest_review.update(newest_linked)
 
     entries: dict[str, list[dict]] = {}
     for project in projects:

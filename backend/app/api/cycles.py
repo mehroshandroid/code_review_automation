@@ -123,6 +123,26 @@ async def rerun(cycle_id: str, platform: str, body: UrlBody, user=Depends(requir
         return await _one(session, assignment)
 
 
+@router.post("/api/cycles/{cycle_id}/assignments/{platform}/reinitiate")
+async def reinitiate(cycle_id: str, platform: str, body: ReviewerBody, user=Depends(require_permission("cycles.initiate"))):
+    """Start another round for a platform whose review this quarter is already approved."""
+    async with new_session() as session:
+        cycle, project, assignment = await _load(session, user, cycle_id, platform)
+        statuses = await crud.get_review_statuses(session, [assignment.review_id])
+        if assignment.review_id is None or statuses.get(assignment.review_id) != "approved":
+            raise HTTPException(status_code=409, detail="Only an approved review can be reinitiated.")
+        reviewer = (await crud.get_users_by_ids(session, [body.reviewer_id])).get(body.reviewer_id)
+        if reviewer is None or not reviewer.is_active or reviewer.role not in PERMISSIONS["reviews.finalize_own"]:
+            raise HTTPException(status_code=400, detail="The reviewer must be an active reviewer, management or admin account.")
+        approved_at = (await crud.get_review_approved_times(session, [assignment.review_id])).get(assignment.review_id)
+        delete_zip(assignment.source_zip_path)  # normally gone at approval; never leave one behind
+        await crud.start_next_round(session, assignment, approved_at, body.reviewer_id, user.id)
+        payload = cycle_payload(project.name, assignment.platform, cycle.year, cycle.quarter, round=assignment.round)
+        await notify(session, "cycle_reinitiated", await project_manager_ids(session, project.id), {**payload, "link": "/"})
+        await notify(session, "reviewer_assigned", [body.reviewer_id], payload)
+        return await _one(session, assignment)
+
+
 @router.put("/api/cycles/{cycle_id}/assignments/{platform}/reviewer")
 async def change_reviewer(cycle_id: str, platform: str, body: ReviewerBody, user=Depends(require_permission("reviews.assign_reviewer"))):
     async with new_session() as session:

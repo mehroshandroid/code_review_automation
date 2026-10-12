@@ -105,3 +105,14 @@ def test_digest_subjects_and_lists():
 def test_cycle_initiated_names_the_platforms_started():
     _, _, text = render("cycle_initiated", {"project_name": "Moove", "year": 2026, "quarter": 4, "platforms": ["iOS"], "link": "/"}, "Pat", BASE)
     assert "Moove (iOS)" in text
+
+
+def test_round_emails():
+    payload = {"project_name": "Moove", "platform": "iOS", "year": 2026, "quarter": 4, "round": 2, "link": "/"}
+    subject, _, text = render("cycle_reinitiated", payload, "Pat", BASE)
+    assert subject == "Action needed: add the source for Moove · iOS (Q4 2026) — round 2"
+    assert "round 2" in text
+    subject, _, _ = render("reviewer_assigned", payload, "Rae", BASE)
+    assert subject == "You're the reviewer for Moove · iOS (Q4 2026) — round 2"
+    first, _, _ = render("reviewer_assigned", {**payload, "round": 1}, "Rae", BASE)
+    assert first == "You're the reviewer for Moove · iOS (Q4 2026)"

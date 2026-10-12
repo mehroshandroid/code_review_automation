@@ -7,6 +7,11 @@ def _where(p: dict) -> str:
     return f"{p.get('project_name')}{platform} (Q{p.get('quarter')} {p.get('year')})"
 
 
+def _round(p: dict) -> str:
+    number = p.get("round")
+    return f" — round {number}" if isinstance(number, int) and number > 1 else ""
+
+
 def _score(p: dict) -> str:
     score = p.get("total_score_pct")
     return f" — {score:g}%" if isinstance(score, (int, float)) else ""
@@ -63,8 +68,14 @@ _EVENTS = {
                   "You'll get an email for each one when its automatic review is ready.",
         "Open CodeAssure",
     ),
+    "cycle_reinitiated": (
+        lambda p: f"Action needed: add the source for {_where(p)}{_round(p)}",
+        lambda p: f"A new review round ({_round(p).replace(' — ', '')}) has started for {_where(p)}. "
+                  "Please add the Azure DevOps repository URL or upload the source zip so the automatic review can run.",
+        "Add the source",
+    ),
     "reviewer_assigned": (
-        lambda p: f"You're the reviewer for {_where(p)}",
+        lambda p: f"You're the reviewer for {_where(p)}{_round(p)}",
         lambda p: f"You've been assigned to review {_where(p)}. You'll get another email when the automatic review is ready.",
         "Open CodeAssure",
     ),
