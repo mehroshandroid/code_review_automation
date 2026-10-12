@@ -103,3 +103,30 @@ test("says so when nothing is eligible", async () => {
   expect(await screen.findByText("No projects can be initiated for this quarter.")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Initiate 0 projects" })).toBeDisabled();
 });
+
+test("clicking outside while initiating doesn't close the dialog", async () => {
+  const user = userEvent.setup();
+  const onClose = jest.fn();
+  bulkInitiate.mockReturnValue(new Promise(() => {}));
+  const { container } = renderDialog({ onClose });
+  await screen.findAllByRole("option", { name: "Sam" });
+  await user.click(screen.getByLabelText("Include Beta"));
+  await user.selectOptions(screen.getByLabelText("Alpha reviewer for iOS"), "r2");
+  await user.click(screen.getByRole("button", { name: "Initiate 1 project" }));
+  await screen.findByRole("button", { name: "Initiating…" });
+  await user.click(container.querySelector(".dialog-backdrop"));
+  expect(onClose).not.toHaveBeenCalled();
+});
+
+test("a failed submit shows the error and reloads the dashboard, since some projects may have started", async () => {
+  const user = userEvent.setup();
+  const onDone = jest.fn();
+  bulkInitiate.mockRejectedValue({ response: { data: { detail: "Server error" } } });
+  renderDialog({ onDone });
+  await screen.findAllByRole("option", { name: "Sam" });
+  await user.click(screen.getByLabelText("Include Beta"));
+  await user.selectOptions(screen.getByLabelText("Alpha reviewer for iOS"), "r2");
+  await user.click(screen.getByRole("button", { name: "Initiate 1 project" }));
+  expect(await screen.findByText("Server error")).toBeInTheDocument();
+  expect(onDone).toHaveBeenCalled();
+});

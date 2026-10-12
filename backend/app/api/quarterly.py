@@ -1,3 +1,4 @@
+import logging
 import uuid
 from datetime import date, datetime, timezone
 
@@ -15,6 +16,7 @@ from app.quarterly import (
 )
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 ALREADY_INITIATED = "This quarter's review has already been initiated."
 
@@ -269,27 +271,38 @@ async def bulk_initiate(body: BulkInitiateRequest, user=Depends(require_permissi
     results = []
     projects_by_pm: dict[str, list[str]] = {}
     assignments_by_reviewer: dict[str, list[dict]] = {}
-    async with new_session() as session:
-        for item in body.projects:
+    for item in body.projects:
+        # Each project gets its own session: a rollback after a lost race or an unexpected
+        # error expires that session's objects, and must not touch the other projects.
+        async with new_session() as session:
             project = await crud.get_project(session, item.project_id)
             if project is None:
                 results.append({"project_id": item.project_id, "project_name": None, "status": "skipped",
                                 "reason": "Project not found"})
                 continue
+            project_id, project_name = project.id, project.name
             try:
                 await _initiate_one(session, project, body.year, body.quarter, item.assignments, user, today)
+                manager_ids = await project_manager_ids(session, project_id)
             except HTTPException as error:
-                results.append({"project_id": project.id, "project_name": project.name, "status": "skipped",
+                results.append({"project_id": project_id, "project_name": project_name, "status": "skipped",
                                 "reason": error.detail})
                 continue
-            results.append({"project_id": project.id, "project_name": project.name, "status": "started", "reason": None})
-            for pm_id in await project_manager_ids(session, project.id):
-                projects_by_pm.setdefault(pm_id, []).append(project.name)
-            for assignment in item.assignments:
-                assignments_by_reviewer.setdefault(assignment.reviewer_id, []).append(
-                    {"project_name": project.name, "platform": canonical_platform(assignment.platform)}
-                )
-        # One email per person, however many projects they're involved in.
+            except Exception:
+                logger.exception("Bulk initiate failed for project %s", project_id)
+                await session.rollback()
+                results.append({"project_id": project_id, "project_name": project_name, "status": "skipped",
+                                "reason": "Unexpected error — please try again."})
+                continue
+        results.append({"project_id": project_id, "project_name": project_name, "status": "started", "reason": None})
+        for pm_id in manager_ids:
+            projects_by_pm.setdefault(pm_id, []).append(project_name)
+        for assignment in item.assignments:
+            assignments_by_reviewer.setdefault(assignment.reviewer_id, []).append(
+                {"project_name": project_name, "platform": canonical_platform(assignment.platform)}
+            )
+    # One email per person, however many projects they're involved in.
+    async with new_session() as session:
         for pm_id, names in projects_by_pm.items():
             await notify(session, "cycles_initiated_digest", [pm_id],
                          {"year": body.year, "quarter": body.quarter, "projects": names, "link": "/"})

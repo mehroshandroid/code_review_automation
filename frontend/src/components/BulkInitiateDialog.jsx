@@ -69,6 +69,7 @@ export default function BulkInitiateDialog({ year, quarters, onDone, onClose }) 
       setResults(response.results);
     } catch (err) {
       setError(err.response?.data?.detail || "Failed to initiate the reviews.");
+      onDone(); // Some projects may have started before the failure.
     } finally {
       setSaving(false);
     }
@@ -105,7 +106,7 @@ export default function BulkInitiateDialog({ year, quarters, onDone, onClose }) 
   }
 
   return (
-    <div className="dialog-backdrop" onClick={onClose}>
+    <div className="dialog-backdrop" onClick={saving ? undefined : onClose}>
       <form className="dialog" style={{ maxWidth: 900, width: "100%" }} onClick={(event) => event.stopPropagation()} onSubmit={handleSubmit}>
         <div className="dialog-title">Initiate a quarter for all projects</div>
         <div className="dialog-body" style={{ display: "grid", gap: "var(--space-3)", maxHeight: "70vh", overflowY: "auto" }}>

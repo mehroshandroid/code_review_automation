@@ -128,3 +128,50 @@ def test_bad_quarter_is_400(db):
     _as("coordinator")
     assert _preview(quarter=5).status_code == 400
     assert _bulk([ALPHA], quarter=0).status_code == 400
+
+
+async def test_a_project_lost_to_a_concurrent_initiate_is_skipped_and_the_rest_still_start(db, monkeypatch):
+    _as("coordinator")
+    real_get_cycle = crud.get_cycle
+
+    async def racing_get_cycle(session, project_id, year, quarter):
+        # Gamma's cycle "appears" between the check and the insert.
+        return None if project_id == "p3" else await real_get_cycle(session, project_id, year, quarter)
+
+    real_list_cycles = crud.list_cycles_for_projects_in_year
+
+    async def racing_list_cycles(session, project_ids, year):
+        return [c for c in await real_list_cycles(session, project_ids, year) if c.project_id != "p3"]
+
+    monkeypatch.setattr(crud, "get_cycle", racing_get_cycle)
+    monkeypatch.setattr(crud, "list_cycles_for_projects_in_year", racing_list_cycles)
+    gamma = {"project_id": "p3", "assignments": [{"platform": "Android", "reviewer_id": "rev"}]}
+    response = _bulk([gamma, ALPHA])
+    assert response.status_code == 200
+    results = {r["project_name"]: r for r in response.json()["results"]}
+    assert results["Gamma"]["status"] == "skipped"
+    assert results["Gamma"]["reason"] == "This quarter's review has already been initiated."
+    assert results["Alpha"]["status"] == "started"
+    async with db() as s:
+        assert [n.recipient_user_id for n in await crud.list_notifications(s, "cycles_initiated_digest")] == ["pm"]
+
+
+async def test_an_unexpected_error_skips_only_that_project_and_digests_still_go_out(db, monkeypatch):
+    _as("coordinator")
+    real_create_cycle = crud.create_cycle
+
+    async def flaky_create_cycle(session, cycle_id, project_id, *args, **kwargs):
+        if project_id == "p1":
+            raise RuntimeError("database hiccup")
+        return await real_create_cycle(session, cycle_id, project_id, *args, **kwargs)
+
+    monkeypatch.setattr(crud, "create_cycle", flaky_create_cycle)
+    response = _bulk([ALPHA, DELTA])
+    assert response.status_code == 200
+    results = {r["project_name"]: r for r in response.json()["results"]}
+    assert results["Alpha"] == {"project_id": "p1", "project_name": "Alpha", "status": "skipped",
+                                "reason": "Unexpected error — please try again."}
+    assert results["Delta"]["status"] == "started"
+    async with db() as s:
+        digest = (await crud.list_notifications(s, "cycles_initiated_digest"))[0]
+    assert digest.payload["projects"] == ["Delta"]
