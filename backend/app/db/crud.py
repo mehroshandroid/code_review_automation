@@ -489,6 +489,24 @@ async def get_cycle_assignments(session: AsyncSession, cycle_ids: list[str]) -> 
     return mapping
 
 
+async def get_latest_cycle_assignments(session: AsyncSession, project_ids: list[str]) -> dict[str, dict[str, Optional[str]]]:
+    """For each project, platform -> reviewer_id from its most recent cycle ({} when it has none)."""
+    latest: dict[str, dict[str, Optional[str]]] = {project_id: {} for project_id in project_ids}
+    if not project_ids:
+        return latest
+    result = await session.execute(
+        select(ReviewCycle).where(ReviewCycle.project_id.in_(project_ids))
+        .order_by(ReviewCycle.year.desc(), ReviewCycle.quarter.desc())
+    )
+    newest: dict[str, str] = {}
+    for cycle in result.scalars().all():
+        newest.setdefault(cycle.project_id, cycle.id)
+    assignments = await get_cycle_assignments(session, list(newest.values()))
+    for project_id, cycle_id in newest.items():
+        latest[project_id] = {a.platform: a.reviewer_id for a in assignments[cycle_id]}
+    return latest
+
+
 async def get_cycle(session: AsyncSession, project_id: str, year: int, quarter: int) -> Optional[ReviewCycle]:
     result = await session.execute(
         select(ReviewCycle).where(

@@ -30,6 +30,17 @@ class InitiateCycleRequest(BaseModel):
     assignments: list[AssignmentIn]
 
 
+class BulkProjectIn(BaseModel):
+    project_id: str
+    assignments: list[AssignmentIn]
+
+
+class BulkInitiateRequest(BaseModel):
+    year: int
+    quarter: int
+    projects: list[BulkProjectIn]
+
+
 def _today() -> date:
     return datetime.now(timezone.utc).date()
 
@@ -140,6 +151,37 @@ async def get_quarterly(year: int | None = None, user=Depends(require_permission
     }
 
 
+def _valid_reviewer(user) -> bool:
+    return user is not None and user.is_active and user.role in PERMISSIONS["reviews.finalize_own"]
+
+
+async def _initiate_one(session, project, year: int, quarter: int, assignments: list[AssignmentIn], user, today: date) -> None:
+    """Validate and create one project's cycle; raises HTTPException with a user-facing reason."""
+    platforms = (await crud.get_platforms_for_projects(session, [project.id]))[project.id]
+    if not platforms:
+        raise HTTPException(status_code=400, detail="Set this project's platforms before initiating a review.")
+    requested = [canonical_platform(a.platform) for a in assignments]
+    if sorted(p or "" for p in requested) != sorted(platforms) or len(set(requested)) != len(requested):
+        raise HTTPException(status_code=400, detail="Assign exactly one reviewer to each of the project's platforms.")
+    reviewers = await crud.get_users_by_ids(session, [a.reviewer_id for a in assignments])
+    if not all(_valid_reviewer(reviewers.get(a.reviewer_id)) for a in assignments):
+        raise HTTPException(status_code=400, detail="Each reviewer must be an active reviewer, management or admin account.")
+    if await crud.get_cycle(session, project.id, year, quarter) is not None:
+        raise HTTPException(status_code=409, detail=ALREADY_INITIATED)
+    current = (await _quarter_entries(session, [project], year, today))[project.id][quarter - 1]
+    if not current["can_initiate"]:
+        raise HTTPException(status_code=400, detail="This quarter can't be initiated.")
+    try:
+        await crud.create_cycle(
+            session, str(uuid.uuid4()), project.id, year, quarter, user.id,
+            [(canonical_platform(a.platform), a.reviewer_id) for a in assignments],
+        )
+    except IntegrityError:
+        # Lost a race with a concurrent initiate: the unique constraint held.
+        await session.rollback()
+        raise HTTPException(status_code=409, detail=ALREADY_INITIATED)
+
+
 @router.post("/api/projects/{project_id}/cycles")
 async def initiate_cycle(project_id: str, body: InitiateCycleRequest, user=Depends(require_permission("cycles.initiate"))):
     if body.quarter not in (1, 2, 3, 4):
@@ -149,31 +191,7 @@ async def initiate_cycle(project_id: str, body: InitiateCycleRequest, user=Depen
         project = await crud.get_project(session, project_id)
         if project is None:
             raise HTTPException(status_code=404, detail="Project not found")
-        platforms = (await crud.get_platforms_for_projects(session, [project_id]))[project_id]
-        if not platforms:
-            raise HTTPException(status_code=400, detail="Set this project's platforms before initiating a review.")
-        requested = [canonical_platform(a.platform) for a in body.assignments]
-        if sorted(p or "" for p in requested) != sorted(platforms) or len(set(requested)) != len(requested):
-            raise HTTPException(status_code=400, detail="Assign exactly one reviewer to each of the project's platforms.")
-        reviewers = await crud.get_users_by_ids(session, [a.reviewer_id for a in body.assignments])
-        for assignment in body.assignments:
-            reviewer = reviewers.get(assignment.reviewer_id)
-            if reviewer is None or not reviewer.is_active or reviewer.role not in PERMISSIONS["reviews.finalize_own"]:
-                raise HTTPException(status_code=400, detail="Each reviewer must be an active reviewer, management or admin account.")
-        if await crud.get_cycle(session, project_id, body.year, body.quarter) is not None:
-            raise HTTPException(status_code=409, detail=ALREADY_INITIATED)
-        current = (await _quarter_entries(session, [project], body.year, today))[project_id][body.quarter - 1]
-        if not current["can_initiate"]:
-            raise HTTPException(status_code=400, detail="This quarter can't be initiated.")
-        try:
-            await crud.create_cycle(
-                session, str(uuid.uuid4()), project_id, body.year, body.quarter, user.id,
-                [(canonical_platform(a.platform), a.reviewer_id) for a in body.assignments],
-            )
-        except IntegrityError:
-            # Lost a race with a concurrent initiate: the unique constraint held.
-            await session.rollback()
-            raise HTTPException(status_code=409, detail=ALREADY_INITIATED)
+        await _initiate_one(session, project, body.year, body.quarter, body.assignments, user, today)
         for_pms = cycle_payload(project.name, None, body.year, body.quarter, link="/")
         await notify(session, "cycle_initiated", await project_manager_ids(session, project_id), for_pms)
         for assignment in body.assignments:
@@ -182,3 +200,100 @@ async def initiate_cycle(project_id: str, body: InitiateCycleRequest, user=Depen
                 cycle_payload(project.name, canonical_platform(assignment.platform), body.year, body.quarter),
             )
         return (await _quarter_entries(session, [project], body.year, today))[project_id][body.quarter - 1]
+
+
+def _skip_reason(entry: dict | None, year: int, quarter: int, today: date) -> str | None:
+    """Why a project can't be bulk-initiated for this quarter, or None when it can."""
+    if entry is None:
+        return "No platforms set"
+    if entry["cycle"] is not None:
+        return "Already initiated"
+    if entry["status"] == "done":
+        return "Already done this quarter"
+    if entry["status"] == "not_applicable":
+        return "Not tracked yet that quarter"
+    if today < quarter_bounds(year, quarter)[0]:
+        return "Quarter hasn't started"
+    return None if entry["can_initiate"] else "This quarter can't be initiated."
+
+
+def _check_quarter(quarter: int) -> None:
+    if quarter not in (1, 2, 3, 4):
+        raise HTTPException(status_code=400, detail="quarter must be 1-4")
+
+
+@router.get("/api/quarterly/bulk-preview")
+async def bulk_preview(year: int, quarter: int, user=Depends(require_permission("cycles.initiate"))):
+    _check_quarter(quarter)
+    today = _today()
+    async with new_session() as session:
+        projects = sorted(await crud.list_projects(session), key=lambda p: p.name.lower())
+        project_ids = [p.id for p in projects]
+        platforms = await crud.get_platforms_for_projects(session, project_ids)
+        entries = await _quarter_entries(session, projects, year, today)
+        managers = await crud.get_manager_ids_for_projects(session, project_ids)
+        last_reviewers = await crud.get_latest_cycle_assignments(session, project_ids)
+        users = await crud.get_users_by_ids(
+            session,
+            [u for ids in managers.values() for u in ids] + [r for m in last_reviewers.values() for r in m.values()],
+        )
+    eligible, skipped = [], []
+    for project in projects:
+        quarters = entries[project.id]
+        reason = _skip_reason(quarters[quarter - 1] if quarters else None, year, quarter, today)
+        if reason is not None:
+            skipped.append({"project_id": project.id, "project_name": project.name, "reason": reason})
+            continue
+        last = last_reviewers[project.id]
+        eligible.append({
+            "project_id": project.id,
+            "project_name": project.name,
+            "platforms": platforms[project.id],
+            "managers": [
+                {"id": m, "name": _display_name(users[m])}
+                for m in managers[project.id] if m in users and users[m].is_active
+            ],
+            # Last cycle's reviewer, while that account can still review.
+            "suggested_reviewers": {
+                platform: last.get(platform) if _valid_reviewer(users.get(last.get(platform))) else None
+                for platform in platforms[project.id]
+            },
+        })
+    return {"year": year, "quarter": quarter, "eligible": eligible, "skipped": skipped}
+
+
+@router.post("/api/quarterly/bulk-initiate")
+async def bulk_initiate(body: BulkInitiateRequest, user=Depends(require_permission("cycles.initiate"))):
+    _check_quarter(body.quarter)
+    today = _today()
+    results = []
+    projects_by_pm: dict[str, list[str]] = {}
+    assignments_by_reviewer: dict[str, list[dict]] = {}
+    async with new_session() as session:
+        for item in body.projects:
+            project = await crud.get_project(session, item.project_id)
+            if project is None:
+                results.append({"project_id": item.project_id, "project_name": None, "status": "skipped",
+                                "reason": "Project not found"})
+                continue
+            try:
+                await _initiate_one(session, project, body.year, body.quarter, item.assignments, user, today)
+            except HTTPException as error:
+                results.append({"project_id": project.id, "project_name": project.name, "status": "skipped",
+                                "reason": error.detail})
+                continue
+            results.append({"project_id": project.id, "project_name": project.name, "status": "started", "reason": None})
+            for pm_id in await project_manager_ids(session, project.id):
+                projects_by_pm.setdefault(pm_id, []).append(project.name)
+            for assignment in item.assignments:
+                assignments_by_reviewer.setdefault(assignment.reviewer_id, []).append(
+                    {"project_name": project.name, "platform": canonical_platform(assignment.platform)}
+                )
+        # One email per person, however many projects they're involved in.
+        for pm_id, names in projects_by_pm.items():
+            await notify(session, "cycles_initiated_digest", [pm_id],
+                         {"year": body.year, "quarter": body.quarter, "projects": names, "link": "/"})
+        for reviewer_id, assigned in assignments_by_reviewer.items():
+            await notify(session, "reviewer_assigned_digest", [reviewer_id],
+                         {"year": body.year, "quarter": body.quarter, "assignments": assigned, "link": "/"})
+    return {"results": results}

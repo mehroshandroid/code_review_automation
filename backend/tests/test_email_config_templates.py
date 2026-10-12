@@ -87,3 +87,15 @@ def test_line_breaks_in_untrusted_text_never_reach_the_subject():
     subject, _, _ = render("review_ready", {**PAYLOAD, "project_name": "Moove\r\nBcc: x@evil.com"}, "Rae", BASE)
     assert "\r" not in subject and "\n" not in subject
     assert subject == "Ready for your review: Moove Bcc: x@evil.com · iOS (Q4 2026)"
+
+
+def test_digest_subjects_and_lists():
+    subject, html, text = render("cycles_initiated_digest", {"year": 2026, "quarter": 4, "projects": ["Moove", "Reeft", "IBS"], "link": "/"}, "Pat", BASE)
+    assert subject == "Action needed: Q4 2026 reviews started for 3 of your projects"
+    assert "Moove, Reeft, IBS" in text and "Moove" in html
+    subject, _, text = render("reviewer_assigned_digest", {"year": 2026, "quarter": 4, "assignments": [
+        {"project_name": "Moove", "platform": "iOS"}, {"project_name": "IBS", "platform": ".NET"}], "link": "/"}, "Rae", BASE)
+    assert subject == "You're the reviewer for 2 Q4 2026 reviews"
+    assert "Moove · iOS" in text and "IBS · .NET" in text
+    single, _, _ = render("cycles_initiated_digest", {"year": 2026, "quarter": 4, "projects": ["Moove"], "link": "/"}, "Pat", BASE)
+    assert single == "Action needed: Q4 2026 review started for 1 of your projects"
