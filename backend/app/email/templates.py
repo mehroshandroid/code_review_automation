@@ -26,6 +26,17 @@ def _quarter_label(p: dict) -> str:
     return f"Q{p.get('quarter')} {p.get('year')}"
 
 
+def _with_platforms(name, platforms) -> str:
+    return f"{name} ({', '.join(platforms)})" if platforms else f"{name}"
+
+
+def _digest_projects(p: dict) -> str:
+    return ", ".join(
+        _with_platforms(item.get("name"), item.get("platforms")) if isinstance(item, dict) else str(item)
+        for item in p.get("projects") or []
+    )
+
+
 def _digest_assignments(p: dict) -> str:
     return "; ".join(f"{a.get('project_name')} · {a.get('platform')}" for a in p.get("assignments") or [])
 
@@ -34,7 +45,7 @@ def _digest_assignments(p: dict) -> str:
 _EVENTS = {
     "cycle_initiated": (
         lambda p: f"Action needed: add DevOps URLs for {p.get('project_name')} · Q{p.get('quarter')} {p.get('year')} review",
-        lambda p: f"The Q{p.get('quarter')} {p.get('year')} code review for {p.get('project_name')} has started. "
+        lambda p: f"The Q{p.get('quarter')} {p.get('year')} code review for {_with_platforms(p.get('project_name'), p.get('platforms'))} has started. "
                   "Please add the Azure DevOps repository URL for each platform so the automatic review can run.",
         "Add repository URLs",
     ),
@@ -42,7 +53,7 @@ _EVENTS = {
         lambda p: f"Action needed: Q{p.get('quarter')} {p.get('year')} "
                   f"{'review' if len(p.get('projects') or []) == 1 else 'reviews'} started for "
                   f"{len(p.get('projects') or [])} of your projects",
-        lambda p: f"The Q{p.get('quarter')} {p.get('year')} code reviews have started for: {', '.join(p.get('projects') or [])}. "
+        lambda p: f"The Q{p.get('quarter')} {p.get('year')} code reviews have started for: {_digest_projects(p)}. "
                   "Please add the Azure DevOps repository URL (or upload the source zip) for each platform so the automatic reviews can run.",
         "Add repository URLs",
     ),

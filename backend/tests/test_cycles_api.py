@@ -172,7 +172,7 @@ async def test_initiation_records_notifications(db, monkeypatch):
         initiated = await crud.list_notifications(s, "cycle_initiated")
         assigned = await crud.list_notifications(s, "reviewer_assigned")
     assert [n.recipient_user_id for n in initiated] == ["pm2"]
-    assert initiated[0].payload == {"project_name": "Beta", "platform": None, "year": 2026, "quarter": 3, "link": "/"}
+    assert initiated[0].payload == {"project_name": "Beta", "platform": None, "year": 2026, "quarter": 3, "link": "/", "platforms": ["Android"]}
     assert [n.recipient_user_id for n in assigned] == ["rev2"]
 
 

@@ -92,7 +92,7 @@ async def test_bulk_projects_succeed_or_fail_independently(db):
     results = {r["project_name"]: r for r in _bulk([gamma, ALPHA, bad_delta]).json()["results"]}
     assert results["Alpha"]["status"] == "started"
     assert results["Gamma"] == {"project_id": "p3", "project_name": "Gamma", "status": "skipped",
-                                "reason": "This quarter's review has already been initiated."}
+                                "reason": "Android has already been initiated this quarter."}
     assert results["Delta"]["status"] == "skipped" and "active reviewer" in results["Delta"]["reason"]
     async with db() as s:
         assert await crud.get_cycle(s, "p4", 2026, 4) is None
@@ -110,7 +110,9 @@ async def test_bulk_sends_one_digest_per_pm_and_reviewer(db):
         ("reviewer_assigned_digest", "rev2"),
     ]
     pm_digest = next(n for n in rows if n.event == "cycles_initiated_digest")
-    assert pm_digest.payload == {"year": 2026, "quarter": 4, "projects": ["Alpha", "Delta"], "link": "/"}
+    assert pm_digest.payload == {"year": 2026, "quarter": 4, "link": "/", "projects": [
+        {"name": "Alpha", "platforms": ["Android", "iOS"]}, {"name": "Delta", "platforms": ["Android", ".NET"]},
+    ]}
     rev_digest = next(n for n in rows if n.recipient_user_id == "rev")
     assert rev_digest.payload["assignments"] == [
         {"project_name": "Alpha", "platform": "Android"}, {"project_name": "Alpha", "platform": "iOS"},
@@ -174,4 +176,26 @@ async def test_an_unexpected_error_skips_only_that_project_and_digests_still_go_
     assert results["Delta"]["status"] == "started"
     async with db() as s:
         digest = (await crud.list_notifications(s, "cycles_initiated_digest"))[0]
-    assert digest.payload["projects"] == ["Delta"]
+    assert digest.payload["projects"] == [{"name": "Delta", "platforms": ["Android", ".NET"]}]
+
+
+async def test_preview_offers_only_the_missing_platforms_of_a_partly_started_project(db):
+    _as("coordinator")
+    async with db() as s:
+        await crud.create_cycle(s, "a4", "p1", 2026, 4, "co", [("Android", "rev")])
+    alpha = next(p for p in _preview().json()["eligible"] if p["project_name"] == "Alpha")
+    assert alpha["platforms"] == ["iOS"] and alpha["suggested_reviewers"] == {"iOS": None}
+
+
+async def test_bulk_starts_only_the_filled_platforms(db):
+    _as("coordinator")
+    delta_android = {"project_id": "p4", "assignments": [{"platform": "Android", "reviewer_id": "rev2"}]}
+    nothing = {"project_id": "p1", "assignments": []}
+    results = {r["project_name"]: r for r in _bulk([delta_android, nothing]).json()["results"]}
+    assert results["Delta"]["status"] == "started"
+    assert results["Alpha"] == {"project_id": "p1", "project_name": "Alpha", "status": "skipped", "reason": "No platforms selected"}
+    async with db() as s:
+        cycle = await crud.get_cycle(s, "p4", 2026, 4)
+        assert [a.platform for a in (await crud.get_cycle_assignments(s, [cycle.id]))[cycle.id]] == ["Android"]
+        digest = (await crud.list_notifications(s, "cycles_initiated_digest"))[0]
+    assert digest.payload["projects"] == [{"name": "Delta", "platforms": ["Android"]}]

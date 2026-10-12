@@ -533,6 +533,12 @@ async def create_cycle(
     return cycle
 
 
+async def add_cycle_assignments(session: AsyncSession, cycle_id: str, assignments: list[tuple[str, Optional[str]]]) -> None:
+    for platform, reviewer_id in assignments:
+        session.add(ReviewCycleAssignment(cycle_id=cycle_id, platform=platform, reviewer_id=reviewer_id))
+    await session.commit()
+
+
 async def get_users_by_ids(session: AsyncSession, user_ids: list[str]) -> dict[str, User]:
     ids = [user_id for user_id in set(user_ids) if user_id]
     if not ids:
