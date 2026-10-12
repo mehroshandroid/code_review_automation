@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import AppNav from "../components/AppNav";
 import QuarterCard from "../components/QuarterCard";
+import BulkInitiateDialog from "../components/BulkInitiateDialog";
 import InitiateCycleDialog from "../components/InitiateCycleDialog";
 import ManageCycleDialog from "../components/ManageCycleDialog";
 import { useCan } from "../context/AuthContext";
@@ -17,6 +18,7 @@ export default function QuarterlyDashboardPage() {
   const [query, setQuery] = useState("");
   const [initiating, setInitiating] = useState(null); // { project, entry, year }
   const [managing, setManaging] = useState(null); // { project, entry, year }
+  const [bulk, setBulk] = useState(null); // { year, quarters }
 
   useEffect(() => {
     let cancelled = false;
@@ -58,6 +60,13 @@ export default function QuarterlyDashboardPage() {
 
   const projects = (data?.projects || []).filter((project) => project.name.toLowerCase().includes(query.toLowerCase()));
   const sortedYears = [...years].sort((a, b) => b - a);
+  // Bulk initiation: the current quarter, plus earlier quarters of this year some project can still start.
+  const today = data?.today ? new Date(`${data.today}T00:00:00`) : null;
+  const currentQuarter = today ? Math.floor(today.getMonth() / 3) + 1 : null;
+  const bulkQuarters = !today || data.year !== today.getFullYear() ? [] : [1, 2, 3, 4].filter((quarter) => (
+    quarter === currentQuarter
+    || (quarter < currentQuarter && data.projects.some((project) => project.quarters[quarter - 1]?.can_initiate))
+  ));
 
   return (
     <div className="page">
@@ -73,6 +82,11 @@ export default function QuarterlyDashboardPage() {
               type="search" className="input" aria-label="Search projects" placeholder="Search projects…"
               value={query} onChange={(event) => setQuery(event.target.value)} style={{ width: 220 }}
             />
+            {can("cycles.initiate") && bulkQuarters.length > 0 && (
+              <button type="button" className="btn btn-primary" onClick={() => setBulk({ year: data.year, quarters: bulkQuarters })}>
+                Initiate quarter for all projects
+              </button>
+            )}
             <select aria-label="Year" className="input" value={year} onChange={(event) => setYear(Number(event.target.value))} style={{ width: 110 }}>
               {sortedYears.map((y) => <option key={y} value={y}>{y}</option>)}
             </select>
@@ -118,6 +132,9 @@ export default function QuarterlyDashboardPage() {
           onInitiated={(updated) => replaceEntry(initiating.project.id, initiating.year, updated)}
           onClose={() => setInitiating(null)}
         />
+      )}
+      {bulk && (
+        <BulkInitiateDialog year={bulk.year} quarters={bulk.quarters} onDone={reload} onClose={() => setBulk(null)} />
       )}
       {managing && (
         <ManageCycleDialog

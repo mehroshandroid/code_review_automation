@@ -4,11 +4,12 @@ import { MemoryRouter } from "react-router-dom";
 import QuarterlyDashboardPage from "./QuarterlyDashboardPage";
 import { AuthContext } from "../context/AuthContext";
 import { userWithRole } from "../testUtils/authUsers";
-import { getQuarterly, getReviewers, getReviewYears, initiateCycle, retryAssignment } from "../services/api";
+import { getBulkPreview, getQuarterly, getReviewers, getReviewYears, initiateCycle, retryAssignment } from "../services/api";
 
 jest.mock("../services/api", () => ({
   ...jest.requireActual("../services/api"),
   getQuarterly: jest.fn(), getReviewers: jest.fn(), getReviewYears: jest.fn(), initiateCycle: jest.fn(), retryAssignment: jest.fn(),
+  getBulkPreview: jest.fn(),
 }));
 
 const q = (quarter, status, extra = {}) => ({
@@ -146,4 +147,27 @@ test("Manage opens the cycle dialog and changes reload the dashboard", async () 
   await user.click(within(row).getByRole("button", { name: "Manage" }));
   await user.click(screen.getByRole("button", { name: "Retry" }));
   await waitFor(() => expect(getQuarterly).toHaveBeenCalledTimes(2));
+});
+
+test("the bulk initiate button opens the dialog for the current quarter and the quarters still open", async () => {
+  const user = userEvent.setup();
+  getBulkPreview.mockResolvedValue({ year: 2026, quarter: 4, eligible: [], skipped: [] });
+  renderAs();
+  await user.click(await screen.findByRole("button", { name: "Initiate quarter for all projects" }));
+  await waitFor(() => expect(getBulkPreview).toHaveBeenCalledWith(2026, 4));
+  const quarter = screen.getByLabelText("Quarter");
+  expect(within(quarter).getAllByRole("option").map((o) => o.value)).toEqual(["4", "3"]);
+});
+
+test("the bulk initiate button needs cycles.initiate", async () => {
+  renderAs("project_manager");
+  await screen.findByRole("region", { name: "Alpha" });
+  expect(screen.queryByRole("button", { name: "Initiate quarter for all projects" })).not.toBeInTheDocument();
+});
+
+test("the bulk initiate button is only for the current year", async () => {
+  getQuarterly.mockResolvedValue({ ...data, year: 2025 });
+  renderAs();
+  await screen.findByRole("region", { name: "Alpha" });
+  expect(screen.queryByRole("button", { name: "Initiate quarter for all projects" })).not.toBeInTheDocument();
 });
