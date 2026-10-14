@@ -13,10 +13,21 @@ from app.email.config import email_settings
 from app.email.transport import EmailError
 
 
+EMAIL_ENV = (
+    "EMAIL_MODE", "EMAIL_FROM", "EMAIL_FROM_NAME", "SMTP_HOST", "SMTP_PORT", "SMTP_USERNAME", "SMTP_PASSWORD",
+    "SMTP_STARTTLS", "GRAPH_TENANT_ID", "GRAPH_CLIENT_ID", "GRAPH_CLIENT_SECRET",
+)
+
+
+@pytest.fixture(autouse=True)
+def clean_email_env(monkeypatch):
+    # main.py's load_dotenv() pulls in the developer's real .env; no test may see those settings.
+    for name in EMAIL_ENV:
+        monkeypatch.delenv(name, raising=False)
+
+
 @pytest.fixture
 async def db(monkeypatch):
-    for name in ("EMAIL_MODE", "EMAIL_FROM", "SMTP_HOST", "SMTP_PASSWORD", "SMTP_USERNAME", "SMTP_STARTTLS"):
-        monkeypatch.delenv(name, raising=False)
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
