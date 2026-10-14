@@ -1,10 +1,11 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import BulkInitiateDialog from "./BulkInitiateDialog";
-import { bulkInitiate, getBulkPreview, getReviewers } from "../services/api";
+import { bulkInitiate, getBulkPreview, getProjectManagers, getReviewers, setProjectManagers } from "../services/api";
 
 jest.mock("../services/api", () => ({
   ...jest.requireActual("../services/api"), getReviewers: jest.fn(), getBulkPreview: jest.fn(), bulkInitiate: jest.fn(),
+  getProjectManagers: jest.fn(), setProjectManagers: jest.fn(),
 }));
 
 const preview = {
@@ -21,10 +22,11 @@ beforeEach(() => {
   jest.resetAllMocks();
   getReviewers.mockResolvedValue([{ id: "r1", email: "rae@example.com", name: "Rae" }, { id: "r2", email: "sam@example.com", name: "Sam" }]);
   getBulkPreview.mockResolvedValue(preview);
+  getProjectManagers.mockResolvedValue([{ id: "pm", name: "Pat", email: "pat@example.com" }, { id: "pm2", name: null, email: "quinn@example.com" }]);
 });
 
 function renderDialog(props = {}) {
-  return render(<BulkInitiateDialog year={2026} quarters={[3, 4]} onDone={jest.fn()} onClose={jest.fn()} {...props} />);
+  return render(<BulkInitiateDialog year={2026} quarters={[3, 4]} canAssignPm onDone={jest.fn()} onClose={jest.fn()} {...props} />);
 }
 
 test("loads the current quarter's preview with pre-filled reviewers, PMs and skipped projects", async () => {
@@ -130,4 +132,36 @@ test("a failed submit shows the error and reloads the dashboard, since some proj
   await user.click(screen.getByRole("button", { name: "Initiate 1 project" }));
   expect(await screen.findByText("Server error")).toBeInTheDocument();
   expect(onDone).toHaveBeenCalled();
+});
+
+test("a project without a PM can get one from the dialog, and the row shows it", async () => {
+  const user = userEvent.setup();
+  setProjectManagers.mockResolvedValue({ id: "p2", name: "Beta", manager_ids: ["pm2"] });
+  renderDialog();
+  const beta = await screen.findByRole("row", { name: /Beta/ });
+  await user.click(within(beta).getByRole("button", { name: "Assign PM for Beta" }));
+  await user.click(await screen.findByRole("button", { name: "Project managers" }));
+  await user.click(screen.getByRole("checkbox", { name: "quinn@example.com" }));
+  await user.click(screen.getByRole("button", { name: "Save" }));
+  await waitFor(() => expect(setProjectManagers).toHaveBeenCalledWith("p2", ["pm2"]));
+  const updated = screen.getByRole("row", { name: /Beta/ });
+  expect(within(updated).getByText("quinn@example.com")).toBeInTheDocument();
+  expect(within(updated).queryByText(/No PM assigned/)).not.toBeInTheDocument();
+  // The bulk dialog stays open with its choices intact.
+  expect(screen.getByLabelText("Alpha reviewer for Android")).toHaveValue("r1");
+});
+
+test("existing PMs can be changed from the dialog", async () => {
+  const user = userEvent.setup();
+  renderDialog();
+  const alpha = await screen.findByRole("row", { name: /Alpha/ });
+  await user.click(within(alpha).getByRole("button", { name: "Edit PMs for Alpha" }));
+  await user.click(await screen.findByRole("button", { name: "Project managers" }));
+  expect(screen.getByRole("checkbox", { name: "Pat" })).toBeChecked();
+});
+
+test("PM assignment isn't offered without the permission", async () => {
+  renderDialog({ canAssignPm: false });
+  const beta = await screen.findByRole("row", { name: /Beta/ });
+  expect(within(beta).queryByRole("button", { name: "Assign PM for Beta" })).not.toBeInTheDocument();
 });

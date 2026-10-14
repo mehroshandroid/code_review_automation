@@ -134,7 +134,10 @@ export default function QuarterlyDashboardPage() {
         />
       )}
       {bulk && (
-        <BulkInitiateDialog year={bulk.year} quarters={bulk.quarters} onDone={reload} onClose={() => setBulk(null)} />
+        <BulkInitiateDialog
+          year={bulk.year} quarters={bulk.quarters} canAssignPm={can("projects.assign_pm")}
+          onDone={reload} onClose={() => setBulk(null)}
+        />
       )}
       {managing && (
         <ManageCycleDialog

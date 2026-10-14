@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
-import { bulkInitiate, getBulkPreview, getReviewers } from "../services/api";
+import AssignManagersDialog, { managerLabel } from "./AssignManagersDialog";
+import { bulkInitiate, getBulkPreview, getProjectManagers, getReviewers } from "../services/api";
 
 const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
-export default function BulkInitiateDialog({ year, quarters, onDone, onClose }) {
+export default function BulkInitiateDialog({ year, quarters, canAssignPm = false, onDone, onClose }) {
   const [quarter, setQuarter] = useState(quarters[quarters.length - 1]);
   const [reviewers, setReviewers] = useState([]);
   const [preview, setPreview] = useState(null);
@@ -13,12 +14,32 @@ export default function BulkInitiateDialog({ year, quarters, onDone, onClose }) 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [results, setResults] = useState(null);
+  const [pmAccounts, setPmAccounts] = useState([]);
+  const [assigningPm, setAssigningPm] = useState(null); // an eligible row
 
   useEffect(() => {
     let cancelled = false;
     getReviewers().then((result) => { if (!cancelled) setReviewers(result); }).catch(() => {});
     return () => { cancelled = true; };
   }, []);
+
+  useEffect(() => {
+    if (!canAssignPm) return undefined;
+    let cancelled = false;
+    getProjectManagers().then((result) => { if (!cancelled) setPmAccounts(result); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [canAssignPm]);
+
+  function applyManagers(saved) {
+    // Saved straight to the project (same as the Projects page); show it on the row without reloading.
+    const managers = pmAccounts
+      .filter((account) => saved.manager_ids.includes(account.id))
+      .map((account) => ({ id: account.id, name: managerLabel(account) }));
+    setPreview((current) => current && {
+      ...current,
+      eligible: current.eligible.map((p) => (p.project_id === saved.id ? { ...p, managers } : p)),
+    });
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -108,7 +129,8 @@ export default function BulkInitiateDialog({ year, quarters, onDone, onClose }) 
   }
 
   return (
-    <div className="dialog-backdrop" onClick={saving ? undefined : onClose}>
+    <>
+    <div className="dialog-backdrop" onClick={saving || assigningPm ? undefined : onClose}>
       <form className="dialog" style={{ maxWidth: 900, width: "100%" }} onClick={(event) => event.stopPropagation()} onSubmit={handleSubmit}>
         <div className="dialog-title">Initiate a quarter for all projects</div>
         <div className="dialog-body" style={{ display: "grid", gap: "var(--space-3)", maxHeight: "70vh", overflowY: "auto" }}>
@@ -169,10 +191,24 @@ export default function BulkInitiateDialog({ year, quarters, onDone, onClose }) 
                       </td>
                       <td>
                         {p.managers.length === 0 ? (
-                          <span style={{ color: "var(--color-brand-coral)" }}>No PM assigned — nobody will be emailed</span>
+                          <div style={{ display: "grid", gap: 4 }}>
+                            <span style={{ color: "var(--color-brand-coral)" }}>No PM assigned — nobody will be emailed</span>
+                            {canAssignPm && (
+                              <button
+                                type="button" className="btn btn-sm" aria-label={`Assign PM for ${p.project_name}`}
+                                style={{ justifySelf: "start" }} onClick={() => setAssigningPm(p)}
+                              >Assign PM</button>
+                            )}
+                          </div>
                         ) : (
-                          <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                          <div style={{ display: "flex", gap: 4, flexWrap: "wrap", alignItems: "center" }}>
                             {p.managers.map((m) => <span key={m.id} className="tag tag-outline">{m.name}</span>)}
+                            {canAssignPm && (
+                              <button
+                                type="button" className="btn btn-ghost" aria-label={`Edit PMs for ${p.project_name}`}
+                                onClick={() => setAssigningPm(p)}
+                              >Edit</button>
+                            )}
                           </div>
                         )}
                       </td>
@@ -218,5 +254,13 @@ export default function BulkInitiateDialog({ year, quarters, onDone, onClose }) 
         </div>
       </form>
     </div>
+    {assigningPm && (
+      // A sibling, not a child: its clicks must not reach the bulk dialog's backdrop.
+      <AssignManagersDialog
+        project={{ id: assigningPm.project_id, name: assigningPm.project_name, manager_ids: assigningPm.managers.map((m) => m.id) }}
+        managers={pmAccounts} onSaved={applyManagers} onClose={() => setAssigningPm(null)}
+      />
+    )}
+    </>
   );
 }
