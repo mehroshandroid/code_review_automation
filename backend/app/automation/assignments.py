@@ -24,6 +24,8 @@ async def assignment_dicts(session, assignments, keep_order=False) -> list[dict]
         reviewer = users.get(a.reviewer_id)
         rounds = history.get((a.cycle_id, a.platform), [])
         approved = statuses.get(a.review_id) == "approved"
+        # A retry or re-run of an approved row can still be queued or running: never reset under it.
+        idle = a.run_status not in ("queued", "running") and not a.cancel_requested
         rows.append({
             "platform": a.platform,
             "reviewer_id": a.reviewer_id,
@@ -56,7 +58,7 @@ async def assignment_dicts(session, assignments, keep_order=False) -> list[dict]
             "round": a.round,
             # Every archived round was approved: only an approved review can be reinitiated.
             "approved_rounds": len(rounds) + (1 if approved else 0),
-            "can_reinitiate": approved,
+            "can_reinitiate": approved and idle,
             "history": [
                 {
                     "round": r.round, "review_id": r.review_id, "approved_at": _iso(r.approved_at),

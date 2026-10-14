@@ -865,3 +865,8 @@ async def start_next_round(
     await session.commit()
     await session.refresh(assignment)
     return assignment
+
+
+async def get_round_by_review_id(session: AsyncSession, review_id: str) -> Optional[ReviewCycleRound]:
+    result = await session.execute(select(ReviewCycleRound).where(ReviewCycleRound.review_id == review_id))
+    return result.scalars().first()

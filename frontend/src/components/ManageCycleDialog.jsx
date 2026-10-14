@@ -123,7 +123,7 @@ export default function ManageCycleDialog({ project, year, entry, onChanged, onC
                             setRerunZip(null);
                           }}>Re-run</button>
                         )}
-                        {approved && (
+                        {assignment.can_reinitiate && (
                           <button type="button" className="btn btn-ghost" onClick={() => {
                             setReinitFor({ platform: assignment.platform, round: (assignment.round || 1) + 1 });
                             setReinitReviewer(assignment.reviewer_id || "");
@@ -139,7 +139,7 @@ export default function ManageCycleDialog({ project, year, entry, onChanged, onC
                               <ul className="quarter-card-meta" style={{ margin: 0, paddingLeft: 16 }}>
                                 {assignment.history.map((past) => (
                                   <li key={past.round}>
-                                    {past.review_id ? <Link to={`/review/${past.review_id}`}>Round {past.round}</Link> : `Round ${past.round}`}
+                                    {past.review_id ? <Link to={`/reports/${past.review_id}`}>Round {past.round}</Link> : `Round ${past.round}`}
                                     {" "}· approved {shortDate(past.approved_at)}{past.reviewer_name ? ` · ${past.reviewer_name}` : ""}
                                   </li>
                                 ))}

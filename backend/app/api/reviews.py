@@ -895,6 +895,11 @@ async def update_review_reviewer(
             await reassign_cycle_reviewer(session, cycle, project, assignment, body.reviewer_id, user.id)
             review = await crud.get_review_by_id(session, review_id)
         else:
+            if await crud.get_round_by_review_id(session, review_id) is not None:
+                # An earlier round of a quarterly cycle: still a cycle review, locked once approved.
+                current = await crud.get_review_by_id(session, review_id)
+                if current is not None and current.status == "approved":
+                    raise HTTPException(status_code=409, detail=APPROVED_LOCKED)
             review = await crud.set_review_reviewer(session, review_id, body.reviewer_id)
         if review is None:
             raise HTTPException(status_code=404, detail="Review not found")

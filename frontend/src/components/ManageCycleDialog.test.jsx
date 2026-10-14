@@ -16,7 +16,7 @@ const a = (platform, extra) => ({ platform, reviewer_id: "r1", reviewer_name: "R
 const entry = { quarter: 4, cycle: { id: "c1", initiated_at: "2026-10-07T00:00:00Z", initiated_by_name: "Cora", assignments: [
   a("Android", { run_status: "completed", review_id: "rv1", review_status: "pending_approval" }),
   a("iOS", { run_status: "failed", run_error: "Could not reach Azure DevOps." }),
-  a(".NET", { run_status: "completed", review_id: "rv2", review_status: "approved" }),
+  a(".NET", { run_status: "completed", review_id: "rv2", review_status: "approved", can_reinitiate: true }),
 ] } };
 
 beforeEach(() => {
@@ -155,7 +155,7 @@ test("earlier rounds are listed with links to their reports", async () => {
   ] } };
   render(<MemoryRouter><ManageCycleDialog project={{ id: "p1", name: "Moove" }} year={2026} entry={withHistory} onChanged={jest.fn()} onClose={jest.fn()} /></MemoryRouter>);
   await user.click(screen.getByRole("button", { name: "Earlier rounds (1)" }));
-  expect(screen.getByRole("link", { name: /Round 1/ })).toHaveAttribute("href", "/review/rv0");
+  expect(screen.getByRole("link", { name: /Round 1/ })).toHaveAttribute("href", "/reports/rv0");
 });
 
 test("platforms not started yet can be initiated from Manage", async () => {
@@ -167,4 +167,13 @@ test("platforms not started yet can be initiated from Manage", async () => {
   expect(within(android).getByText("Not started")).toBeInTheDocument();
   await user.click(within(android).getByRole("button", { name: "Initiate" }));
   expect(onAddPlatforms).toHaveBeenCalled();
+});
+
+test("Reinitiate isn't offered while an approved platform's retry is queued", async () => {
+  const busy = { ...entry, cycle: { ...entry.cycle, assignments: [
+    a(".NET", { run_status: "queued", review_id: "rv2", review_status: "approved", can_reinitiate: false }),
+  ] } };
+  render(<ManageCycleDialog project={{ id: "p1", name: "Moove" }} year={2026} entry={busy} onChanged={jest.fn()} onClose={jest.fn()} />);
+  await screen.findAllByRole("option", { name: "Sam" });
+  expect(screen.queryByRole("button", { name: "Reinitiate" })).not.toBeInTheDocument();
 });

@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 import app.api.cycles as cycles_module
 import app.api.quarterly as quarterly_module
+import app.api.reviews as reviews_module
 from app.auth.dependencies import get_current_user
 from app.db import crud
 from app.db.models import Base, ReviewCycleRound, User
@@ -23,7 +24,7 @@ async def db(monkeypatch):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     maker = async_sessionmaker(engine, expire_on_commit=False)
-    for module in (cycles_module, quarterly_module):
+    for module in (cycles_module, quarterly_module, reviews_module):
         monkeypatch.setattr(module, "new_session", lambda: maker())
     async with maker() as s:
         for user_id, role, name in (("rev", "reviewer", "Rae"), ("rev2", "reviewer", "Sam"), ("pm", "project_manager", "Pat"), ("off", "reviewer", "Off")):
@@ -157,3 +158,39 @@ async def test_deleting_the_project_removes_its_rounds(db):
     async with db() as s:
         await crud.delete_project(s, "p1")
         assert (await s.execute(select(func.count()).select_from(ReviewCycleRound))).scalar_one() == 0
+
+
+@pytest.mark.parametrize("run_status", ["queued", "running"])
+async def test_reinitiate_is_refused_while_a_run_is_queued_or_running(db, run_status):
+    # An approved review can sit on a row whose retry is queued or running.
+    await _finish(db, "r1")
+    async with db() as s:
+        a = await crud.get_assignment(s, "c1", "Android")
+        await crud.update_assignment(s, a, run_status=run_status)
+    _as("coordinator")
+    response = _reinit()
+    assert response.status_code == 409
+    android = next(a for a in _q4()["cycle"]["assignments"] if a["platform"] == "Android")
+    assert android["can_reinitiate"] is False
+
+
+async def test_a_concurrent_reinitiate_is_409_not_500(db):
+    await _finish(db, "r1")
+    async with db() as s:
+        # The other request already archived round 1 but this one still sees round 1 as current.
+        s.add(ReviewCycleRound(id="x", cycle_id="c1", platform="Android", round=1, review_id="r1",
+                               archived_at=datetime.now(timezone.utc)))
+        await s.commit()
+    _as("coordinator")
+    response = _reinit()
+    assert response.status_code == 409
+    async with db() as s:
+        assert (await crud.get_assignment(s, "c1", "Android")).round == 1
+
+
+async def test_an_archived_rounds_approved_review_keeps_its_reviewer_lock(db):
+    await _finish(db, "r1")
+    _as("admin", "adm")
+    assert _reinit().status_code == 200
+    assert client.patch("/api/reviews/r1/reviewer", json={"reviewer_id": "rev2"}).status_code == 409
+    assert client.patch("/api/reviews/r1/reviewer", json={"reviewer_id": None}).status_code == 409
