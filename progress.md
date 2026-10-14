@@ -204,6 +204,20 @@ Spec: `docs/superpowers/specs/2026-10-08-email-and-stage-tracker-design.md`. Pla
 - **Emails:** one `cycles_initiated_digest` per PM listing their started projects, and one `reviewer_assigned_digest` per reviewer. Single initiation still sends the per-project emails.
 - **API:** `GET /api/quarterly/bulk-preview?year&quarter` and `POST /api/quarterly/bulk-initiate`.
 
+### Reinitiate, partial initiation, queue Stop (branch `reinitiate-partial`)
+- **Partial initiation:**
+  - A quarter can start with only some platforms. The Initiate dialog has a tick box per platform.
+  - Cards show the other platforms as "Not started" with an **Initiate remaining** action, also available as **Initiate** in Manage.
+  - Adding a platform reuses the quarter's cycle. A platform that's already started gives 409.
+  - In the bulk dialog, an empty reviewer slot leaves that platform for later.
+- **Reinitiate:**
+  - Manage → **Reinitiate** appears on an *approved* platform and starts round N+1 with a chosen reviewer.
+  - The finished round is archived in `review_cycle_rounds`, and the assignment is reset: source, run fields, reminders and overrides are cleared.
+  - The PM gets `cycle_reinitiated` and the reviewer gets `reviewer_assigned` marked "— round N".
+  - Earlier rounds keep covering the quarter, and the newest review wins. Cards show "· N reviews", and Manage lists "Earlier rounds" with links.
+- **Queue:** Stop is now a red danger button with a ■ icon.
+- **Migration:** `c9d0e1f2a3b4`.
+
 ---
 
 ## Running locally
