@@ -9,8 +9,11 @@ export default function MultiSelect({ ariaLabel, options, values, onChange, plac
     function handleClickOutside(event) {
       if (containerRef.current && !containerRef.current.contains(event.target)) setOpen(false);
     }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
+    // "click", not "mousedown": the list is in the dialog's normal flow, so collapsing it on
+    // mousedown shrinks the dialog under the cursor and the button being pressed (e.g. Save)
+    // moves away before mouseup -- the click is lost and nothing happens.
+    document.addEventListener("click", handleClickOutside);
+    return () => document.removeEventListener("click", handleClickOutside);
   }, []);
 
   const selected = options.filter((option) => values.includes(option.value));

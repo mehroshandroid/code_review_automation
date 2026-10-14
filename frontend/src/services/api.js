@@ -258,6 +258,16 @@ export async function initiateCycle(projectId, { year, quarter, assignments }) {
   return response.data;
 }
 
+export async function getBulkPreview(year, quarter) {
+  const response = await axios.get(`${API_BASE_URL}/quarterly/bulk-preview`, { params: { year, quarter } });
+  return response.data;
+}
+
+export async function bulkInitiate({ year, quarter, projects }) {
+  const response = await axios.post(`${API_BASE_URL}/quarterly/bulk-initiate`, { year, quarter, projects });
+  return response.data;
+}
+
 export async function setProjectPlatforms(projectId, platforms) {
   const response = await axios.put(`${API_BASE_URL}/projects/${projectId}/platforms`, { platforms });
   return response.data;
@@ -279,6 +289,11 @@ export async function submitAssignmentUrl(cycleId, platform, { devopsUrl, devops
 
 export async function retryAssignment(cycleId, platform) {
   const response = await axios.post(`${assignmentPath(cycleId, platform)}/retry`);
+  return response.data;
+}
+
+export async function reinitiateAssignment(cycleId, platform, reviewerId) {
+  const response = await axios.post(`${assignmentPath(cycleId, platform)}/reinitiate`, { reviewer_id: reviewerId });
   return response.data;
 }
 

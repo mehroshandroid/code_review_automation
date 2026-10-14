@@ -108,7 +108,7 @@ def test_initiate_twice_conflicts(db):
     assert client.post("/api/projects/p1/cycles", json=payload).status_code == 200
     response = client.post("/api/projects/p1/cycles", json=payload)
     assert response.status_code == 409
-    assert response.json()["detail"] == "This quarter's review has already been initiated."
+    assert response.json()["detail"] == "Android has already been initiated this quarter."
 
 
 def test_initiate_rejects_future_and_done_quarters(db):
@@ -120,8 +120,9 @@ def test_initiate_rejects_future_and_done_quarters(db):
 
 def test_initiate_validation(db):
     _as("coordinator", "coord")
-    android_only = [{"platform": "Android", "reviewer_id": "rev"}]
-    assert client.post("/api/projects/p1/cycles", json={"year": 2026, "quarter": 4, "assignments": android_only}).status_code == 400
+    foreign = [{"platform": ".NET", "reviewer_id": "rev"}]
+    assert client.post("/api/projects/p1/cycles", json={"year": 2026, "quarter": 4, "assignments": foreign}).status_code == 400
+    assert client.post("/api/projects/p1/cycles", json={"year": 2026, "quarter": 4, "assignments": []}).status_code == 400
     bad_reviewer = [{"platform": "Android", "reviewer_id": "pm"}, {"platform": "iOS", "reviewer_id": "rev"}]
     assert client.post("/api/projects/p1/cycles", json={"year": 2026, "quarter": 4, "assignments": bad_reviewer}).status_code == 400
     assert client.post("/api/projects/p2/cycles", json={"year": 2026, "quarter": 4, "assignments": []}).status_code == 400
@@ -241,3 +242,59 @@ async def test_on_time_cycle_review_is_not_late(db):
     q3 = _quarters(client.get("/api/quarterly?year=2026").json())[3]
     assert q3["status"] == "done" and q3["late"] is False
     assert all(c["late"] is False for c in q3["covered"])
+
+
+async def test_initiate_some_platforms_then_add_the_rest(db):
+    _as("coordinator", "coord")
+    async with db() as s:
+        await crud.set_managers_for_project(s, "p1", ["pm"])
+    first = client.post("/api/projects/p1/cycles", json={"year": 2026, "quarter": 4, "assignments": [{"platform": "Android", "reviewer_id": "rev"}]})
+    assert first.status_code == 200
+    entry = first.json()
+    assert [a["platform"] for a in entry["cycle"]["assignments"]] == ["Android"]
+    assert entry["uninitiated_platforms"] == ["iOS"] and entry["can_add_platforms"] is True
+    assert entry["status"] == "in_progress"
+
+    second = client.post("/api/projects/p1/cycles", json={"year": 2026, "quarter": 4, "assignments": [{"platform": "ios", "reviewer_id": "rev"}]})
+    assert second.status_code == 200
+    entry = second.json()
+    assert [a["platform"] for a in entry["cycle"]["assignments"]] == ["Android", "iOS"]
+    assert entry["uninitiated_platforms"] == [] and entry["can_add_platforms"] is False
+
+    again = client.post("/api/projects/p1/cycles", json={"year": 2026, "quarter": 4, "assignments": [{"platform": "Android", "reviewer_id": "rev"}]})
+    assert again.status_code == 409 and again.json()["detail"] == "Android has already been initiated this quarter."
+    async with db() as s:
+        pm_emails = await crud.list_notifications(s, "cycle_initiated")
+        assert [n.payload["platforms"] for n in pm_emails] == [["Android"], ["iOS"]]
+        assert len(await crud.list_notifications(s, "reviewer_assigned")) == 2
+
+
+def test_quarter_entry_lists_uninitiated_platforms(db):
+    _as("coordinator", "coord")
+    q4 = next(p for p in client.get("/api/quarterly?year=2026").json()["projects"] if p["id"] == "p1")["quarters"][3]
+    assert q4["uninitiated_platforms"] == ["Android", "iOS"] and q4["can_add_platforms"] is False
+
+
+async def test_adding_platforms_waits_for_the_quarter_to_start(db):
+    _as("coordinator", "coord")
+    async with db() as s:
+        await crud.create_cycle(s, "future", "p1", 2027, 1, "coord", [("Android", "rev")])
+    response = client.post("/api/projects/p1/cycles", json={"year": 2027, "quarter": 1, "assignments": [{"platform": "iOS", "reviewer_id": "rev"}]})
+    assert response.status_code == 400
+
+
+async def test_concurrent_add_of_the_same_platform_is_409(db, monkeypatch):
+    _as("coordinator", "coord")
+    async with db() as s:
+        await crud.create_cycle(s, "c4", "p1", 2026, 4, "coord", [("Android", "rev")])
+    real_list = crud.get_cycle_assignments
+
+    async def stale_assignments(session, cycle_ids):
+        # The other request's iOS row isn't visible yet when this one checks.
+        return {cycle_id: [a for a in rows if a.platform != "iOS"] for cycle_id, rows in (await real_list(session, cycle_ids)).items()}
+
+    payload = {"year": 2026, "quarter": 4, "assignments": [{"platform": "iOS", "reviewer_id": "rev"}]}
+    assert client.post("/api/projects/p1/cycles", json=payload).status_code == 200
+    monkeypatch.setattr(crud, "get_cycle_assignments", stale_assignments)
+    response = client.post("/api/projects/p1/cycles", json=payload)
+    assert response.status_code == 409

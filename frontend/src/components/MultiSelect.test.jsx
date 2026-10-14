@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import MultiSelect from "./MultiSelect";
@@ -36,4 +36,16 @@ test("the options panel is laid out in normal flow so a dialog grows to fit it",
   await user.click(screen.getByRole("button", { name: "Managers" }));
   const panel = screen.getByRole("group", { name: "Managers options" });
   expect(panel).not.toHaveStyle({ position: "absolute" });
+});
+
+test("pressing the mouse outside doesn't collapse the list until the click completes", () => {
+  // The list sits in the dialog's normal flow: collapsing it on mousedown made the
+  // dialog shrink under the cursor, so the Save button moved before mouseup and the
+  // click never happened. It must only close once a click outside has completed.
+  render(<Harness />);
+  fireEvent.click(screen.getByRole("button", { name: "Managers" }));
+  fireEvent.mouseDown(document.body);
+  expect(screen.getByRole("group", { name: "Managers options" })).toBeInTheDocument();
+  fireEvent.click(document.body);
+  expect(screen.queryByRole("group", { name: "Managers options" })).not.toBeInTheDocument();
 });

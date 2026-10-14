@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
+from sqlalchemy.exc import IntegrityError
 
 from app.analyzer.devops_client import parse_repo_url
 from app.auth.permissions import PERMISSIONS, can, require_permission, visible_project_ids
@@ -120,6 +121,33 @@ async def rerun(cycle_id: str, platform: str, body: UrlBody, user=Depends(requir
             # A re-run with only a corrected URL keeps the branch the PM chose.
             fields["devops_branch"] = assignment.devops_branch
         await crud.update_assignment(session, assignment, **fields)
+        return await _one(session, assignment)
+
+
+@router.post("/api/cycles/{cycle_id}/assignments/{platform}/reinitiate")
+async def reinitiate(cycle_id: str, platform: str, body: ReviewerBody, user=Depends(require_permission("cycles.initiate"))):
+    """Start another round for a platform whose review this quarter is already approved."""
+    async with new_session() as session:
+        cycle, project, assignment = await _load(session, user, cycle_id, platform)
+        statuses = await crud.get_review_statuses(session, [assignment.review_id])
+        if assignment.review_id is None or statuses.get(assignment.review_id) != "approved":
+            raise HTTPException(status_code=409, detail="Only an approved review can be reinitiated.")
+        if assignment.run_status in ("queued", "running") or assignment.cancel_requested:
+            raise HTTPException(status_code=409, detail="This platform's review is still queued or running.")
+        reviewer = (await crud.get_users_by_ids(session, [body.reviewer_id])).get(body.reviewer_id)
+        if reviewer is None or not reviewer.is_active or reviewer.role not in PERMISSIONS["reviews.finalize_own"]:
+            raise HTTPException(status_code=400, detail="The reviewer must be an active reviewer, management or admin account.")
+        approved_at = (await crud.get_review_approved_times(session, [assignment.review_id])).get(assignment.review_id)
+        delete_zip(assignment.source_zip_path)  # normally gone at approval; never leave one behind
+        try:
+            await crud.start_next_round(session, assignment, approved_at, body.reviewer_id, user.id)
+        except IntegrityError:
+            # Someone else reinitiated this round a moment ago.
+            await session.rollback()
+            raise HTTPException(status_code=409, detail="This platform has just been reinitiated.")
+        payload = cycle_payload(project.name, assignment.platform, cycle.year, cycle.quarter, round=assignment.round)
+        await notify(session, "cycle_reinitiated", await project_manager_ids(session, project.id), {**payload, "link": "/"})
+        await notify(session, "reviewer_assigned", [body.reviewer_id], payload)
         return await _one(session, assignment)
 
 

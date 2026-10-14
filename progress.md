@@ -190,6 +190,34 @@ Spec: `docs/superpowers/specs/2026-10-08-email-and-stage-tracker-design.md`. Pla
 - **Storage:** zips are kept on the `cycle-uploads` volume (`CYCLE_UPLOADS_DIR`). Each one is **deleted when the review is approved**, when it's replaced, or when the project is deleted.
 - **Stage tracker:** the "URL added" stage is now "Source added".
 
+### Bulk quarter initiation (branch `bulk-initiate`)
+- **Why:** demo feedback. Coordinators had to click Initiate on every card.
+- **Button:** **Initiate quarter for all projects**, next to the search box. It needs `cycles.initiate` and appears only for the current year.
+- **Quarter choice:** the current quarter, plus earlier quarters of this year that some project can still start.
+- **Dialog:**
+  - Every eligible project has a tick box, its PM chips, and a reviewer select per platform. Projects with no PM get a "No PM assigned — nobody will be emailed" warning.
+  - Reviewers are pre-filled from the project's last cycle, but only if that person can still review.
+  - "Set for all" per platform fills only empty slots.
+  - Skipped projects are listed with a reason: already initiated, already done, no platforms, not tracked yet, or the quarter hasn't started.
+  - A results summary appears at the end.
+- **Results:** each project starts or is skipped on its own, using the same validation as single initiation.
+- **Emails:** one `cycles_initiated_digest` per PM listing their started projects, and one `reviewer_assigned_digest` per reviewer. Single initiation still sends the per-project emails.
+- **API:** `GET /api/quarterly/bulk-preview?year&quarter` and `POST /api/quarterly/bulk-initiate`.
+
+### Reinitiate, partial initiation, queue Stop (branch `reinitiate-partial`)
+- **Partial initiation:**
+  - A quarter can start with only some platforms. The Initiate dialog has a tick box per platform.
+  - Cards show the other platforms as "Not started" with an **Initiate remaining** action, also available as **Initiate** in Manage.
+  - Adding a platform reuses the quarter's cycle. A platform that's already started gives 409.
+  - In the bulk dialog, an empty reviewer slot leaves that platform for later.
+- **Reinitiate:**
+  - Manage → **Reinitiate** appears on an *approved* platform and starts round N+1 with a chosen reviewer.
+  - The finished round is archived in `review_cycle_rounds`, and the assignment is reset: source, run fields, reminders and overrides are cleared.
+  - The PM gets `cycle_reinitiated` and the reviewer gets `reviewer_assigned` marked "— round N".
+  - Earlier rounds keep covering the quarter, and the newest review wins. Cards show "· N reviews", and Manage lists "Earlier rounds" with links.
+- **Queue:** Stop is now a red danger button with a ■ icon.
+- **Migration:** `c9d0e1f2a3b4`.
+
 ---
 
 ## Running locally

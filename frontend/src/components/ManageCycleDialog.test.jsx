@@ -1,12 +1,13 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
 import ManageCycleDialog from "./ManageCycleDialog";
-import { getReviewers, changeAssignmentReviewer, retryAssignment, rerunAssignment, remindAssignment, rerunAssignmentZip } from "../services/api";
+import { getReviewers, changeAssignmentReviewer, retryAssignment, rerunAssignment, remindAssignment, rerunAssignmentZip, reinitiateAssignment } from "../services/api";
 
 jest.mock("../services/api", () => ({
   ...jest.requireActual("../services/api"),
   getReviewers: jest.fn(), changeAssignmentReviewer: jest.fn(), retryAssignment: jest.fn(), rerunAssignment: jest.fn(),
-  remindAssignment: jest.fn(), rerunAssignmentZip: jest.fn(),
+  remindAssignment: jest.fn(), rerunAssignmentZip: jest.fn(), reinitiateAssignment: jest.fn(),
 }));
 
 const a = (platform, extra) => ({ platform, reviewer_id: "r1", reviewer_name: "Rae", devops_url: "https://dev.azure.com/o/p/_git/x",
@@ -15,7 +16,7 @@ const a = (platform, extra) => ({ platform, reviewer_id: "r1", reviewer_name: "R
 const entry = { quarter: 4, cycle: { id: "c1", initiated_at: "2026-10-07T00:00:00Z", initiated_by_name: "Cora", assignments: [
   a("Android", { run_status: "completed", review_id: "rv1", review_status: "pending_approval" }),
   a("iOS", { run_status: "failed", run_error: "Could not reach Azure DevOps." }),
-  a(".NET", { run_status: "completed", review_id: "rv2", review_status: "approved" }),
+  a(".NET", { run_status: "completed", review_id: "rv2", review_status: "approved", can_reinitiate: true }),
 ] } };
 
 beforeEach(() => {
@@ -128,4 +129,51 @@ test("shows a zip source and re-runs with a new zip", async () => {
   await user.upload(screen.getByLabelText("New source zip for Android"), file);
   await user.click(screen.getByRole("button", { name: "Queue re-run" }));
   await waitFor(() => expect(rerunAssignmentZip).toHaveBeenCalledWith("c1", "Android", file));
+});
+
+test("an approved platform can be reinitiated with a reviewer for the next round", async () => {
+  const user = userEvent.setup();
+  const onChanged = renderDialog();
+  await screen.findAllByRole("option", { name: "Sam" });
+  expect(within(row("Android")).queryByRole("button", { name: "Reinitiate" })).not.toBeInTheDocument();
+  reinitiateAssignment.mockResolvedValue(a(".NET", { run_status: "waiting_for_url", round: 2, reviewer_id: "r2", reviewer_name: "Sam",
+    devops_url: null, history: [{ round: 1, review_id: "rv2", reviewer_name: "Rae", approved_at: "2026-10-05T12:00:00Z" }] }));
+  await user.click(within(row(".NET")).getByRole("button", { name: "Reinitiate" }));
+  const form = screen.getByRole("form", { name: "Reinitiate .NET" });
+  expect(within(form).getByLabelText("Reviewer for round 2")).toHaveValue("r1");
+  await user.selectOptions(within(form).getByLabelText("Reviewer for round 2"), "r2");
+  await user.click(within(form).getByRole("button", { name: "Start round 2" }));
+  await waitFor(() => expect(reinitiateAssignment).toHaveBeenCalledWith("c1", ".NET", "r2"));
+  expect(onChanged).toHaveBeenCalled();
+  expect(within(row(".NET")).getByText("Round 2")).toBeInTheDocument();
+});
+
+test("earlier rounds are listed with links to their reports", async () => {
+  const user = userEvent.setup();
+  const withHistory = { ...entry, cycle: { ...entry.cycle, assignments: [
+    a("Android", { run_status: "waiting_for_url", round: 2, history: [{ round: 1, review_id: "rv0", reviewer_name: "Rae", approved_at: "2026-10-05T12:00:00Z" }] }),
+  ] } };
+  render(<MemoryRouter><ManageCycleDialog project={{ id: "p1", name: "Moove" }} year={2026} entry={withHistory} onChanged={jest.fn()} onClose={jest.fn()} /></MemoryRouter>);
+  await user.click(screen.getByRole("button", { name: "Earlier rounds (1)" }));
+  expect(screen.getByRole("link", { name: /Round 1/ })).toHaveAttribute("href", "/reports/rv0");
+});
+
+test("platforms not started yet can be initiated from Manage", async () => {
+  const user = userEvent.setup();
+  const onAddPlatforms = jest.fn();
+  const partial = { ...entry, can_add_platforms: true, uninitiated_platforms: ["Android"], cycle: { ...entry.cycle, assignments: [a("iOS", { run_status: "waiting_for_url" })] } };
+  render(<ManageCycleDialog project={{ id: "p1", name: "Moove" }} year={2026} entry={partial} onChanged={jest.fn()} onClose={jest.fn()} onAddPlatforms={onAddPlatforms} />);
+  const android = row("Android");
+  expect(within(android).getByText("Not started")).toBeInTheDocument();
+  await user.click(within(android).getByRole("button", { name: "Initiate" }));
+  expect(onAddPlatforms).toHaveBeenCalled();
+});
+
+test("Reinitiate isn't offered while an approved platform's retry is queued", async () => {
+  const busy = { ...entry, cycle: { ...entry.cycle, assignments: [
+    a(".NET", { run_status: "queued", review_id: "rv2", review_status: "approved", can_reinitiate: false }),
+  ] } };
+  render(<ManageCycleDialog project={{ id: "p1", name: "Moove" }} year={2026} entry={busy} onChanged={jest.fn()} onClose={jest.fn()} />);
+  await screen.findAllByRole("option", { name: "Sam" });
+  expect(screen.queryByRole("button", { name: "Reinitiate" })).not.toBeInTheDocument();
 });

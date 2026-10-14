@@ -91,6 +91,8 @@ a:hover { color: var(--color-brand-coral); }
 .btn-primary:hover:not(:disabled) { background: var(--color-accent-hover); }
 .btn-ghost { color: var(--color-accent); border-color: transparent; background: transparent; padding-inline: var(--space-1); }
 .btn-ghost:hover { color: var(--color-brand-coral); }
+.btn-danger { color: var(--color-brand-coral); border-color: var(--color-brand-coral); background: transparent; display: inline-flex; align-items: center; gap: 6px; }
+.btn-danger:hover:not(:disabled) { background: var(--color-brand-coral); color: #fff; }
 .btn-block { width: 100%; }
 
 /* — forms — */

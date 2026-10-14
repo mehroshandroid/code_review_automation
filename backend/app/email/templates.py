@@ -7,6 +7,11 @@ def _where(p: dict) -> str:
     return f"{p.get('project_name')}{platform} (Q{p.get('quarter')} {p.get('year')})"
 
 
+def _round(p: dict) -> str:
+    number = p.get("round")
+    return f" — round {number}" if isinstance(number, int) and number > 1 else ""
+
+
 def _score(p: dict) -> str:
     score = p.get("total_score_pct")
     return f" — {score:g}%" if isinstance(score, (int, float)) else ""
@@ -18,16 +23,59 @@ def _failure_hint(p: dict) -> str:
     return " An admin should check the setup (DevOps PAT, compile and LLM services)."
 
 
+def _count(n: int, word: str) -> str:
+    return f"{n} {word}" if n == 1 else f"{n} {word}s"
+
+
+def _quarter_label(p: dict) -> str:
+    return f"Q{p.get('quarter')} {p.get('year')}"
+
+
+def _with_platforms(name, platforms) -> str:
+    return f"{name} ({', '.join(platforms)})" if platforms else f"{name}"
+
+
+def _digest_projects(p: dict) -> str:
+    return ", ".join(
+        _with_platforms(item.get("name"), item.get("platforms")) if isinstance(item, dict) else str(item)
+        for item in p.get("projects") or []
+    )
+
+
+def _digest_assignments(p: dict) -> str:
+    return "; ".join(f"{a.get('project_name')} · {a.get('platform')}" for a in p.get("assignments") or [])
+
+
 # event -> (subject, message, button label)
 _EVENTS = {
     "cycle_initiated": (
         lambda p: f"Action needed: add DevOps URLs for {p.get('project_name')} · Q{p.get('quarter')} {p.get('year')} review",
-        lambda p: f"The Q{p.get('quarter')} {p.get('year')} code review for {p.get('project_name')} has started. "
+        lambda p: f"The Q{p.get('quarter')} {p.get('year')} code review for {_with_platforms(p.get('project_name'), p.get('platforms'))} has started. "
                   "Please add the Azure DevOps repository URL for each platform so the automatic review can run.",
         "Add repository URLs",
     ),
+    "cycles_initiated_digest": (
+        lambda p: f"Action needed: Q{p.get('quarter')} {p.get('year')} "
+                  f"{'review' if len(p.get('projects') or []) == 1 else 'reviews'} started for "
+                  f"{len(p.get('projects') or [])} of your projects",
+        lambda p: f"The Q{p.get('quarter')} {p.get('year')} code reviews have started for: {_digest_projects(p)}. "
+                  "Please add the Azure DevOps repository URL (or upload the source zip) for each platform so the automatic reviews can run.",
+        "Add repository URLs",
+    ),
+    "reviewer_assigned_digest": (
+        lambda p: f"You're the reviewer for {_count(len(p.get('assignments') or []), _quarter_label(p) + ' review')}",
+        lambda p: f"You've been assigned to review these Q{p.get('quarter')} {p.get('year')} reviews: {_digest_assignments(p)}. "
+                  "You'll get an email for each one when its automatic review is ready.",
+        "Open CodeAssure",
+    ),
+    "cycle_reinitiated": (
+        lambda p: f"Action needed: add the source for {_where(p)}{_round(p)}",
+        lambda p: f"A new review round ({_round(p).replace(' — ', '')}) has started for {_where(p)}. "
+                  "Please add the Azure DevOps repository URL or upload the source zip so the automatic review can run.",
+        "Add the source",
+    ),
     "reviewer_assigned": (
-        lambda p: f"You're the reviewer for {_where(p)}",
+        lambda p: f"You're the reviewer for {_where(p)}{_round(p)}",
         lambda p: f"You've been assigned to review {_where(p)}. You'll get another email when the automatic review is ready.",
         "Open CodeAssure",
     ),

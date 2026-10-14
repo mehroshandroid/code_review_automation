@@ -87,3 +87,32 @@ def test_line_breaks_in_untrusted_text_never_reach_the_subject():
     subject, _, _ = render("review_ready", {**PAYLOAD, "project_name": "Moove\r\nBcc: x@evil.com"}, "Rae", BASE)
     assert "\r" not in subject and "\n" not in subject
     assert subject == "Ready for your review: Moove Bcc: x@evil.com · iOS (Q4 2026)"
+
+
+def test_digest_subjects_and_lists():
+    subject, html, text = render("cycles_initiated_digest", {"year": 2026, "quarter": 4, "projects": [
+        {"name": "Moove", "platforms": ["Android", "iOS"]}, {"name": "Reeft", "platforms": [".NET"]}, {"name": "IBS", "platforms": ["Android"]}], "link": "/"}, "Pat", BASE)
+    assert subject == "Action needed: Q4 2026 reviews started for 3 of your projects"
+    assert "Moove (Android, iOS), Reeft (.NET), IBS (Android)" in text and "Moove" in html
+    subject, _, text = render("reviewer_assigned_digest", {"year": 2026, "quarter": 4, "assignments": [
+        {"project_name": "Moove", "platform": "iOS"}, {"project_name": "IBS", "platform": ".NET"}], "link": "/"}, "Rae", BASE)
+    assert subject == "You're the reviewer for 2 Q4 2026 reviews"
+    assert "Moove · iOS" in text and "IBS · .NET" in text
+    single, _, _ = render("cycles_initiated_digest", {"year": 2026, "quarter": 4, "projects": [{"name": "Moove", "platforms": ["iOS"]}], "link": "/"}, "Pat", BASE)
+    assert single == "Action needed: Q4 2026 review started for 1 of your projects"
+
+
+def test_cycle_initiated_names_the_platforms_started():
+    _, _, text = render("cycle_initiated", {"project_name": "Moove", "year": 2026, "quarter": 4, "platforms": ["iOS"], "link": "/"}, "Pat", BASE)
+    assert "Moove (iOS)" in text
+
+
+def test_round_emails():
+    payload = {"project_name": "Moove", "platform": "iOS", "year": 2026, "quarter": 4, "round": 2, "link": "/"}
+    subject, _, text = render("cycle_reinitiated", payload, "Pat", BASE)
+    assert subject == "Action needed: add the source for Moove · iOS (Q4 2026) — round 2"
+    assert "round 2" in text
+    subject, _, _ = render("reviewer_assigned", payload, "Rae", BASE)
+    assert subject == "You're the reviewer for Moove · iOS (Q4 2026) — round 2"
+    first, _, _ = render("reviewer_assigned", {**payload, "round": 1}, "Rae", BASE)
+    assert first == "You're the reviewer for Moove · iOS (Q4 2026)"

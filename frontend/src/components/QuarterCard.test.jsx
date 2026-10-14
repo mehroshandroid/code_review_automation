@@ -101,3 +101,33 @@ test("a platform reviewed after the quarter ended is marked late", () => {
   expect(screen.getByText(/Android/).closest("li")).not.toHaveTextContent("(late)");
   expect(screen.getByText("Late")).toBeInTheDocument();
 });
+
+const partial = {
+  ...base, quarter: 4, status: "in_progress", covered: [], missing: ["Android", "iOS"], can_initiate: false,
+  can_add_platforms: true, uninitiated_platforms: ["iOS"],
+  cycle: { id: "c1", initiated_at: "2026-10-07T00:00:00Z", initiated_by_name: "Cora", assignments: [
+    { platform: "Android", reviewer_name: "Rae", run_status: "waiting_for_url", round: 1, approved_rounds: 0 },
+  ] },
+};
+
+test("a partly started quarter marks the other platforms Not started and offers Initiate remaining", async () => {
+  const user = userEvent.setup();
+  const onInitiate = jest.fn();
+  render(<QuarterCard entry={partial} platforms={["Android", "iOS"]} canInitiate onInitiate={onInitiate} canManage onManage={jest.fn()} />);
+  expect(screen.getByText(/iOS/).closest("li")).toHaveTextContent("Not started");
+  await user.click(screen.getByRole("button", { name: "Initiate remaining" }));
+  expect(onInitiate).toHaveBeenCalled();
+});
+
+test("Initiate remaining needs the permission", () => {
+  render(<QuarterCard entry={partial} platforms={["Android", "iOS"]} canInitiate={false} onInitiate={jest.fn()} />);
+  expect(screen.queryByRole("button", { name: "Initiate remaining" })).not.toBeInTheDocument();
+});
+
+test("a platform reviewed more than once shows its review count", () => {
+  const twice = { ...partial, uninitiated_platforms: [], can_add_platforms: false, cycle: { ...partial.cycle, assignments: [
+    { platform: "Android", reviewer_name: "Rae", run_status: "waiting_for_url", round: 3, approved_rounds: 2 },
+  ] } };
+  render(<QuarterCard entry={twice} platforms={["Android"]} canInitiate={false} onInitiate={jest.fn()} />);
+  expect(screen.getByText(/Android/).closest("li")).toHaveTextContent("2 reviews");
+});
