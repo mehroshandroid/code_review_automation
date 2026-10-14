@@ -60,9 +60,13 @@ EMAIL_FROM_NAME=CodeAssure
 SMTP_HOST=smtp.office365.com
 SMTP_PORT=587
 SMTP_USERNAME=codeassure@teo-intl.com
-SMTP_PASSWORD=<password>
+SMTP_PASSWORD='<password>'
 SMTP_STARTTLS=true
 ```
+
+- **Wrap secrets in single quotes** (`SMTP_PASSWORD='p@ss$word#1'`, and the same for `GRAPH_CLIENT_SECRET`). Inside single quotes, `$`, `#` and spaces are read literally. Unquoted, Docker Compose treats `$` as the start of a variable and `#` as the start of a comment, so the password silently arrives wrong and login fails with a 535 error.
+- **Keep `EMAIL_FROM` the same as `SMTP_USERNAME`**, unless the login account has "send as" rights for the sender address. Otherwise Office 365 rejects the email with `SendAsDenied`.
+- **Comment out the block for the mode you're not using**, for example the `GRAPH_*` lines when using SMTP. They're ignored, but leftover placeholders cause confusion.
 
 Restart the backend so it picks up the settings:
 
@@ -70,10 +74,18 @@ Restart the backend so it picks up the settings:
 docker compose up -d --no-deps backend
 ```
 
+Use `up -d`, not `docker compose restart`. `restart` keeps the container's old environment, while `up -d` sees that `.env` changed and recreates the container.
+
 ## 3. Verify
 
 1. Open **Settings → Email** as an admin. The delivery mode should read *Microsoft Graph* or *SMTP*, followed by **"Configured."** If something is missing, the exact variable name is listed there.
-2. Click **Send test email**. It should arrive within a few seconds and show as **sent** in the list. If it shows **failed**, the error explains why, for example a wrong secret or SMTP AUTH being disabled.
+2. Click **Send test email**. The test goes to **the logged-in user's own email address**, so log in as someone whose address is a real mailbox, not the seeded `admin@example.com`. It should arrive within a few seconds and show as **sent** in the list. If it shows **failed**, the error explains why:
+
+   | Error mentions | Likely cause |
+   |---|---|
+   | `535` / authentication | Wrong password (check the quoting above), or SMTP AUTH is disabled on the mailbox |
+   | `SendAsDenied` | `EMAIL_FROM` differs from the login account, which has no send-as rights |
+   | Connection refused / timeout | Port 587 is blocked from the server, or the host is wrong |
 3. Rely on it only after the test email arrives. A broken setup makes every pending email fail within about 30 minutes, and **Retry** works one email at a time.
 
 ## Before production
