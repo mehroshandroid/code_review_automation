@@ -31,6 +31,8 @@ sudo tee /etc/systemd/system/claude-cli-agent.service > /dev/null <<EOF
 Description=CodeAssure Claude CLI agent
 After=network-online.target docker.service
 Wants=docker.service
+# Restart with Docker: the agent listens on Docker's bridge address, which a Docker restart recreates.
+PartOf=docker.service
 
 [Service]
 User=$USER
