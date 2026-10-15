@@ -1,0 +1,56 @@
+# Production overrides for a single server. Run with:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+# Every secret comes from .env (see deploy/env.example); compose refuses to start if one is missing.
+# Only the nginx proxy is published; the app, API and database are reachable inside Docker only.
+services:
+  proxy:
+    image: nginx:1.27-alpine
+    ports:
+      - "${HTTP_PORT:-80}:80"
+    volumes:
+      - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - backend
+      - frontend
+    restart: unless-stopped
+    networks:
+      - review-network
+
+  backend:
+    ports: !reset []
+    restart: unless-stopped
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/codereviews
+      - ADMIN_EMAIL=${ADMIN_EMAIL:?Set ADMIN_EMAIL in .env}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in .env}
+      - AUTH_SECRET_KEY=${AUTH_SECRET_KEY:?Set AUTH_SECRET_KEY in .env}
+      - SETTINGS_ENCRYPTION_KEY=${SETTINGS_ENCRYPTION_KEY:?Set SETTINGS_ENCRYPTION_KEY in .env}
+      - COOKIE_SECURE=${COOKIE_SECURE:-false}
+      - FRONTEND_BASE_URL=${PUBLIC_URL:?Set PUBLIC_URL in .env}
+      - AZURE_AD_REDIRECT_URI=${PUBLIC_URL}/api/auth/microsoft/callback
+
+  postgres:
+    restart: unless-stopped
+    environment:
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+
+  # Database browser: off in production. Start it only when needed, tunnelled over SSH:
+  #   docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile tools up -d adminer
+  adminer:
+    profiles: ["tools"]
+    ports: !override
+      - "127.0.0.1:8080:8080"
+
+  compiler:
+    restart: unless-stopped
+
+  dotnet-compiler:
+    restart: unless-stopped
+
+  frontend:
+    ports: !reset []
+    restart: unless-stopped
+    build:
+      args:
+        # Same origin as the page: nginx forwards /api to the backend.
+        REACT_APP_API_URL: /api
