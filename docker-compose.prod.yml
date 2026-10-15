@@ -19,6 +19,10 @@ services:
   backend:
     ports: !reset []
     restart: unless-stopped
+    # Docker Desktop provides host.docker.internal; on Linux it must be declared. It is how the
+    # backend reaches the Claude CLI agent, which runs natively on the server (deploy/claude-cli-agent.md).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       - DATABASE_URL=postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/codereviews
       - ADMIN_EMAIL=${ADMIN_EMAIL:?Set ADMIN_EMAIL in .env}
