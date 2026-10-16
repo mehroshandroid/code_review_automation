@@ -1,0 +1,96 @@
+# CodeAssure CI/CD (Azure Pipelines).
+# - Every pull request to master: run the backend and frontend tests.
+# - Every merge to master: run the tests, wait for an approver, then update the server.
+# One-time setup (environment, approvers, server agent, branch protection): deploy/pipeline.md
+trigger:
+  branches:
+    include: [master]
+
+pr:
+  branches:
+    include: [master]
+
+variables:
+  isMaster: $[eq(variables['Build.SourceBranch'], 'refs/heads/master')]
+
+stages:
+  - stage: Test
+    jobs:
+      - job: backend
+        displayName: Backend tests
+        pool:
+          vmImage: ubuntu-22.04
+        steps:
+          - task: UsePythonVersion@0
+            inputs:
+              versionSpec: "3.11"
+          - script: |
+              set -e
+              cd backend
+              pip install -r requirements.txt -r requirements-dev.txt
+              python -m pytest -q
+            displayName: pytest
+
+      - job: frontend
+        displayName: Frontend tests
+        pool:
+          vmImage: ubuntu-22.04
+        steps:
+          - task: NodeTool@0
+            inputs:
+              versionSpec: "20.x"
+          - script: |
+              set -e
+              cd frontend
+              npm ci
+              CI=true npx react-scripts test --watchAll=false
+            displayName: jest
+
+  - stage: Deploy
+    dependsOn: Test
+    condition: and(succeeded(), eq(variables.isMaster, true))
+    jobs:
+      - deployment: server
+        displayName: Update the server
+        # The approval lives on this environment (Pipelines > Environments > Approvals and checks).
+        environment: codeassure-production
+        # A self-hosted agent installed on the server itself, so nothing new is opened to the internet.
+        pool: codeassure-server
+        # A build that changes the compiler images can take a while on the server.
+        timeoutInMinutes: 90
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: none
+                - script: |
+                    set -euo pipefail
+                    cd /opt/codeassure
+                    before="$(git rev-parse HEAD)"
+                    git fetch --quiet origin
+                    git checkout --quiet master
+                    # Deploy exactly the approved commit; refuse if the server's copy was edited by hand.
+                    git merge --ff-only --quiet "$(Build.SourceVersion)"
+                    echo "Deploying $(git log --oneline -1)"
+
+                    docker compose up -d --build --remove-orphans
+
+                    for attempt in $(seq 1 30); do
+                      if curl -fsS localhost/api/health > /dev/null; then echo "Health check passed"; break; fi
+                      if [ "$attempt" = 30 ]; then
+                        echo "##vso[task.logissue type=error]The app didn't become healthy after the update"
+                        docker compose ps
+                        docker compose logs --tail 80 backend
+                        exit 1
+                      fi
+                      sleep 5
+                    done
+
+                    # Keep the disk in check: old images and build cache from previous versions.
+                    docker image prune -f > /dev/null
+                    docker builder prune -f --filter until=168h > /dev/null
+
+                    if ! git diff --quiet "$before" HEAD -- claude_cli_agent; then
+                      echo "##vso[task.logissue type=warning]claude_cli_agent changed: run 'sudo systemctl restart claude-cli-agent' on the server"
+                    fi
+                  displayName: Pull, rebuild, health check

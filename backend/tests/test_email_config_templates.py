@@ -116,3 +116,9 @@ def test_round_emails():
     assert subject == "You're the reviewer for Moove · iOS (Q4 2026) — round 2"
     first, _, _ = render("reviewer_assigned", {**payload, "round": 1}, "Rae", BASE)
     assert first == "You're the reviewer for Moove · iOS (Q4 2026)"
+
+
+def test_disk_space_low():
+    subject, html, text = render("disk_space_low", {"percent": 83, "free": "21G", "mount": "/", "link": "/"}, "Ada", BASE)
+    assert subject == "Server disk is 83% full"
+    assert "21G free" in text and "/var/backups/codeassure" in text

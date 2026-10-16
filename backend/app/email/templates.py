@@ -115,6 +115,14 @@ _EVENTS = {
         lambda p: f"The automatic review of {_where(p)} is ready and waiting for your feedback and approval.",
         "Open the review",
     ),
+    "disk_space_low": (
+        lambda p: f"Server disk is {p.get('percent')}% full",
+        lambda p: f"The CodeAssure server's disk ({p.get('mount')}) is {p.get('percent')}% full, with {p.get('free')} free. "
+                  "Reviews, uploads and backups stop working when it fills up. On the server, "
+                  "'docker image prune -f' and 'docker builder prune -f' free space from old builds; "
+                  "backups are in /var/backups/codeassure.",
+        "Open CodeAssure",
+    ),
     "test_email": (
         lambda p: "CodeAssure test email",
         lambda p: "This is a test email from CodeAssure. If you're reading it, email delivery is working.",

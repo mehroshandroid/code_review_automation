@@ -28,6 +28,8 @@ CodeAssure runs on one Ubuntu server with Docker Compose. The production setup i
 
 ## Updating to a new version
 
+Normally the pipeline does this after an approved merge to `master`; see `deploy/pipeline.md`. By hand:
+
 ```bash
 cd /opt/codeassure
 git pull
@@ -56,6 +58,23 @@ A backup that stays on the same server doesn't survive losing that server. Copy 
 
 **Restore steps** are in the header of `deploy/backup.sh`.
 
+## Disk space
+
+`deploy/disk-check.sh` checks the disk that holds Docker's data once a day. Past 80% full, it emails every active admin through the app's own email, so the alert also shows in Settings → Email.
+
+```bash
+(crontab -l; echo "0 8 * * * /opt/codeassure/deploy/disk-check.sh >> $HOME/codeassure-disk.log 2>&1") | crontab -
+```
+
+Cap Docker's container logs once, server-wide. Otherwise they grow without limit:
+
+```bash
+echo '{ "log-driver": "json-file", "log-opts": { "max-size": "20m", "max-file": "3" } }' | sudo tee /etc/docker/daemon.json
+sudo systemctl restart docker && docker compose up -d --force-recreate
+```
+
+To see what is using space: `df -h /`, `docker system df`, `du -sh /var/backups/codeassure`.
+
 ## Useful commands
 
 | Task | Command |
@@ -65,9 +84,10 @@ A backup that stays on the same server doesn't survive losing that server. Copy 
 | Restart one service | `docker compose restart backend` |
 | Database browser (over SSH) | `docker compose --profile tools up -d adminer`, then `ssh -L 8080:localhost:8080 <server>` and open http://localhost:8080 |
 | Free old images | `docker image prune -f` |
+| Claude CLI agent | `systemctl status claude-cli-agent`, `journalctl -u claude-cli-agent -f` (setup: `deploy/claude-cli-agent.md`) |
 
 ## Not yet done
 
 - **HTTPS and Microsoft sign-in** need a DNS name pointing at the server. Then add TLS to nginx, and set `PUBLIC_URL=https://…` and `COOKIE_SECURE=true`.
 - **iOS compile checks** need a Mac build agent. Until then, iOS reviews use static analysis.
-- **The Azure DevOps pipeline** isn't set up yet. It will run the tests on merge to master, wait for approval, then deploy.
+- **An off-server copy of the backups.**
