@@ -12,18 +12,19 @@
 
     Database migrations run automatically when the backend starts.
 
-It works the same with the code on GitHub or in Azure Repos. Only step 1 below differs.
+The code lives in Azure Repos. The deploy step fetches it with the run's own short-lived token (`System.AccessToken`), so the server stores no Git credentials. `/opt/codeassure` only needs its `origin` remote pointing at the Azure Repos URL.
 
 ## One-time setup
 
 ### 1. Create the pipeline
 
-In Azure DevOps, go to **Pipelines → New pipeline**:
+In Azure DevOps, go to **Pipelines → New pipeline → Azure Repos Git**, then pick the repo, then **Existing Azure Pipelines YAML file → `/azure-pipelines.yml`**. **Save**; don't run yet.
 
-- **Code on GitHub:** choose **GitHub (YAML)**, authorise the Azure Pipelines GitHub app for `code_review_automation`, and pick the repo.
-- **Code in Azure Repos:** choose **Azure Repos Git** and pick the repo.
+On the server, point the clone at Azure Repos once. This is only used for display: fetches use the pipeline's token.
 
-Then choose **Existing Azure Pipelines YAML file → `/azure-pipelines.yml`** and **Save** (don't run yet).
+```bash
+cd /opt/codeassure && git remote set-url origin https://dev.azure.com/<org>/<project>/_git/<repo>
+```
 
 ### 2. The environment and its approvers
 
@@ -54,15 +55,12 @@ The agent makes **outbound** HTTPS connections to Azure DevOps only. No port is 
 
 ### 4. Protect `master`
 
-So that every change goes through a reviewed pull request and passes the tests:
+So that every change goes through a reviewed pull request and passes the tests, go to **Repos → Branches → `master` → ⋯ → Branch policies** and set:
 
-- **GitHub:** go to **Settings → Branches → Add rule** for `master` and set:
-    - **Require a pull request before merging**, with **1 approval**;
-    - **Require status checks to pass**, choosing the Azure Pipelines check;
-    - **Do not allow bypassing**.
-- **Azure Repos:** go to **Repos → Branches → `master` → ⋯ → Branch policies** and set:
-    - **Require a minimum number of reviewers**: 1;
-    - **Build validation**: this pipeline.
+- **Require a minimum number of reviewers:** 1. Untick "Allow requestors to approve their own changes" if needed.
+- **Build validation:** add this pipeline, with the trigger set to Automatic and the policy Required.
+
+Once a policy is on, nobody can push to `master` directly. Every change is a pull request.
 
 ## Day to day
 

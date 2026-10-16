@@ -67,7 +67,9 @@ stages:
                     set -euo pipefail
                     cd /opt/codeassure
                     before="$(git rev-parse HEAD)"
-                    git fetch --quiet origin
+                    # Fetch with this run's own short-lived token: the server keeps no Git credentials.
+                    git -c http.extraheader="AUTHORIZATION: bearer $SYSTEM_ACCESSTOKEN" \
+                      fetch --quiet "$(Build.Repository.Uri)" "+refs/heads/master:refs/remotes/origin/master"
                     git checkout --quiet master
                     # Deploy exactly the approved commit; refuse if the server's copy was edited by hand.
                     git merge --ff-only --quiet "$(Build.SourceVersion)"
@@ -94,3 +96,5 @@ stages:
                       echo "##vso[task.logissue type=warning]claude_cli_agent changed: run 'sudo systemctl restart claude-cli-agent' on the server"
                     fi
                   displayName: Pull, rebuild, health check
+                  env:
+                    SYSTEM_ACCESSTOKEN: $(System.AccessToken)
